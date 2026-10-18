@@ -8,6 +8,11 @@ Subcomandos:
   run-wave N [WP...] [--fix]
                       Lanza en paralelo un `claude -p --agent implementer` por WP de la ola N (o solo
                       los WP indicados). Con --fix, les pide corregir sus defectos del último informe de QA.
+  run-acceptance      Ola 0: lanza el agente test-author, que escribe los tests de aceptación antes del código.
+  acceptance --expect red|green
+                      Ejecuta el comando de aceptación del manifiesto. En la ola 0 deben fallar (red);
+                      tras las olas, pasar (green).
+  run-review          Lanza el revisor de código (solo lectura) sobre el resultado integrado.
   run-qa              Lanza el agente QA (`claude -p --agent qa`) sobre el resultado integrado.
   claim ID            Asocia el subagente actual a un WP o a QA (lo registra el hook).
   status              Muestra el ledger: estado de cada agente y de cada etapa.
@@ -28,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -44,6 +50,10 @@ LEDGER_STATES = ("running", "done", "blocker", "pass", "fail", "timeout", "stopp
 CONFIG = ROOT / ".claude" / "agentic.json"
 BASE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"]
 QA_DEFAULT_FILES = ["qa/"]
+AT_DEFAULT_FILES = ["acceptance/"]
+RESERVED_IDS = {"QA", "AT", "REVIEW"}
+ARCHIVE_DIR = "docs/architecture/"  # archivo de decisiones: lo escribe /architect, nunca un WP
+REVIEW_TOOLS = ["Read", "Glob", "Grep", "Bash(git diff:*)", "Bash(git status:*)", "Bash(git log:*)"]
 # Todos los agentes orquestados (implementadores y QA) usan siempre el último Sonnet. `sonnet` es el alias
 # que Claude Code resuelve al Sonnet más reciente que conoce; no se puede cambiar por config ni por entorno.
 WORKER_MODEL = "sonnet"
@@ -55,6 +65,7 @@ DEFAULT_CONFIG = {
     # "subscription": los agentes usan tu sesión de Claude (suscripción) aunque haya una API key en el entorno.
     # "inherit": heredan el entorno tal cual (útil en CI con API key).
     "auth": "subscription",
+    "max_fix_cycles": 2,  # más ciclos --fix sobre el mismo WP se escalan al humano o a /architect
 }
 # Variables que harían que un agente facturase contra la API en vez de contra la suscripción.
 API_AUTH_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
@@ -63,7 +74,7 @@ DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".r
                   "node_modules/", ".coverage", "coverage/", ".nyc_output/", ".DS_Store", ".tsbuildinfo"]
 
 MANIFEST_RE = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
-CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA)\b")
+CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA|AT|REVIEW)\b")
 STATUS_RE = re.compile(r"STATUS:\s*(DONE|BLOCKER|PASS|FAIL)")
 # Un subcomando de escritura en el mismo comando que `git`, aunque haya opciones delante (`git -C . commit`)
 # o vaya dentro de comillas (`sh -c "git commit"`). Exige espacio antes para no confundir `src/add.py`.
@@ -138,10 +149,22 @@ def qa_entity(manifest):
     return {"id": "QA", "files": qa.get("files", QA_DEFAULT_FILES), "allow_bash": qa.get("allow_bash", [])}
 
 
+def at_entity(manifest):
+    at = manifest.get("acceptance", {})
+    return {"id": "AT", "files": at.get("files", AT_DEFAULT_FILES), "allow_bash": at.get("allow_bash", []),
+            "command": at.get("command")}
+
+
+def review_entity(manifest):
+    return {"id": "REVIEW", "files": [], "allow_bash": []}  # solo lectura: el hook bloquea cualquier escritura
+
+
 def entities(manifest):
-    """Todo lo que puede reclamar propiedad de ficheros: los WP y QA."""
+    """Todo lo que puede reclamar propiedad de ficheros: los WP, QA, los tests de aceptación y el revisor."""
     table = wps(manifest)
     table["QA"] = qa_entity(manifest)
+    table["AT"] = at_entity(manifest)
+    table["REVIEW"] = review_entity(manifest)
     return table
 
 
@@ -177,8 +200,11 @@ def validate(manifest):
     table = wps(manifest)
     if not table:
         errors.append("El manifiesto no tiene work_packages.")
-    if "QA" in table:
-        errors.append("'QA' es un ID reservado.")
+    for rid in RESERVED_IDS & set(table):
+        errors.append(f"'{rid}' es un ID reservado.")
+    at = manifest.get("acceptance")
+    if at is not None and not (isinstance(at, dict) and isinstance(at.get("command"), str) and at["command"].strip()):
+        errors.append("acceptance: necesita 'command', el comando que ejecuta los tests de aceptación.")
     seen = set()
     for wp in manifest.get("work_packages", []):
         if not isinstance(wp, dict) or "id" not in wp:
@@ -203,14 +229,14 @@ def validate(manifest):
         for f in ent.get("files", []):
             if f.startswith("/") or ".." in Path(f).parts:
                 errors.append(f"{ent['id']}: ruta no relativa al repo: {f}")
-            if f == "architecture.md" or f.startswith(".claude/") or f in ("", "./", "/"):
+            if f == "architecture.md" or f.startswith(".claude/") or f.startswith(ARCHIVE_DIR) or f in ("", "./", "/"):
                 errors.append(f"{ent['id']}: no puede poseer '{f}'.")
     owners = [(f, e["id"]) for e in entities(manifest).values() for f in e.get("files", [])]
     for i, (fa, wa) in enumerate(owners):
         for fb, wb in owners[i + 1:]:
             if wa != wb and owner_conflict(fa, fb):
                 errors.append(f"Fichero con dos propietarios: {fa} ({wa}) y {fb} ({wb}).")
-    for rule in manifest.get("allow_bash", []) + qa_entity(manifest)["allow_bash"]:
+    for rule in manifest.get("allow_bash", []) + qa_entity(manifest)["allow_bash"] + at_entity(manifest)["allow_bash"]:
         if not re.fullmatch(r"Bash\(.+\)", rule):
             errors.append(f"allow_bash: regla mal formada: {rule}")
         elif open_ended_rule(rule):
@@ -236,7 +262,7 @@ def frontmatter_model(path):
 def agent_model_errors(manifest):
     """Agentes orquestados en el último Sonnet y arquitecto en el último Opus, declarados con su alias."""
     errors = []
-    names = {"implementer", "qa"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
+    names = {"implementer", "qa", "test-author", "reviewer"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
     for name in sorted(names):
         f = ROOT / ".claude" / "agents" / f"{name}.md"
         if not f.exists():
@@ -246,6 +272,10 @@ def agent_model_errors(manifest):
         if model != WORKER_MODEL:
             errors.append(f"Agente '{name}': su frontmatter debe decir 'model: {WORKER_MODEL}' (el último Sonnet), "
                           f"no '{model}'.")
+    plan_reviewer = ROOT / ".claude" / "agents" / "plan-reviewer.md"
+    if plan_reviewer.exists() and frontmatter_model(plan_reviewer) != ARCHITECT_MODEL:
+        errors.append(f"Agente 'plan-reviewer': su frontmatter debe decir 'model: {ARCHITECT_MODEL}' (el último Opus), "
+                      f"no '{frontmatter_model(plan_reviewer)}'.")
     for command, expected, label in (("architect", ARCHITECT_MODEL, "el último Opus"),
                                      ("implement", WORKER_MODEL, "el último Sonnet"),
                                      ("qa", WORKER_MODEL, "el último Sonnet")):
@@ -284,9 +314,12 @@ def digest():
     return result
 
 
+STAGE_LABELS = {"qa": qa_entity, "acceptance": at_entity, "review": review_entity}
+
+
 def stage_owners(manifest, label):
-    if label == "qa":
-        return [qa_entity(manifest)]
+    if label in STAGE_LABELS:
+        return [STAGE_LABELS[label](manifest)]
     return [wp for wp in wps(manifest).values() if wp["wave"] == int(label)]
 
 
@@ -389,16 +422,80 @@ def run_wave(manifest, wave, only=None, fix=False):
     if not wave_wps:
         die(f"No hay WP en la ola {wave}.")
     allowed = BASE_TOOLS + manifest.get("allow_bash", [])
-    if fix and not (STATE / "runs" / "QA.json").exists():
-        die("--fix necesita un informe de QA (.claude/state/runs/QA.json). Ejecuta run-qa antes.")
+    at_cmd = at_entity(manifest)["command"]
+    if at_cmd:  # los implementers pueden ver sus tests de aceptación en verde, pero no editarlos
+        allowed = allowed + [f"Bash({at_cmd}:*)", f"Bash({at_cmd})"]
+    reports = [r for r in ("QA", "REVIEW") if (STATE / "runs" / f"{r}.json").exists()]
+    if fix and not reports:
+        die("--fix necesita un informe de revisión o de QA (.claude/state/runs/REVIEW.json o QA.json). "
+            "Ejecuta run-review o run-qa antes.")
+    if fix:
+        cap = int(cfg.get("max_fix_cycles", 2))
+        ledger = ledger_read()
+        over = [wp["id"] for wp in wave_wps if ledger.get(wp["id"], {}).get("fix_count", 0) >= cap]
+        if over:
+            die(f"{', '.join(over)} ya agotó sus {cap} ciclos --fix. No es un fallo de implementación que se arregle "
+                "insistiendo: decide tú, o revisa el contrato con /architect.", code=4)
+        for wp in wave_wps:
+            ledger_update(wp["id"], fix_count=ledger.get(wp["id"], {}).get("fix_count", 0) + 1)
     prompt = "Implementa {id} según architecture.md." + (
-        " El código ya existe: corrige los defectos de .claude/state/runs/QA.json que te asignan, sin salirte del contrato."
-        if fix else "")
+        " El código ya existe: corrige los defectos que te asignan "
+        + " y ".join(f".claude/state/runs/{r}.json" for r in reports)
+        + ", sin salirte del contrato, y deja en verde sus tests de aceptación." if fix else "")
     statuses = launch(str(wave), [
         (wp["id"], wp.get("agent", "implementer"), prompt.format(id=wp["id"]),
          allowed)
         for wp in wave_wps], cfg)
     finish(manifest, str(wave), statuses, "DONE")
+
+
+def run_acceptance(manifest):
+    at = at_entity(manifest)
+    if not at["command"]:
+        die("El manifiesto no tiene sección 'acceptance': no hay ola 0 que lanzar.")
+    cfg = load_config()
+    allowed = BASE_TOOLS + manifest.get("allow_bash", []) + at["allow_bash"]
+    statuses = launch("acceptance", [("AT", "test-author",
+                                      "Escribe los tests de aceptación según architecture.md.", allowed)], cfg)
+    finish(manifest, "acceptance", statuses, "DONE")
+
+
+def run_review(manifest):
+    cfg = load_config()
+    allowed = REVIEW_TOOLS + manifest.get("allow_bash", [])
+    statuses = launch("review", [("REVIEW", "reviewer",
+                                  "Revisa el código integrado según architecture.md.", allowed)], cfg)
+    finish(manifest, "review", statuses, "PASS")
+
+
+def acceptance(manifest, expect):
+    """Ejecuta el comando de aceptación. red: deben fallar (ola 0). green: deben pasar (tras las olas)."""
+    cmd = at_entity(manifest)["command"]
+    if not cmd:
+        die("El manifiesto no tiene sección 'acceptance'.")
+    try:
+        r = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=900,
+                           env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)))
+        code, tail = r.returncode, (r.stdout + r.stderr).strip().splitlines()[-6:]
+    except FileNotFoundError:
+        code, tail = 127, [f"comando no encontrado: {cmd}"]
+    except subprocess.TimeoutExpired:
+        code, tail = 124, ["el comando de aceptación superó 15 minutos"]
+    print(f"$ {cmd}  ->  exit {code}")
+    for line in tail:
+        print("  " + line)
+    if code in (124, 126, 127):
+        ok, verdict = False, "ERROR: el comando no se pudo ejecutar; eso no cuenta como rojo ni como verde"
+    elif expect == "red":
+        ok = code != 0
+        verdict = "ROJO, como debe ser antes del código" if ok else "YA PASAN SIN CÓDIGO: los tests no prueban nada"
+    else:
+        ok = code == 0
+        verdict = "VERDE" if ok else "SIGUEN FALLANDO"
+    ledger_stage(f"aceptación ({expect})", "OK" if ok else "REVISAR")
+    print(f"ACEPTACIÓN: {verdict}")
+    print("RESULTADO:", "OK" if ok else "REVISAR")
+    sys.exit(0 if ok else 3)
 
 
 def run_qa(manifest):
@@ -488,8 +585,8 @@ def status_to_state(status):
 
 
 def stage_of(jid):
-    if jid == "QA":
-        return "qa"
+    if jid in ("QA", "AT", "REVIEW"):
+        return {"QA": "qa", "AT": "acceptance", "REVIEW": "review"}[jid]
     try:
         return str(wps(load_manifest()).get(jid, {}).get("wave", "?"))
     except ManifestError:
@@ -502,7 +599,9 @@ def ledger_render():
     agents = {k: v for k, v in d.items() if not k.startswith("_")}
     order = lambda kv: (kv[1].get("stage") == "qa", str(kv[1].get("stage")), kv[0])
     lines = ["# Ledger del flow", "", f"Actualizado: {now_hm()}", "", "## Etapas", ""]
-    lines += [f"- {'ola ' + k if k != 'qa' else 'qa'}: {v}" for k, v in sorted(stages.items())] or ["- (ninguna)"]
+    pipeline = {"acceptance": 0, "aceptación (red)": 1, "aceptación (green)": 3, "review": 4, "qa": 5}
+    order_st = lambda k: (2, k.zfill(4)) if k.isdigit() else (pipeline.get(k, 6), k)  # orden del pipeline
+    lines += [f"- {'ola ' + k if k.isdigit() else k}: {stages[k]}" for k in sorted(stages, key=order_st)] or ["- (ninguna)"]
     lines += ["", "## Agentes", ""]
     for jid, e in sorted(agents.items(), key=order):
         parts = [f"- [{e.get('state', '?')}]".ljust(11) + f" {jid} ({WORKER_MODEL})",
@@ -665,9 +764,17 @@ def main():
         print("Manifiesto válido.")
     elif cmd == "run-qa":
         run_qa(require_valid())
+    elif cmd == "run-acceptance":
+        run_acceptance(require_valid())
+    elif cmd == "run-review":
+        run_review(require_valid())
+    elif cmd == "acceptance":
+        if args[:1] != ["--expect"] or args[1:2] not in (["red"], ["green"]):
+            die("Uso: acceptance --expect red|green")
+        acceptance(require_valid(), args[1])
     elif cmd in ("snapshot", "check-wave", "run-wave"):
-        if not args or not (args[0].isdigit() or (args[0] == "qa" and cmd != "run-wave")):
-            die(f"Uso: {cmd} N" + ("" if cmd == "run-wave" else " | qa"))
+        if not args or not (args[0].isdigit() or (args[0] in STAGE_LABELS and cmd != "run-wave")):
+            die(f"Uso: {cmd} N" + ("" if cmd == "run-wave" else " | " + " | ".join(STAGE_LABELS)))
         label = args[0]
         if cmd == "snapshot":
             snapshot(label)

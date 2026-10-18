@@ -1,6 +1,6 @@
 # agentic-flow
 
-Flow agéntico para Claude Code: un arquitecto (último Opus) define `architecture.md`, varios implementadores desarrollan en paralelo usando solo ese documento y un agente QA decide qué probar y valida el resultado.
+Flow agéntico para Claude Code: un arquitecto (último Opus) define `architecture.md` con criterios de aceptación verificables y otro Opus lo revisa en contexto limpio. Después, un test-author escribe los tests de aceptación antes del código, varios implementers trabajan en paralelo para ponerlos en verde, un revisor mira la calidad y QA explora lo que nadie previó. Todos los agentes de ejecución usan el último Sonnet.
 
 <p align="center">
   <img src="docs/assets/flow.gif" alt="El flow en tres actos. Arquitectura: describes el objetivo, el arquitecto (Opus) pregunta y escribe architecture.md, que validas y apruebas. Construcción: el orquestador (Sonnet) lanza la ola 1 en paralelo, el hook bloquea una escritura ajena, check-wave verifica, la ola 2 usa ese código y la integración pasa 44/44 tests. Verificación: QA decide qué probar, encuentra un defecto en WP-02, se corrige con --fix y el resultado es PASS; tú haces el commit." width="768">
@@ -14,6 +14,9 @@ Flow agéntico para Claude Code: un arquitecto (último Opus) define `architectu
 .claude/commands/qa.md           → /qa          (solo QA, último Sonnet)
 .claude/agents/implementer.md    → subagente    (último Sonnet, uno por WP)
 .claude/agents/qa.md             → subagente    (último Sonnet)
+.claude/agents/test-author.md    → subagente    (último Sonnet, ola 0: tests de aceptación)
+.claude/agents/reviewer.md       → subagente    (último Sonnet, revisión de solo lectura)
+.claude/agents/plan-reviewer.md  → subagente    (último Opus, revisa architecture.md)
 .claude/bin/agentic.py           → guardarraíles y lanzador paralelo
 .claude/settings.json            → hook PreToolUse y reglas allow/deny
 ```
@@ -37,6 +40,9 @@ Requisitos: macOS, Linux o WSL 2; `python3` ≥ 3.9; `git`; y el CLI de Claude C
 
 | Qué | Cómo |
 |---|---|
+| Nadie toca los tests de aceptación salvo el test-author; el revisor no escribe nada | Hook `PreToolUse` (entidades `AT` y `REVIEW`) |
+| La aceptación falla antes del código y pasa después | `acceptance --expect red` / `--expect green` |
+| Las correcciones no se repiten sin fin | Máximo 2 ciclos `--fix` por WP (`max_fix_cycles`) |
 | Cada WP solo escribe sus ficheros; QA solo escribe en `qa/` | Hook `PreToolUse` sobre Write/Edit, contra el manifiesto |
 | Sin git, sin dependencias nuevas, sin lanzar otras sesiones de Claude | Hook `PreToolUse` sobre Bash, dentro de un WP o de QA |
 | Los agentes del flow no hacen commit ni push | Hook `PreToolUse` sobre Bash, dentro de un WP o de QA |

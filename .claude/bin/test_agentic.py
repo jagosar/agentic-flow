@@ -20,6 +20,7 @@ AGENTS_DIR = SCRIPT.parents[1] / "agents"
 MANIFEST = {
     "allow_bash": ["Bash(python3 -m unittest:*)"],
     "ignore": ["dist/"],
+    "acceptance": {"files": ["acceptance/"], "command": "python3 acc.py"},
     "work_packages": [
         {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/a.py", "tests/test_a.py"]},
         {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["src/b/"]},
@@ -176,6 +177,83 @@ class HookWriteTests(Base):
         self.assertEqual(self.repo.hook(bash_payload(claim, agent_id="ag1")), 0)
         self.repo.run("snapshot", "1")
         self.assertEqual(self.repo.hook(bash_payload(claim, agent_id="ag2")), 0)
+
+
+class V2EntityTests(Base):
+    """Ola 0 (AT), revisor de solo lectura y validaciones del flow v2."""
+
+    def p(self, rel):
+        return str(self.repo.dir / rel)
+
+    def test_implementer_no_toca_la_aceptacion(self):
+        self.assertEqual(self.repo.hook(write_payload(self.p("acceptance/test_ac_001.py")), wp="WP-01"), 2)
+        self.assertEqual(self.repo.hook(write_payload(self.p("acceptance/test_ac_001.py")), wp="AT"), 0)
+        self.assertEqual(self.repo.hook(write_payload(self.p("src/a.py")), wp="AT"), 2, "el test-author no implementa")
+
+    def test_revisor_no_escribe_nada(self):
+        for rel in ("src/a.py", "review.md", "acceptance/x.py", "qa/x.py"):
+            with self.subTest(rel=rel):
+                self.assertEqual(self.repo.hook(write_payload(self.p(rel)), wp="REVIEW"), 2)
+        self.assertEqual(self.repo.hook(bash_payload("git diff"), wp="REVIEW"), 0)
+
+    def test_claim_at_y_review_en_modo_b(self):
+        for ident, agent in (("AT", "a1"), ("REVIEW", "a2")):
+            self.assertEqual(self.repo.hook(bash_payload(f"python3 .claude/bin/agentic.py claim {ident}", agent_id=agent)), 0)
+        self.assertEqual(self.repo.hook(write_payload(self.p("acceptance/t.py"), agent_id="a1")), 0)
+        self.assertEqual(self.repo.hook(write_payload(self.p("src/a.py"), agent_id="a2")), 2)
+
+    def write_manifest(self, m):
+        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```")
+
+    def test_validaciones_v2(self):
+        cases = {
+            "IDs reservados": lambda m: m["work_packages"][0].update(id="AT"),
+            "acceptance sin command": lambda m: m.update(acceptance={"files": ["acceptance/"]}),
+            "WP dueño del archivo de decisiones": lambda m: m["work_packages"][0].update(files=["docs/architecture/x.md"]),
+            "solape con acceptance": lambda m: m["work_packages"][0].update(files=["acceptance/"]),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name):
+                m = json.loads(json.dumps(MANIFEST))
+                mutate(m)
+                self.write_manifest(m)
+                self.assertEqual(self.repo.run("validate").returncode, 1)
+
+    def test_modelos_de_los_agentes_v2(self):
+        agents = self.repo.dir / ".claude/agents"
+        for name, wrong in (("test-author", "opus"), ("reviewer", "opus"), ("plan-reviewer", "sonnet")):
+            with self.subTest(name):
+                f = agents / f"{name}.md"
+                original = f.read_text()
+                good = "model: opus" if name == "plan-reviewer" else "model: sonnet"
+                f.write_text(original.replace(good, f"model: {wrong}"))
+                r = self.repo.run("validate")
+                self.assertEqual(r.returncode, 1, r.stderr)
+                self.assertIn(name, r.stderr)
+                f.write_text(original)
+        self.assertEqual(self.repo.run("validate").returncode, 0)
+
+    def acc(self, code):
+        (self.repo.dir / "acc.py").write_text(f"import sys\nprint('tests')\nsys.exit({code})\n")
+
+    def test_aceptacion_rojo_y_verde(self):
+        self.acc(1)
+        self.assertEqual(self.repo.run("acceptance", "--expect", "red").returncode, 0)
+        self.assertEqual(self.repo.run("acceptance", "--expect", "green").returncode, 3)
+        self.acc(0)
+        r = self.repo.run("acceptance", "--expect", "red")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("YA PASAN SIN CÓDIGO", r.stdout)
+        self.assertEqual(self.repo.run("acceptance", "--expect", "green").returncode, 0)
+        self.assertIn("aceptación (green): OK", self.repo.run("status").stdout)
+
+    def test_aceptacion_comando_inexistente_no_cuenta_como_rojo(self):
+        m = json.loads(json.dumps(MANIFEST))
+        m["acceptance"]["command"] = "comando-que-no-existe --x"
+        self.write_manifest(m)
+        r = self.repo.run("acceptance", "--expect", "red")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("ERROR", r.stdout)
 
 
 class HookFailClosedTests(unittest.TestCase):
@@ -388,7 +466,7 @@ class LauncherTests(Base):
     def test_fix_sin_informe_falla(self):
         r = self.repo.run("run-wave", "1", "WP-01", "--fix")
         self.assertEqual(r.returncode, 1)
-        self.assertIn("run-qa", r.stderr)
+        self.assertIn("run-review o run-qa", r.stderr)
 
     # ---------- ledger, mark y stop ----------
 
@@ -443,6 +521,37 @@ class LauncherTests(Base):
         self.assertIn("STOPPED", out)
         self.assertIn("[stopped]", self.status())
         self.assertIn("No hay agentes en marcha", self.repo.run("stop").stdout)
+
+    def test_ola_0_lanza_test_author(self):
+        self.assertEqual(self.repo.run("run-acceptance").returncode, 0)
+        a = self.args("AT")
+        self.assertEqual(a[a.index("--agent") + 1], "test-author")
+        self.assertEqual(a[a.index("--model") + 1], "sonnet")
+
+    def test_revision_sin_herramientas_de_escritura(self):
+        (self.logs / "x").write_text("")
+        r = self.repo.run("run-review", env={"FAKE_STATUS": "PASS"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        a = self.args("REVIEW")
+        self.assertEqual(a[a.index("--agent") + 1], "reviewer")
+        for tool in ("Write", "Edit"):
+            self.assertNotIn(tool, a)
+
+    def test_implementers_pueden_ejecutar_la_aceptacion(self):
+        self.repo.run("run-wave", "1")
+        self.assertIn("Bash(python3 acc.py:*)", self.args("WP-01"))
+
+    def test_tope_de_fix(self):
+        runs = self.repo.dir / ".claude/state/runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        (runs / "REVIEW.json").write_text(json.dumps({"result": "STATUS: FAIL"}))
+        for _ in range(2):
+            self.assertEqual(self.repo.run("run-wave", "1", "WP-02", "--fix").returncode, 0)
+            self.assertIn("REVIEW.json", self.prompt_of("WP-02"))
+        r = self.repo.run("run-wave", "1", "WP-02", "--fix")
+        self.assertEqual(r.returncode, 4)
+        self.assertIn("agotó", r.stderr)
+        self.assertEqual(self.repo.run("run-wave", "1", "WP-01", "--fix").returncode, 0, "el tope es por WP")
 
     def test_timeout(self):
         start = time.time()

@@ -80,17 +80,21 @@ python3 .claude/bin/agentic.py validate
 ```
 
 ```bash
+python3 .claude/bin/agentic.py run-acceptance && python3 .claude/bin/agentic.py acceptance --expect red
+```
+
+```bash
 python3 .claude/bin/agentic.py run-wave 1
 ```
 
 ```bash
-python3 .claude/bin/agentic.py run-qa
+python3 .claude/bin/agentic.py acceptance --expect green && python3 .claude/bin/agentic.py run-review && python3 .claude/bin/agentic.py run-qa
 ```
 
 Todas las olas seguidas, y QA al final:
 
 ```bash
-set -e; for n in $(python3 -c "import json,re;m=json.loads(re.search(r'\`\`\`json\s+wp-manifest\s*\n(.*?)\n\`\`\`',open('architecture.md').read(),re.S).group(1));print(' '.join(map(str,sorted({w['wave'] for w in m['work_packages']}))))"); do python3 .claude/bin/agentic.py run-wave $n; done; python3 .claude/bin/agentic.py run-qa
+set -e; A=.claude/bin/agentic.py; python3 $A run-acceptance; python3 $A acceptance --expect red; for n in $(python3 -c "import json,re;m=json.loads(re.search(r'\`\`\`json\s+wp-manifest\s*\n(.*?)\n\`\`\`',open('architecture.md').read(),re.S).group(1));print(' '.join(map(str,sorted({w['wave'] for w in m['work_packages']}))))"); do python3 .claude/bin/agentic.py run-wave $n; done; python3 $A acceptance --expect green; python3 $A run-review; python3 $A run-qa
 ```
 
 ## 5. Corregir defectos de QA

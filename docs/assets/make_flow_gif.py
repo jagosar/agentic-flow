@@ -54,7 +54,7 @@ FONT = {
     " ": ["...", "...", "...", "...", "..."], "-": ["...", "...", "###", "...", "..."],
     ".": ["...", "...", "...", "...", ".#."], ":": ["...", ".#.", "...", ".#.", "..."],
     "/": ["..#", "..#", ".#.", "#..", "#.."], "?": ["##.", "..#", ".#.", "...", ".#."],
-    "+": ["...", ".#.", "###", ".#.", "..."], ",": ["...", "...", "...", ".#.", "#.."],
+    "+": ["...", ".#.", "###", ".#.", "..."], ",": ["...", "...", "...", ".#.", "#.."], "%": ["#.#", "..#", ".#.", "#..", "#.#"],
     "·": ["...", "...", ".#.", "...", "..."], ">": ["#..", ".#.", "..#", ".#.", "#.."],
 }
 CHECK = ["....#", "...##", "#.##.", "###..", ".#..."]
@@ -179,9 +179,9 @@ def sc_interview(f, t):
 
 
 def sc_blueprint(f, t):
-    chrome(f, 0, 3, "UN UNICO CONTRATO: ARCHITECTURE.MD")
+    chrome(f, 0, 3, "UN CONTRATO, REVISADO POR OTRO OPUS.")
     f.text(M, 24, "ARCHITECTURE.MD", "ink")
-    secs = ["1  OBJETIVO", "4  ESTRUCTURA", "6  CONTRATOS", "8  WORK PACKAGES", "10 DECISIONES"]
+    secs = ["1  OBJETIVO", "6  CONTRATOS", "8  AC-001..AC-012", "8  WORK PACKAGES", "10 DECISIONES"]
     for k, s in enumerate(secs):
         if t > 0.05 + k * 0.07:
             f.text(M, 36 + k * 8, s, "ink" if k in (2, 3) else "grey")
@@ -198,12 +198,15 @@ def sc_blueprint(f, t):
             f.text(x0, y, wp, "ink")
             f.text(x0 + 28, y, ola, "ink")
             f.rect(x0 + 44, y + 1, x0 + 44 + w, y + 3, "ink" if ola == "1" else "grey")
-    if t > 0.72:
-        f.icon(x0, 72, CHECK, "ok")
-        f.text(x0 + 8, 72, "VALIDATE OK", "ok")
+    if t > 0.66:
+        f.icon(x0, 68, CHECK, "ok")
+        f.text(x0 + 8, 68, "VALIDATE OK", "ok")
+    if t > 0.74:
+        f.icon(x0, 76, CHECK, "ok")
+        f.text(x0 + 8, 76, "REVISADO POR OPUS", "ok")
     if t > 0.84:
         f.icon(M, 80, CHECK, "accent")
-        f.text(M + 8, 80, "APROBADO Y COMMITEADO POR TI", "accent")
+        f.text(M + 8, 80, "APROBADO POR TI", "accent")
 
 
 # Gantt compartido por las escenas de construcción
@@ -241,12 +244,12 @@ def gantt(f, p1, p2, checked=False, highlight=None):
 
 
 def sc_wave1(f, t):
-    chrome(f, 1, 4, "LA OLA 1 CORRE EN PARALELO.")
+    chrome(f, 1, 5, "LA OLA 1 CORRE EN PARALELO.")
     gantt(f, 0.55 * ease(span(t, 0.05, 0.9)), 0)
 
 
 def sc_guard(f, t):
-    chrome(f, 1, 5, "CADA AGENTE SOLO ESCRIBE LO SUYO.")
+    chrome(f, 1, 6, "CADA AGENTE SOLO ESCRIBE LO SUYO.")
     gantt(f, 0.55, 0, highlight="WP-02")
     y2, y3 = LANES[1][1], LANES[2][1]
     x = GX0 + int(GW1 * 0.55 / 0.78)
@@ -258,11 +261,11 @@ def sc_guard(f, t):
         f.icon(x - 2, y3 - 2, CROSS, "err")
         f.text(x + 8, y3 - 1, "BLOQUEADO POR EL HOOK", "err")
     if t > 0.6:
-        f.text(M, 82, "WP-02 NO POSEE LOS FICHEROS DE WP-03", "grey")
+        f.text(M, 82, "NI LOS DE WP-03, NI LOS TESTS DE ACEPTACION", "grey")
 
 
 def sc_wave2(f, t):
-    chrome(f, 1, 6, "CHECK-WAVE. LA OLA 2 USA SU CODIGO.")
+    chrome(f, 1, 7, "CHECK-WAVE. LA OLA 2 USA SU CODIGO.")
     p1 = 0.55 + 0.45 * ease(span(t, 0.0, 0.3))
     gantt(f, p1, ease(span(t, 0.45, 0.9)), checked=t > 0.32)
     if 0.3 < t < 0.45:
@@ -270,7 +273,7 @@ def sc_wave2(f, t):
 
 
 def sc_integrate(f, t):
-    chrome(f, 1, 7, "INTEGRACION: BUILD Y TESTS COMPLETOS.")
+    chrome(f, 1, 8, "LA ACEPTACION PASA A VERDE.")
     x = f.tag(M, 22, "SONNET", "ink")
     f.text(x + 4, 24, "ORQUESTADOR", "grey")
     m = ease(span(t, 0.0, 0.35))
@@ -280,10 +283,11 @@ def sc_integrate(f, t):
         if m < 0.5:
             f.text(M, y, name, "ink")
     if t > 0.4:
-        n = int(44 * ease(span(t, 0.4, 0.8)))
-        f.text(GX0, 60, f"TESTS {n:2d}/44", "ok" if n == 44 else "ink", 2)
+        n = int(12 * ease(span(t, 0.4, 0.8)))
+        f.text(GX0, 58, f"AC {n:2d}/12", "ok" if n == 12 else "ink", 2)
+        f.text(GX0, 74, "BUILD · TIPOS · LINT · TESTS · DIFF", "grey")
     if t > 0.82:
-        f.icon(GX0 + tw("TESTS 44/44", 2) + 6, 64, CHECK, "ok")
+        f.icon(GX0 + tw("AC 12/12", 2) + 6, 62, CHECK, "ok")
 
 
 def qa_rows(f, t, fixed=0.0):
@@ -305,16 +309,16 @@ def qa_rows(f, t, fixed=0.0):
 
 
 def sc_qa(f, t):
-    chrome(f, 2, 8, "QA DECIDE QUE PROBAR, Y LO PRUEBA.")
+    chrome(f, 2, 10, "QA EXPLORA LO QUE NADIE PREVIO.")
     qa_rows(f, t)
     if t > 0.75:
         f.text(M, 76, "DEFECTO ATRIBUIDO A SU WP, CON SECCION", "grey")
 
 
 def sc_fix(f, t):
-    chrome(f, 2, 9, "EL DEFECTO VUELVE A SU WP.")
+    chrome(f, 2, 11, "EL DEFECTO VUELVE A SU WP. MAX 2 VECES.")
     qa_rows(f, 1.0, fixed=1.0 if t > 0.7 else 0.0)
-    cmd = typed("RUN-WAVE 1 WP-02 --FIX", span(t, 0.1, 0.5))
+    cmd = typed("RUN-WAVE 1 WP-02 --FIX   1/2", span(t, 0.1, 0.5))
     f.rect(M, 72, W - M - 1, 84, "panel")
     f.text(M + 4, 76, "> " + cmd, "ink")
     if 0.5 < t < 0.7:
@@ -322,9 +326,9 @@ def sc_fix(f, t):
 
 
 def sc_result(f, t):
-    chrome(f, 2, 10, "OPUS PLANIFICA. SONNET CONSTRUYE.")
+    chrome(f, 2, 12, "OPUS PLANIFICA. SONNET CONSTRUYE.")
     f.text(M, 24, "PASS", "ok", 3)
-    stats = [("4", "WORK PACKAGES"), ("2", "OLAS"), ("44+40", "TESTS"), ("0", "ESCRITURAS AJENAS")]
+    stats = [("12", "AC EN VERDE"), ("4", "WORK PACKAGES"), ("2", "OLAS"), ("0", "ESCRITURAS AJENAS")]
     for k, (n, lab) in enumerate(stats):
         if t > 0.1 + k * 0.1:
             y = 48 + k * 8
@@ -337,12 +341,55 @@ def sc_result(f, t):
         f.text(120, 69, "EL COMMIT", "accent")
 
 
+def sc_acceptance(f, t):
+    chrome(f, 1, 4, "OLA 0: EL EXAMEN, ANTES QUE EL CODIGO.")
+    x = f.tag(M, 20, "SONNET", "ink")
+    f.text(x + 4, 22, "TEST-AUTHOR", "grey")
+    acs = ["AC-001  ACORTA URL VALIDA", "AC-002  RECHAZA NO HTTP", "AC-003  RESUELVE CODIGO",
+           "AC-004  CODIGO DESCONOCIDO"]
+    for k, a in enumerate(acs):
+        if t > 0.05 + k * 0.12:
+            y = 34 + k * 9
+            f.text(M + 10, y, a, "ink")
+            if t > 0.55:
+                f.icon(M, y, CROSS, "err")
+    if t > 0.6:
+        f.text(136, 34, "ROJO", "err", 2)
+        f.text(136, 48, "AUN NO HAY", "grey")
+        f.text(136, 55, "CODIGO", "grey")
+    if t > 0.75:
+        f.rect(M, 76, W - M - 1, 76, "line")
+        f.text(M, 80, "BLOQUEADOS PARA LOS IMPLEMENTERS", "accent")
+
+
+def sc_review(f, t):
+    chrome(f, 2, 9, "REVISION: SOLO LO QUE TIENE PRUEBA.")
+    x = f.tag(M, 22, "SONNET", "ink")
+    f.text(x + 4, 24, "REVISOR · SOLO LECTURA", "grey")
+    rows = [("SEGURIDAD", True), ("CORRECCION", True), ("CONTRATOS", True), ("MANTENIBILIDAD", None)]
+    for k, (name, ok) in enumerate(rows):
+        a0 = 0.08 + k * 0.16
+        if t < a0:
+            continue
+        y = 38 + k * 10
+        f.text(M + 10, y, name, "ink")
+        f.rect(M, y + 7, W - M - 1, y + 7, "line")
+        if t > a0 + 0.1:
+            if ok:
+                f.icon(M, y, CHECK, "ok")
+            else:
+                f.rect(M + 1, y + 2, M + 3, y + 3, "grey")
+                f.text(100, y, "1 HALLAZGO MEDIO", "grey")
+    if t > 0.8:
+        f.text(M, 80, "CONFIANZA > 80 %. CERO HALLAZGOS ES VALIDO.", "grey")
+
+
 SCENES = [
-    (sc_title, 30), (sc_request, 34), (sc_interview, 48), (sc_blueprint, 52),
-    (sc_wave1, 30), (sc_guard, 34), (sc_wave2, 40), (sc_integrate, 34),
-    (sc_qa, 40), (sc_fix, 36), (sc_result, 34),
+    (sc_title, 30), (sc_request, 30), (sc_interview, 44), (sc_blueprint, 52), (sc_acceptance, 42),
+    (sc_wave1, 28), (sc_guard, 32), (sc_wave2, 38), (sc_integrate, 34), (sc_review, 38),
+    (sc_qa, 36), (sc_fix, 34), (sc_result, 34),
 ]
-TOTAL_STEPS = 10
+TOTAL_STEPS = 12
 
 
 def palette_image():
