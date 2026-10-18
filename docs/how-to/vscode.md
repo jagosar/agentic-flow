@@ -1,56 +1,62 @@
-# How-to: Visual Studio Code
+# How-to: Visual Studio Code (y Cursor)
 
-Antes, lee los requisitos de [README.md](README.md).
+**Objetivo:** usar el flow desde la extensión oficial de Claude Code, revisando los cambios en el editor.
+**Estado:** sin probar. Esta guía sigue la documentación oficial de la extensión. El flow usa los mismos ficheros `.claude/` que el CLI.
+
+Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
+
+## Requisitos de este entorno
+
+- VS Code 1.94 o posterior. También funciona en Cursor.
+- Extensión **Claude Code**, de Anthropic (`anthropic.claude-code`).
+- **El CLI instalado aparte**, para el modo A. La extensión trae su propia copia del CLI para el panel de chat, pero no la pone en el `PATH`.
 
 ## 1. Instalar
 
-1. Extensiones (`Ctrl+Shift+X`) → busca **Claude Code** (editor: Anthropic) → Instalar.
-2. Inicia sesión desde el panel de la extensión con tu cuenta de Claude.
-3. Instala también el CLI si no lo tienes, porque lo necesita el modo paralelo A:
+1. Abre Extensiones (`Ctrl+Shift+X`, o `Cmd+Shift+X` en Mac), busca **Claude Code** y pulsa **Install**.
+2. Abre el panel con el icono **Spark**. Está en la barra de herramientas del editor (con un fichero abierto), en la Activity Bar o en **✻ Claude Code**, en la barra de estado.
+3. Pulsa **Sign in** y autoriza en el navegador con tu cuenta del plan. No necesitas API key.
 
-```bash
-npm install -g @anthropic-ai/claude-code
-```
-
-```bash
-claude --version
-```
-
-Mantenla actualizada (`claude update`): los alias `opus` y `sonnet` del flow apuntan a los modelos más recientes que conoce tu versión.
+**Resultado esperado:** el panel abierto y con sesión iniciada.
 
 ## 2. Abrir el proyecto
 
-`File → Open Folder` → la carpeta del repo, con `.claude/` commiteado. La extensión lee los mismos `.claude/commands`, `.claude/agents` y `.claude/settings.json` que el CLI.
+Usa `File → Open Folder` sobre la raíz del repo, donde está `.claude/`. Al escribir `/` en el panel, deberían aparecer `/architect`, `/implement` y `/qa`.
 
-## 3. Usarlo
-
-Abre el panel de Claude Code (icono en la barra lateral, o la paleta de comandos `Ctrl+Shift+P` → "Claude Code").
+## 3. Usar el flow
 
 ```
-/model opus
 /architect Quiero añadir exportación a PDF de las facturas
 ```
 
-- Responde a las preguntas del arquitecto en el panel.
+- No hace falta elegir modelo: cada comando fija el suyo. Para ver el modelo de la sesión, pulsa su nombre al pie de la caja de texto.
+- El indicador de modo de permisos, al pie de la caja de texto, funciona como en Desktop. Empieza con un modo que te pregunte.
 - Revisa `architecture.md` en el editor y apruébalo.
 
 ```
 /implement
 ```
 
-- Los cambios de los agentes aparecen como diffs en el editor. Los del modo A se escriben directamente en disco, así que míralos en **Source Control** (`Ctrl+Shift+G`).
-- Si prefieres ver la ejecución en bruto, abre la terminal integrada (`` Ctrl+` ``) y lanza las olas tú mismo:
-
-```bash
-python3 .claude/bin/agentic.py run-wave 1
-```
+- **Modo B:** pulsa el contador de agentes para abrir el **mapa de agentes**. Ahí ves cada subagente con su estado y su transcripción.
+- **Modo A:** los procesos escriben directamente en disco. Revisa los cambios en **Source Control** (`Ctrl+Shift+G`).
 
 ## 4. Revisar y commit
 
-- **Source Control** muestra cada fichero tocado. Abre `qa/report.md` para ver los defectos.
-- Haz el commit desde la propia vista de Source Control.
+- **Source Control** muestra cada fichero tocado. Abre `qa/report.md` para ver el resultado de QA.
+- Haz el commit desde Source Control. El push también lo haces tú.
 
-## Notas
+## Alternativa: el CLI en la terminal integrada
 
-- **Alternativa sin extensión:** ejecuta `claude` en la terminal integrada. Es el flujo de [terminal.md](terminal.md), con el editor al lado.
-- **Sin probar:** no he comprobado que las tarjetas de preguntas del arquitecto (AskUserQuestion) se vean igual en la extensión que en Desktop. Si no aparecen, el arquitecto hará las preguntas en texto y le respondes en el chat.
+Abre la terminal integrada (`` Ctrl+` ``) y sigue [terminal.md](terminal.md). Si arrancas `claude` desde ahí, se conecta con el editor para mostrar los diffs.
+
+## Problemas frecuentes
+
+| Síntoma | Solución |
+|---|---|
+| `/implement` siempre usa el modo B | Instala el CLI aparte y reinicia VS Code |
+| No aparecen los comandos del flow | Abre la carpeta raíz del repo, no una subcarpeta |
+| Las preguntas del arquitecto salen como texto en vez de opciones | Contesta en el chat: el arquitecto acepta respuestas en texto |
+
+## Referencias
+
+- [Claude Code en VS Code](https://code.claude.com/docs/en/vs-code)

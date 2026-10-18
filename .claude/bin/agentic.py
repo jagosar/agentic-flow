@@ -38,6 +38,7 @@ QA_DEFAULT_FILES = ["qa/"]
 # que Claude Code resuelve al Sonnet más reciente que conoce; no se puede cambiar por config ni por entorno.
 WORKER_MODEL = "sonnet"
 # El arquitecto usa siempre el último Opus (alias `opus`, en el frontmatter de /architect).
+# Los orquestadores (/implement y /qa) también van en el último Sonnet, desde su frontmatter.
 ARCHITECT_MODEL = "opus"
 DEFAULT_CONFIG = {
     "timeout_s": 1800,
@@ -235,10 +236,13 @@ def agent_model_errors(manifest):
         if model != WORKER_MODEL:
             errors.append(f"Agente '{name}': su frontmatter debe decir 'model: {WORKER_MODEL}' (el último Sonnet), "
                           f"no '{model}'.")
-    architect = ROOT / ".claude" / "commands" / "architect.md"
-    if architect.exists() and frontmatter_model(architect) != ARCHITECT_MODEL:
-        errors.append(f"/architect: su frontmatter debe decir 'model: {ARCHITECT_MODEL}' (el último Opus), "
-                      f"no '{frontmatter_model(architect)}'.")
+    for command, expected, label in (("architect", ARCHITECT_MODEL, "el último Opus"),
+                                     ("implement", WORKER_MODEL, "el último Sonnet"),
+                                     ("qa", WORKER_MODEL, "el último Sonnet")):
+        f = ROOT / ".claude" / "commands" / f"{command}.md"
+        if f.exists() and frontmatter_model(f) != expected:
+            errors.append(f"/{command}: su frontmatter debe decir 'model: {expected}' ({label}), "
+                          f"no '{frontmatter_model(f)}'.")
     return errors
 
 

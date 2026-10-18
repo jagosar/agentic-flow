@@ -1,6 +1,7 @@
 ---
+model: sonnet
 description: Orquestador. Valida architecture.md y lanza un implementer (último Sonnet) por work package, en paralelo por olas.
-argument-hint: "[número de ola opcional, p. ej. 2]"
+argument-hint: "[ola inicial] [modo A|modo B]"
 ---
 
 # Rol

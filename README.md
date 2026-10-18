@@ -6,8 +6,8 @@ Flow agéntico para Claude Code: un arquitecto (último Opus) define `architectu
 
 ```
 .claude/commands/architect.md    → /architect   (último Opus)
-.claude/commands/implement.md    → /implement   (orquestador: olas + integración + QA)
-.claude/commands/qa.md           → /qa          (solo QA)
+.claude/commands/implement.md    → /implement   (orquestador, último Sonnet: olas + integración + QA)
+.claude/commands/qa.md           → /qa          (solo QA, último Sonnet)
 .claude/agents/implementer.md    → subagente    (último Sonnet, uno por WP)
 .claude/agents/qa.md             → subagente    (último Sonnet)
 .claude/bin/agentic.py           → guardarraíles y lanzador paralelo
@@ -20,14 +20,14 @@ Flow agéntico para Claude Code: un arquitecto (último Opus) define `architectu
 2. Revisa y aprueba `architecture.md`.
 3. `/implement`: lanza las olas (cada WP de una ola en paralelo), integra y pasa QA.
 
-Requisitos: `python3`, `git` y Claude Code actualizado (`claude update`): los alias `opus` y `sonnet` apuntan a los modelos más recientes que conoce tu versión.
+Requisitos: macOS, Linux o WSL 2; `python3` ≥ 3.9; `git`; y el CLI de Claude Code actualizado (`curl -fsSL https://claude.ai/install.sh | bash`). Los alias `opus` y `sonnet` apuntan a los modelos más recientes que conoce tu versión.
 
 ## Paralelismo
 
 - **Modo A (CLI `claude` en el `PATH`):** `agentic.py run-wave N` lanza un `claude -p --agent implementer --model sonnet` por WP, todos a la vez y sin conectores MCP. El paralelismo es real y no depende del modelo.
 - **Modo B (sin CLI):** el orquestador lanza los subagentes con varias llamadas a Agent en un mismo mensaje.
 
-**Modelos:** el arquitecto usa **siempre el último Opus** (alias `opus`), y los implementadores y QA, **siempre el último Sonnet** (alias `sonnet`). Claude Code resuelve cada alias al modelo más reciente que conoce. No se pueden cambiar por configuración, y `validate` falla si `/architect` o algún agente orquestado declara otro modelo. Para recibir un modelo nuevo en cuanto salga, mantén Claude Code actualizado.
+**Modelos:** el arquitecto usa **siempre el último Opus** (alias `opus`), y el orquestador, los implementadores y QA, **siempre el último Sonnet** (alias `sonnet`). Claude Code resuelve cada alias al modelo más reciente que conoce. No se pueden cambiar por configuración, y `validate` falla si algún comando (`/architect`, `/implement`, `/qa`) o agente orquestado declara otro modelo. Para recibir un modelo nuevo en cuanto salga, mantén Claude Code actualizado.
 
 ## Guardarraíles
 

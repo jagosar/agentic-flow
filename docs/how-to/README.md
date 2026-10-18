@@ -1,83 +1,169 @@
-# How-to: desarrollo con agentes
+# How-to: desarrollo con agentes (agentic-flow)
 
-Guía común. Lee esta primero y luego la de tu entorno.
+> Revisado el 18-10-2026 con Claude Code 2.1.302 y la documentación oficial en [code.claude.com/docs](https://code.claude.com/docs/en/overview).
+> Lee esta página primero: tiene lo común a todos los entornos. Luego sigue la guía de tu entorno.
 
-| Entorno | Guía | Cuándo usarlo |
-|---|---|---|
-| Claude Code Desktop | [desktop.md](desktop.md) | Uso diario. Es el más cómodo para la entrevista del arquitecto. |
-| Visual Studio Code | [vscode.md](vscode.md) | Si ya programas en VS Code y quieres ver los diffs en el editor. |
-| Terminal (CLI) | [terminal.md](terminal.md) | Control total, scripts, servidores remotos por SSH. |
-| JetBrains (IntelliJ, PyCharm, WebStorm…) | [jetbrains.md](jetbrains.md) | Si tu IDE es JetBrains. |
-| Web e iOS | [web-ios.md](web-ios.md) | Lanzar o revisar trabajo desde el móvil, sin tu máquina. |
-| GitHub Actions (CI) | [ci-github-actions.md](ci-github-actions.md) | QA automático en cada pull request. |
+## Elige tu entorno
 
-## El flow en una imagen
+| Entorno | Guía | Úsalo para | Estado |
+|---|---|---|---|
+| Terminal (CLI) | [terminal.md](terminal.md) | Control total, scripts, SSH | **Probado**: pasada completa en modo A y en modo B |
+| Claude Code Desktop | [desktop.md](desktop.md) | Uso diario con interfaz gráfica | **Parcial**: scripts y agentes probados desde la app; la entrevista de `/architect` en la interfaz, no |
+| Visual Studio Code / Cursor | [vscode.md](vscode.md) | Trabajar con los diffs en el editor | Sin probar |
+| JetBrains | [jetbrains.md](jetbrains.md) | IntelliJ, PyCharm, WebStorm… | Sin probar |
+| Web e iOS (nube) | [web-ios.md](web-ios.md) | Lanzar o seguir trabajo sin tu máquina | Sin probar |
+| GitHub Actions | [ci-github-actions.md](ci-github-actions.md) | QA automático en cada pull request | Sin probar |
+
+## Cómo funciona
 
 ```
- tú ──► /architect ──► architecture.md ──► (tú apruebas)
-        último Opus       + wp-manifest
-                                │
-                           /implement
-                                │
-              ┌── ola 1 ────────┼────────────┐   en paralelo
-          implementer      implementer   implementer   último Sonnet
-            WP-01            WP-02          WP-03
+ tú ──► /architect ──────────► architecture.md ──► tú lo revisas y apruebas
+        último Opus             + wp-manifest
+                                     │
+                               /implement   (orquestador, último Sonnet)
+                                     │
+              ┌── ola 1 ─────────────┼──────────────┐   en paralelo
+          implementer           implementer     implementer   último Sonnet
+            WP-01                 WP-02           WP-03
               └── check-wave 1: ¿cada uno tocó solo lo suyo? ──┘
-                                │
-              ┌── ola 2 ... (depende de la ola 1)
-                                │
-                     integración (build + tests)
-                                │
-                             /qa  ──► qa/report.md   último Sonnet
-                                │
-            PASS: listo para commit   FAIL: defectos por WP
+                                     │
+              ┌── ola 2 … (solo lo que necesita código real de la ola 1)
+                                     │
+                       integración (build + tests completos)
+                                     │
+                     QA (último Sonnet) ──► qa/report.md
+                                     │
+              PASS: listo para commit      FAIL: defectos por WP
 ```
 
-## Los agentes
-
-| Agente | Fichero | Modelo | Qué hace | Qué no puede hacer |
+| Pieza | Fichero | Modelo | Hace | No puede |
 |---|---|---|---|---|
 | Arquitecto | `.claude/commands/architect.md` | Último Opus (`opus`) | Entrevista, diseña y escribe `architecture.md` | Escribir código de producción |
-| Orquestador | `.claude/commands/implement.md` | El de la sesión | Valida, lanza las olas, verifica e integra | Interpretar la arquitectura o resolver bloqueos |
-| Implementador | `.claude/agents/implementer.md` | Último Sonnet (`sonnet`) | Implementa un WP con sus tests unitarios | Tocar ficheros de otro WP, git, dependencias |
-| QA | `.claude/agents/qa.md` | Último Sonnet (`sonnet`) | Decide qué probar (contratos, integración, límites…), escribe esos tests en `qa/` y los ejecuta | Corregir código de producción |
+| Orquestador | `.claude/commands/implement.md` | Último Sonnet (`sonnet`) | Valida, lanza olas, verifica e integra | Interpretar la arquitectura o resolver bloqueos |
+| Implementador | `.claude/agents/implementer.md` | Último Sonnet (`sonnet`) | Implementa un WP con sus tests | Tocar ficheros ajenos, usar git o instalar dependencias |
+| QA | `.claude/agents/qa.md` + `/qa` | Último Sonnet (`sonnet`) | Decide qué probar, escribe tests en `qa/` y los ejecuta | Corregir código de producción |
 
-## Requisitos (todos los entornos)
+Los modelos están fijados por alias y no se pueden cambiar: `validate` falla si alguna pieza declara otro. Cada alias apunta al modelo más reciente que conoce tu versión de Claude Code, así que mantén Claude Code actualizado.
 
-- `git` y `python3` (3.9 o posterior).
-- Claude Code **actualizado** (`claude update`). Los alias `opus` y `sonnet` apuntan a los modelos más recientes que conoce tu versión, y con una versión antigua un modelo nuevo puede fallar con `does not support this model`.
-- El repo con `.claude/` y `.gitignore` de esta plantilla, commiteados.
-- La carpeta del proyecto marcada como de confianza: abre `claude` una vez en ella y acepta el aviso.
-- macOS o Linux. En Windows usa WSL, porque el script depende de `fcntl` y del comando `python3`.
-- **Para el modo paralelo A**: el CLI `claude` en el `PATH` y con sesión iniciada. Compruébalo con `claude --version` en una terminal normal. Si no está, `/implement` usa el modo B (subagentes dentro de la sesión).
+### Dos modos de ejecución
+
+- **Modo A (por defecto):** `agentic.py run-wave N` lanza un proceso `claude -p` por WP, todos a la vez. El paralelismo es real y no depende del modelo. Necesita el CLI `claude` en el `PATH`.
+- **Modo B:** si no hay CLI, como en la nube, el orquestador lanza subagentes con varias llamadas a Agent en un mismo mensaje. Claude Code admite por defecto hasta 20 subagentes simultáneos por sesión.
+
+`/implement` elige solo. Para forzar un modo: `/implement modo A` o `/implement modo B`.
+
+## Requisitos comunes
+
+1. **Plan:** Pro, Max, Team o Enterprise (o cuenta de Console). El plan gratuito no incluye Claude Code.
+2. **CLI de Claude Code instalado** (lo necesita el modo A en todos los entornos). La app de escritorio y la extensión de VS Code traen su propio Claude Code, pero eso no pone `claude` en tu `PATH`. Instalador recomendado (se actualiza solo):
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+3. **`git` y `python3` 3.9 o posterior.**
+4. **macOS, Linux o WSL 2.** Claude Code funciona en Windows nativo, pero `agentic.py` usa `fcntl`, que solo existe en POSIX. En Windows trabaja dentro de WSL.
+
+Comprueba el entorno:
+
+```bash
+claude --version
+```
+
+```bash
+claude doctor
+```
+
+```bash
+claude auth status
+```
+
+```bash
+python3 --version
+```
+
+Resultado esperado: una versión de Claude Code, `claude doctor` sin errores, `"authMethod": "claude.ai"` con tu `subscriptionType`, y Python 3.9 o posterior.
+
+## Instalar el flow en un proyecto
+
+**Proyecto nuevo**, a partir de la plantilla:
+
+```bash
+gh repo create mi-proyecto --template jagosar/agentic-flow --private --clone
+```
+
+**Proyecto existente:**
+
+```bash
+git clone --depth 1 https://github.com/jagosar/agentic-flow /tmp/agentic-flow
+```
+
+```bash
+cp -r /tmp/agentic-flow/.claude . && cat /tmp/agentic-flow/.gitignore >> .gitignore
+```
+
+```bash
+git add .claude .gitignore && git commit -m "Add agentic flow"
+```
+
+Después, abre `claude` una vez en la carpeta y **acepta el aviso de confianza**. Sin eso, Claude Code ignora el `permissions.allow` del proyecto. Los hooks y los `deny` se aplican igual.
+
+Comprobación:
+
+```bash
+python3 .claude/bin/agentic.py validate
+```
+
+Resultado esperado: `No existe .../architecture.md. Lanza /architect primero.`, que es lo correcto en un proyecto sin arquitectura. Cualquier mensaje sobre `model:` indica que alguna definición se ha modificado.
 
 ## Ciclo de trabajo
 
-1. **Diseño:** `/architect Quiero una API REST de reservas con...`. Responde a las rondas de preguntas.
-2. **Revisión:** lee `architecture.md`. Mira sobre todo la sección 6 (contratos) y la 8 (work packages). Si algo no te encaja, díselo al arquitecto en la misma sesión.
-3. **Commit del diseño** (recomendado): `git add architecture.md && git commit -m "Architecture: ..."`. Así cada ola parte de un punto limpio.
-4. **Implementación:** `/implement`. Al acabar lanza QA solo.
-5. **Defectos:**
-   - **De implementación:** relanza solo ese WP en modo corrección con `python3 .claude/bin/agentic.py run-wave <ola> WP-02 --fix` y después `/qa`.
-   - **De diseño:** vuelve a `/architect` con el informe de QA.
-6. **Commit final:** tú, o pídeselo a Claude. El push está bloqueado para los agentes y lo haces tú.
+1. **Diseño:** `/architect <petición>`. Incluye el objetivo, el alcance y las restricciones que ya conozcas. La entrevista afina el resto.
+2. **Revisión:** lee `architecture.md`, sobre todo la sección 6 (contratos) y la 8 (work packages y olas). Si todas las olas tienen un solo WP, pide "contratos primero" para tener paralelismo.
+3. **Commit del diseño:**
 
-## Comandos del script
+   ```bash
+   git add architecture.md && git commit -m "Architecture: <tema>"
+   ```
+
+4. **Implementación:** `/implement`. Al acabar, ejecuta la integración y QA.
+5. **Defectos de QA:**
+   - **De implementación:** relanza solo ese WP en modo corrección y vuelve a pasar QA.
+
+     ```bash
+     python3 .claude/bin/agentic.py run-wave <ola> <WP> --fix
+     ```
+
+   - **De diseño:** vuelve a `/architect` con el informe.
+6. **Commit final.** El push lo haces tú, porque está bloqueado para los agentes.
+
+## Buenas prácticas
+
+- **Un `CLAUDE.md` en la raíz** con las convenciones del repo (estilo, comandos de test, prohibiciones). Todos los agentes lo leen, así que deja de ser necesario repetirlo en cada `architecture.md`.
+- **Contratos exactos.** El paralelismo depende de la sección 6. Un contrato vago no falla en la ola: falla en la integración.
+- **Una feature por sesión**, cada una en su rama o worktree, con su propio `architecture.md`.
+- **No edites a mano los ficheros de un WP mientras corre su ola:** `check-wave` lo marcaría como violación.
+- **Commit después de cada ola en OK** si el trabajo es largo, para tener un punto al que volver.
+- **En Pro, vigila `/usage`.** Varios agentes en paralelo gastan deprisa los límites del plan. Si llegas al límite a mitad de una ola, relanza solo los WP que fallaron (`run-wave N WP-…`) cuando se renueve.
+
+## Referencia del script
 
 ```bash
-python3 .claude/bin/agentic.py validate          # manifiesto coherente
-python3 .claude/bin/agentic.py run-wave 1        # ola 1 en paralelo
-python3 .claude/bin/agentic.py run-wave 1 WP-02  # solo un WP
+python3 .claude/bin/agentic.py validate                # manifiesto y modelos coherentes
+python3 .claude/bin/agentic.py run-wave 1              # ola 1 en paralelo (modo A)
+python3 .claude/bin/agentic.py run-wave 1 WP-02        # solo un WP
 python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # corregir sus defectos de QA
-python3 .claude/bin/agentic.py run-qa            # agente QA
-python3 .claude/bin/agentic.py check-wave 1      # verificación de propiedad
+python3 .claude/bin/agentic.py run-qa                  # agente QA (modo A)
+python3 .claude/bin/agentic.py snapshot 1              # antes de una ola en modo B
+python3 .claude/bin/agentic.py check-wave 1            # verificación de propiedad
 ```
 
-Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>.log`.
+- **Códigos de salida:** `0` si todo está bien, `1` si hay un error de uso o el manifiesto no es válido, `3` si hay que revisar.
+- **Informes de cada agente:** `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>.log`.
 
-## Modelos, tiempo y suscripción
+## Configuración
 
-`.claude/agentic.json` fija lo que usa el lanzador (modos A y QA):
+`.claude/agentic.json`:
 
 ```json
 {
@@ -86,16 +172,9 @@ Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>
 }
 ```
 
-- `auth: "subscription"` (por defecto): los agentes usan tu sesión de Claude, es decir, tu suscripción. El lanzador les quita `ANTHROPIC_API_KEY` y `ANTHROPIC_AUTH_TOKEN` aunque estén en tu entorno, para que no consuman créditos de API sin que te des cuenta. Usa `"inherit"` solo si quieres que los agentes usen la API key (por ejemplo, en CI).
-- `timeout_s`: tiempo máximo de cada etapa. Al cumplirse, los agentes que sigan vivos se terminan y quedan como `TIMEOUT`. Es el freno si un agente se atasca.
-- Para cambiar el timeout puntualmente sin tocar el fichero: `AGENTIC_TIMEOUT_S`.
-- **Modelos:** los implementadores y QA usan siempre el último Sonnet (alias `sonnet`), tanto en el modo A (`--model sonnet`) como en el B (`model: sonnet` en `.claude/agents/*.md`). No se puede cambiar por config ni por entorno, y `validate` rechaza cualquier agente orquestado que declare otro modelo, incluidos los agentes especializados del campo `agent`. El alias apunta al Sonnet más reciente que conoce tu versión de Claude Code: actualízala (`claude update`) para recibir los nuevos. El arquitecto usa siempre el último Opus (`model: opus` en `.claude/commands/architect.md`), y `validate` también lo comprueba.
-
-**Consumo de la suscripción:** cada agente cuenta contra los límites de uso de tu plan, y en paralelo los gastan más deprisa. Ten en cuenta que:
-
-- El arquitecto (Opus) consume más que los agentes orquestados (Sonnet).
-- El modo B consume más que el A, porque los informes de los subagentes pasan por el contexto del orquestador.
-- Si llegas al límite, los agentes que estén en marcha fallan y la etapa queda en `REVISAR`. Relanza esos WP con `run-wave N WP-…` cuando se renueve el límite.
+- **`timeout_s`:** tiempo máximo de cada etapa. Los agentes que sigan vivos al cumplirse se terminan y quedan como `TIMEOUT`. Para cambiarlo puntualmente: `AGENTIC_TIMEOUT_S`.
+- **`auth: "subscription"`:** los agentes usan tu suscripción. En modo `-p`, Claude Code usa `ANTHROPIC_API_KEY` siempre que exista, así que el lanzador quita `ANTHROPIC_API_KEY` y `ANTHROPIC_AUTH_TOKEN` del entorno de los agentes. Usa `"inherit"` solo si quieres facturar contra la API.
+- **Modelos:** no se configuran. Están fijados por alias (ver arriba).
 
 ## Tests del propio flow
 
@@ -103,19 +182,28 @@ Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 42 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI.
+Son 43 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
 
 ## Problemas frecuentes
 
 | Síntoma | Causa | Solución |
 |---|---|---|
-| `does not support this model; version 2.1.280 or newer is required` | CLI antiguo | `claude update`. Si da un error de permisos y usas nvm, puede que la shell esté usando el npm del sistema: `$(dirname $(which node))/npm install -g @anthropic-ai/claude-code@latest` |
-| `Ignoring 1 permissions.allow entry ... this workspace has not been trusted` | La carpeta del proyecto aún no es de confianza para Claude Code | Abre `claude` una vez en esa carpeta y acepta el aviso. Los hooks y los `deny` se aplican igual; lo que se pierde es el `allow` que evita las preguntas |
-| Todas las olas tienen un solo WP | El arquitecto eligió "capas reales" | Pídele "contratos primero" en la entrevista, o explícale que quieres más paralelismo |
-| Aviso `isn't described by this version's model catalog` | CLI sin el modelo en su catálogo | Funciona igual; actualiza para quitar el aviso |
-| `RESULTADO: REVISAR` sin `STATUS` | El proceso hijo falló | Lee `.claude/state/runs/<ID>.log` |
-| `FUERA DE PROPIEDAD` | Un agente escribió fuera de su zona, normalmente por Bash | Revisa `git diff` de ese fichero y deshazlo o asígnalo en el manifiesto |
-| `[agentic guard] ... no posee ...` | El hook hizo su trabajo | Si el fichero debía ser de ese WP, corrige el manifiesto con `/architect` |
-| Un subagente no puede escribir: "ejecuta claim" | Modo B y el agente no se registró | Debería ocurrir solo una vez; el agente se registra y continúa |
-| `Manifiesto inválido` | Solapes, dependencias de la misma ola, rutas raras | Vuelve a `/architect` con el error |
-| Las olas van una detrás de otra en el modo B | El orquestador no agrupó las llamadas | Usa el modo A (CLI en el `PATH`) |
+| `does not support this model; version X or newer is required` | CLI antiguo para un modelo nuevo | `claude update`. Con npm: `npm install -g @anthropic-ai/claude-code@latest`. Con nvm, usa el npm de nvm, no el del sistema |
+| `Ignoring 1 permissions.allow entry ... not been trusted` | La carpeta no es de confianza | Abre `claude` una vez en ella y acepta el aviso |
+| `Manifiesto inválido: ... model: sonnet` u `opus` | Alguien fijó otro modelo en un agente o comando | Restaura `model: sonnet` (agentes, `/implement`, `/qa`) o `model: opus` (`/architect`) |
+| `RESULTADO: REVISAR` sin `STATUS` | El proceso hijo falló (límite de uso, red, autenticación) | Lee `.claude/state/runs/<ID>.log` |
+| `TIMEOUT` | La etapa superó `timeout_s` | Sube `timeout_s` o divide el WP |
+| `FUERA DE PROPIEDAD` | Un agente escribió fuera de su zona, o un artefacto de build no está ignorado | Revisa `git diff`. Si es un artefacto (`dist/`…), añádelo a `ignore` en el manifiesto |
+| `[agentic guard] ... no posee ...` | El hook hizo su trabajo | Si ese fichero debía ser del WP, corrige el manifiesto con `/architect` |
+| Todas las olas tienen un solo WP | El arquitecto eligió capas reales | Pídele "contratos primero" |
+| Un WP relanzado devuelve `BLOCKER` hablando de defectos que no son suyos | Usaste `--fix` con un informe de QA viejo | Relánzalo sin `--fix`, o ejecuta `run-qa` antes |
+| Las olas van en serie en el modo B | El orquestador no agrupó las llamadas a Agent | Usa el modo A, o pídeselo de nuevo explícitamente |
+
+## Referencias oficiales
+
+- [Instalación y actualización](https://code.claude.com/docs/en/setup)
+- [Autenticación y precedencia de credenciales](https://code.claude.com/docs/en/authentication)
+- [Subagentes](https://code.claude.com/docs/en/sub-agents)
+- [Comandos y skills](https://code.claude.com/docs/en/slash-commands)
+- [Hooks](https://code.claude.com/docs/en/hooks)
+- [Buenas prácticas de Claude Code](https://code.claude.com/docs/en/best-practices)

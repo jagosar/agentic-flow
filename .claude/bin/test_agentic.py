@@ -332,6 +332,16 @@ class LauncherTests(Base):
         self.assertEqual(agentic.frontmatter_model(root / ".claude/commands/architect.md"), "opus")
         for name in ("implementer", "qa"):
             self.assertEqual(agentic.frontmatter_model(root / f".claude/agents/{name}.md"), "sonnet")
+        for name in ("implement", "qa"):
+            self.assertEqual(agentic.frontmatter_model(root / f".claude/commands/{name}.md"), "sonnet")
+
+    def test_orquestador_debe_ser_sonnet(self):
+        cmds = self.repo.dir / ".claude/commands"
+        cmds.mkdir(parents=True, exist_ok=True)
+        (cmds / "implement.md").write_text("---\ndescription: x\nmodel: opus\n---\nx")
+        r = self.repo.run("validate")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("/implement", r.stderr)
 
     def test_agente_especializado_debe_existir_y_ser_sonnet(self):
         m = json.loads(json.dumps(MANIFEST))

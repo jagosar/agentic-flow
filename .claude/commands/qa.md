@@ -1,4 +1,5 @@
 ---
+model: sonnet
 description: Lanza el agente QA (último Sonnet) sobre el sistema integrado. Decide qué tests hacen falta, los ejecuta y reporta defectos por WP.
 ---
 
