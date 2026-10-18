@@ -37,6 +37,8 @@ QA_DEFAULT_FILES = ["qa/"]
 # Todos los agentes orquestados (implementadores y QA) usan siempre el último Sonnet. `sonnet` es el alias
 # que Claude Code resuelve al Sonnet más reciente que conoce; no se puede cambiar por config ni por entorno.
 WORKER_MODEL = "sonnet"
+# El arquitecto usa siempre el último Opus (alias `opus`, en el frontmatter de /architect).
+ARCHITECT_MODEL = "opus"
 DEFAULT_CONFIG = {
     "timeout_s": 1800,
     # "subscription": los agentes usan tu sesión de Claude (suscripción) aunque haya una API key en el entorno.
@@ -212,8 +214,16 @@ def validate(manifest):
 FRONTMATTER_MODEL_RE = re.compile(r"\A---\s*\n(.*?)\n---", re.S)
 
 
+def frontmatter_model(path):
+    fm = FRONTMATTER_MODEL_RE.match(path.read_text(encoding="utf-8"))
+    if not fm:
+        return None
+    m = re.search(r"^model:\s*(\S+)\s*$", fm.group(1), re.M)
+    return m.group(1).strip("\"'") if m else None
+
+
 def agent_model_errors(manifest):
-    """Cada agente orquestado debe declarar `model: sonnet` (el último Sonnet) en su frontmatter."""
+    """Agentes orquestados en el último Sonnet y arquitecto en el último Opus, declarados con su alias."""
     errors = []
     names = {"implementer", "qa"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
     for name in sorted(names):
@@ -221,14 +231,14 @@ def agent_model_errors(manifest):
         if not f.exists():
             errors.append(f"Agente '{name}': no existe {f.relative_to(ROOT)}.")
             continue
-        fm = FRONTMATTER_MODEL_RE.match(f.read_text(encoding="utf-8"))
-        model = None
-        if fm:
-            m = re.search(r"^model:\s*(\S+)\s*$", fm.group(1), re.M)
-            model = m.group(1).strip("\"'") if m else None
+        model = frontmatter_model(f)
         if model != WORKER_MODEL:
             errors.append(f"Agente '{name}': su frontmatter debe decir 'model: {WORKER_MODEL}' (el último Sonnet), "
                           f"no '{model}'.")
+    architect = ROOT / ".claude" / "commands" / "architect.md"
+    if architect.exists() and frontmatter_model(architect) != ARCHITECT_MODEL:
+        errors.append(f"/architect: su frontmatter debe decir 'model: {ARCHITECT_MODEL}' (el último Opus), "
+                      f"no '{frontmatter_model(architect)}'.")
     return errors
 
 

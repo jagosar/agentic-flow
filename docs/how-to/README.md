@@ -15,7 +15,7 @@ Guía común. Lee esta primero y luego la de tu entorno.
 
 ```
  tú ──► /architect ──► architecture.md ──► (tú apruebas)
-          Opus 5.5        + wp-manifest
+        último Opus       + wp-manifest
                                 │
                            /implement
                                 │
@@ -37,7 +37,7 @@ Guía común. Lee esta primero y luego la de tu entorno.
 
 | Agente | Fichero | Modelo | Qué hace | Qué no puede hacer |
 |---|---|---|---|---|
-| Arquitecto | `.claude/commands/architect.md` | Opus 5.5 | Entrevista, diseña y escribe `architecture.md` | Escribir código de producción |
+| Arquitecto | `.claude/commands/architect.md` | Último Opus (`opus`) | Entrevista, diseña y escribe `architecture.md` | Escribir código de producción |
 | Orquestador | `.claude/commands/implement.md` | El de la sesión | Valida, lanza las olas, verifica e integra | Interpretar la arquitectura o resolver bloqueos |
 | Implementador | `.claude/agents/implementer.md` | Último Sonnet (`sonnet`) | Implementa un WP con sus tests unitarios | Tocar ficheros de otro WP, git, dependencias |
 | QA | `.claude/agents/qa.md` | Último Sonnet (`sonnet`) | Decide qué probar (contratos, integración, límites…), escribe esos tests en `qa/` y los ejecuta | Corregir código de producción |
@@ -45,7 +45,7 @@ Guía común. Lee esta primero y luego la de tu entorno.
 ## Requisitos (todos los entornos)
 
 - `git` y `python3` (3.9 o posterior).
-- Claude Code **2.1.280 o posterior** para Opus 5.5. Con versiones anteriores, el lanzador falla con `does not support this model`. Actualiza con `claude update`.
+- Claude Code **actualizado** (`claude update`). Los alias `opus` y `sonnet` apuntan a los modelos más recientes que conoce tu versión, y con una versión antigua un modelo nuevo puede fallar con `does not support this model`.
 - El repo con `.claude/` y `.gitignore` de esta plantilla, commiteados.
 - La carpeta del proyecto marcada como de confianza: abre `claude` una vez en ella y acepta el aviso.
 - macOS o Linux. En Windows usa WSL, porque el script depende de `fcntl` y del comando `python3`.
@@ -89,7 +89,7 @@ Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>
 - `auth: "subscription"` (por defecto): los agentes usan tu sesión de Claude, es decir, tu suscripción. El lanzador les quita `ANTHROPIC_API_KEY` y `ANTHROPIC_AUTH_TOKEN` aunque estén en tu entorno, para que no consuman créditos de API sin que te des cuenta. Usa `"inherit"` solo si quieres que los agentes usen la API key (por ejemplo, en CI).
 - `timeout_s`: tiempo máximo de cada etapa. Al cumplirse, los agentes que sigan vivos se terminan y quedan como `TIMEOUT`. Es el freno si un agente se atasca.
 - Para cambiar el timeout puntualmente sin tocar el fichero: `AGENTIC_TIMEOUT_S`.
-- **Modelos:** los implementadores y QA usan siempre el último Sonnet (alias `sonnet`), tanto en el modo A (`--model sonnet`) como en el B (`model: sonnet` en `.claude/agents/*.md`). No se puede cambiar por config ni por entorno, y `validate` rechaza cualquier agente orquestado que declare otro modelo, incluidos los agentes especializados del campo `agent`. El alias apunta al Sonnet más reciente que conoce tu versión de Claude Code: actualízala (`claude update`) para recibir los nuevos. El arquitecto sigue en Opus 5.5 (frontmatter de `.claude/commands/architect.md`).
+- **Modelos:** los implementadores y QA usan siempre el último Sonnet (alias `sonnet`), tanto en el modo A (`--model sonnet`) como en el B (`model: sonnet` en `.claude/agents/*.md`). No se puede cambiar por config ni por entorno, y `validate` rechaza cualquier agente orquestado que declare otro modelo, incluidos los agentes especializados del campo `agent`. El alias apunta al Sonnet más reciente que conoce tu versión de Claude Code: actualízala (`claude update`) para recibir los nuevos. El arquitecto usa siempre el último Opus (`model: opus` en `.claude/commands/architect.md`), y `validate` también lo comprueba.
 
 **Consumo de la suscripción:** cada agente cuenta contra los límites de uso de tu plan, y en paralelo los gastan más deprisa. Ten en cuenta que:
 
@@ -103,7 +103,7 @@ Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 40 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI.
+Son 42 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI.
 
 ## Problemas frecuentes
 

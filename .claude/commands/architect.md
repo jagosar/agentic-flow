@@ -1,7 +1,7 @@
 ---
 description: Arquitecto senior. Entrevista al usuario y escribe architecture.md, el único contrato que usarán los implementadores.
 argument-hint: <qué quieres desarrollar o mejorar>
-model: claude-opus-5-5
+model: opus
 ---
 
 # Rol

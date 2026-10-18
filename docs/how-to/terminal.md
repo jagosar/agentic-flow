@@ -21,7 +21,7 @@ cd ~/code/mi-proyecto
 ```
 
 ```bash
-claude --model claude-opus-5-5
+claude --model opus
 ```
 
 Dentro de la sesión:

@@ -315,6 +315,24 @@ class LauncherTests(Base):
         self.assertIn("model: sonnet", r.stderr)
         self.assertFalse((self.logs / "WP-01.args").exists())
 
+    def test_arquitecto_debe_ser_opus(self):
+        cmds = self.repo.dir / ".claude/commands"
+        cmds.mkdir(parents=True, exist_ok=True)
+        (cmds / "architect.md").write_text("---\ndescription: x\nmodel: opus\n---\nx")
+        self.assertEqual(self.repo.run("validate").returncode, 0)
+        (cmds / "architect.md").write_text("---\ndescription: x\nmodel: claude-opus-5-5\n---\nx")
+        r = self.repo.run("validate")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("último Opus", r.stderr)
+
+    def test_definiciones_reales_usan_alias(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        import agentic
+        root = SCRIPT.parents[2]
+        self.assertEqual(agentic.frontmatter_model(root / ".claude/commands/architect.md"), "opus")
+        for name in ("implementer", "qa"):
+            self.assertEqual(agentic.frontmatter_model(root / f".claude/agents/{name}.md"), "sonnet")
+
     def test_agente_especializado_debe_existir_y_ser_sonnet(self):
         m = json.loads(json.dumps(MANIFEST))
         m["work_packages"][0]["agent"] = "frontend"

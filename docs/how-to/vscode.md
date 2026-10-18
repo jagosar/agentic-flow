@@ -16,7 +16,7 @@ npm install -g @anthropic-ai/claude-code
 claude --version
 ```
 
-La versión debe ser 2.1.280 o posterior.
+Mantenla actualizada (`claude update`): los alias `opus` y `sonnet` del flow apuntan a los modelos más recientes que conoce tu versión.
 
 ## 2. Abrir el proyecto
 
@@ -27,7 +27,7 @@ La versión debe ser 2.1.280 o posterior.
 Abre el panel de Claude Code (icono en la barra lateral, o la paleta de comandos `Ctrl+Shift+P` → "Claude Code").
 
 ```
-/model claude-opus-5-5
+/model opus
 /architect Quiero añadir exportación a PDF de las facturas
 ```
 

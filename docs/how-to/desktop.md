@@ -11,7 +11,7 @@ Antes, lee los requisitos de [README.md](README.md).
 
 1. Abre la app de Claude → pestaña **Code**.
 2. Nueva sesión → elige la carpeta del repo. Si la app te ofrece trabajar en un worktree, puedes aceptar: el flow funciona igual.
-3. En el selector de modelo, elige **Opus 5.5**. `/architect` ya fuerza Opus 5.5 desde su frontmatter, pero el orquestador usa el modelo de la sesión.
+3. En el selector de modelo, elige el **Opus más reciente**. `/architect` ya fuerza el último Opus desde su frontmatter (`model: opus`), pero el orquestador usa el modelo de la sesión.
 4. Modo de permisos: **Ask** para la primera vez. Cuando conozcas el flow, **Auto-accept edits** ahorra clics al arquitecto.
 
 ## 3. Diseñar

@@ -19,7 +19,7 @@ npm install -g @anthropic-ai/claude-code
 3. A partir de ahí, el flujo es el de [terminal.md](terminal.md):
 
 ```
-/model claude-opus-5-5
+/model opus
 /architect <tu petición>
 /implement
 ```
