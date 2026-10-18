@@ -67,6 +67,22 @@ Para cada WP:
 - Contratos que consume (referencias a la sección 6)
 - Criterios de aceptación verificables, con el comando de test que los comprueba
 
+Al final de la sección, el manifiesto que leen los guardarraíles (bloque obligatorio, etiqueta exacta `json wp-manifest`):
+
+    ```json wp-manifest
+    {
+      "allow_bash": ["Bash(npm test:*)", "Bash(npx tsc:*)"],
+      "work_packages": [
+        {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/types.ts", "tests/types.test.ts"]},
+        {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": ["src/api/"]}
+      ]
+    }
+    ```
+
+- `files`: rutas relativas al repo. Una ruta que acaba en `/` posee todo el directorio. Debe coincidir con la lista de ficheros del WP.
+- `allow_bash`: los únicos comandos que los implementadores pueden ejecutar sin pedir permiso (build, lint, test de la sección 3). Mínimos.
+- Ningún WP puede poseer `architecture.md` ni nada bajo `.claude/`.
+
 ## 9. Estrategia de tests
 Qué se prueba en cada WP, frameworks, fixtures, cómo se ejecuta todo al final.
 
@@ -86,6 +102,7 @@ Comprueba y corrige hasta que todo se cumpla:
 3. **Olas coherentes.** Ningún WP depende de otro de su misma ola o de una posterior.
 4. **Test del implementador ciego.** Para cada WP, ponte en el lugar de un desarrollador que solo tiene este documento y el repo. ¿Puede terminarlo sin preguntar nada? Si la respuesta es no, completa el documento.
 5. **Aceptación verificable.** Cada criterio se comprueba con un comando, no con una opinión.
+6. **Manifiesto válido.** Tras escribir el fichero, ejecuta `python3 .claude/bin/agentic.py validate` y corrige hasta que diga "Manifiesto válido".
 
 ## 5. Cierre
 
