@@ -1,42 +1,46 @@
 # agentic-flow
 
-Flow agéntico para Claude Code: un arquitecto (Opus 5.5) define `architecture.md` y varios implementadores (Sonnet 5.5) desarrollan en paralelo usando solo ese documento.
+Flow agéntico para Claude Code: un arquitecto (Opus 5.5) define `architecture.md`, varios implementadores (Sonnet 5.5) desarrollan en paralelo usando solo ese documento y un agente QA (Opus 5.5) decide qué probar y valida el resultado.
+
+**Guías por entorno:** [docs/how-to/](docs/how-to/README.md) (Desktop, VS Code, terminal, JetBrains, web/iOS, GitHub Actions).
 
 ```
-.claude/commands/architect.md    → /architect  (Opus 5.5)
-.claude/commands/implement.md    → /implement  (orquestador)
-.claude/agents/implementer.md    → subagente   (Sonnet 5.5, uno por WP)
+.claude/commands/architect.md    → /architect   (Opus 5.5)
+.claude/commands/implement.md    → /implement   (orquestador: olas + integración + QA)
+.claude/commands/qa.md           → /qa          (solo QA)
+.claude/agents/implementer.md    → subagente    (Sonnet 5.5, uno por WP)
+.claude/agents/qa.md             → subagente    (Opus 5.5)
 .claude/bin/agentic.py           → guardarraíles y lanzador paralelo
-.claude/settings.json            → hook PreToolUse y reglas deny
+.claude/settings.json            → hook PreToolUse y reglas allow/deny
 ```
 
 ## Uso
 
 1. `/architect <qué quieres desarrollar o mejorar>`: entrevista por rondas y escribe `architecture.md` con un manifiesto `json wp-manifest`.
 2. Revisa y aprueba `architecture.md`.
-3. `/implement`: lanza las olas. Cada WP de una ola corre en paralelo.
+3. `/implement`: lanza las olas (cada WP de una ola en paralelo), integra y pasa QA.
 
-Requisitos: `python3` y `git` en el entorno.
+Requisitos: `python3`, `git` y Claude Code 2.1.280 o posterior (para Opus 5.5).
 
 ## Paralelismo
 
-- **Modo A (Desktop / CLI):** `python3 .claude/bin/agentic.py run-wave N` lanza un `claude -p --agent implementer --model claude-sonnet-5-5` por WP, todos a la vez. El paralelismo es real y no depende del modelo.
-- **Modo B (sin CLI, p. ej. nube):** el orquestador lanza los subagentes con varias llamadas a Agent en un mismo mensaje.
+- **Modo A (CLI `claude` en el `PATH`):** `agentic.py run-wave N` lanza un `claude -p --agent implementer --model claude-sonnet-5-5` por WP, todos a la vez y sin conectores MCP. El paralelismo es real y no depende del modelo.
+- **Modo B (sin CLI):** el orquestador lanza los subagentes con varias llamadas a Agent en un mismo mensaje.
 
 ## Guardarraíles
 
 | Qué | Cómo |
 |---|---|
-| Un WP solo escribe sus ficheros | Hook `PreToolUse` sobre Write/Edit, contra el manifiesto |
-| Sin git, sin dependencias nuevas, sin lanzar otras sesiones de Claude | Hook `PreToolUse` sobre Bash, solo dentro de un WP |
+| Cada WP solo escribe sus ficheros; QA solo escribe en `qa/` | Hook `PreToolUse` sobre Write/Edit, contra el manifiesto |
+| Sin git, sin dependencias nuevas, sin lanzar otras sesiones de Claude | Hook `PreToolUse` sobre Bash, dentro de un WP o de QA |
 | Sin push ni borrados masivos | `permissions.deny` en `settings.json`, para todos |
 | Comandos permitidos mínimos | `allow_bash` del manifiesto (modo A) |
-| Comprobación final de propiedad | `snapshot` + `check-wave`: cualquier fichero cambiado que no pertenezca a un WP de la ola hace fallar la ola |
-| Manifiesto coherente | `validate`: propietarios únicos, olas y dependencias |
+| Comprobación de propiedad al cerrar cada etapa | `snapshot` + `check-wave`: cualquier fichero cambiado fuera de su propietario hace fallar la etapa |
+| Manifiesto coherente | `validate`: propietarios únicos (QA incluido), olas y dependencias |
 
-Limitación: un implementador podría escribir con Bash (`echo > fichero`) saltándose el hook de Write. En modo A solo puede ejecutar los comandos de `allow_bash`, y en los dos modos `check-wave` lo detecta al cerrar la ola.
+Limitación: un agente podría escribir con Bash (`echo > fichero`) saltándose el hook de Write. En modo A solo puede ejecutar los comandos de `allow_bash`, y en los dos modos `check-wave` lo detecta al cerrar la etapa.
 
 ## En otros proyectos
 
 - Proyecto nuevo: "Use this template" en GitHub.
-- Proyecto existente: copia `.claude/` y `.gitignore` (añade `.claude/state/`) y haz commit en la rama que vayas a usar (las sesiones de iOS solo ven lo commiteado).
+- Proyecto existente: copia `.claude/` y la línea `.claude/state/` del `.gitignore` y haz commit en la rama que vayas a usar (las sesiones de iOS solo ven lo commiteado).

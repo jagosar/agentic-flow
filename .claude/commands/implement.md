@@ -61,6 +61,10 @@ Para cada ola N, en orden:
 
 Cuando todas las olas estén en OK, ejecuta los comandos completos de build, lint y test de las secciones 3 y 9.
 
-## 4. Informe final
+## 4. QA
 
-Tabla con: WP, ola, estado, ficheros tocados, resultado de tests. Después, los bloqueos o fallos de integración, cada uno con la sección de `architecture.md` que habría que cambiar. Si hay que cambiar la arquitectura, el cambio se hace con `/architect`, no aquí.
+Si la integración pasa, sigue los pasos de `.claude/commands/qa.md`: lanza el agente `qa` en el mismo modo (A o B) que usaste para las olas. Si la integración falla, no lances QA y ve directo al informe.
+
+## 5. Informe final
+
+Tabla con: WP, ola, estado, ficheros tocados, resultado de tests. Después, el estado de QA y sus defectos agrupados por WP. Después, los bloqueos o fallos de integración, cada uno con la sección de `architecture.md` que habría que cambiar. Si hay que cambiar la arquitectura, el cambio se hace con `/architect`, no aquí.

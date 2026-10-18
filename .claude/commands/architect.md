@@ -82,9 +82,11 @@ Al final de la sección, el manifiesto que leen los guardarraíles (bloque oblig
 - `files`: rutas relativas al repo. Una ruta que acaba en `/` posee todo el directorio. Debe coincidir con la lista de ficheros del WP.
 - `allow_bash`: los únicos comandos que los implementadores pueden ejecutar sin pedir permiso (build, lint, test de la sección 3). Mínimos.
 - Ningún WP puede poseer `architecture.md` ni nada bajo `.claude/`.
+- `qa` (opcional): la zona del agente QA, por ejemplo `"qa": {"files": ["qa/"], "allow_bash": []}`. Si no lo pones, se usa `qa/`. Su zona no puede solaparse con la de ningún WP. Su `allow_bash` se suma al general, para herramientas que solo usa QA (cobertura, e2e).
+- `agent` (opcional, por WP): el subagente que lo implementa. Por defecto, `implementer`.
 
 ## 9. Estrategia de tests
-Qué se prueba en cada WP, frameworks, fixtures, cómo se ejecuta todo al final.
+Qué se prueba en cada WP (unitario, dentro de sus ficheros), frameworks, fixtures, cómo se ejecuta todo al final. Qué espera validar el agente QA tras la integración: flujos de punta a punta, contratos y requisitos no funcionales relevantes. QA decide el detalle; tú fijas el alcance y las herramientas disponibles.
 
 ## 10. Decisiones
 Cada decisión tomada, con alternativa descartada y motivo. Incluye las que tomaste tú sin preguntar.
