@@ -2,6 +2,10 @@
 
 Flow agéntico para Claude Code: un arquitecto (último Opus) define `architecture.md`, varios implementadores desarrollan en paralelo usando solo ese documento y un agente QA decide qué probar y valida el resultado.
 
+<p align="center">
+  <img src="docs/assets/flow.gif" alt="Animación pixel art del flow: tú describes la idea, el arquitecto (Opus) pregunta y escribe architecture.md, tú apruebas, el orquestador (Sonnet) reparte en olas, los implementers trabajan en paralelo, el hook bloquea escrituras ajenas, check-wave verifica, la ola 2 usa el código real, se integra, QA encuentra un defecto, se corrige con --fix y queda listo para commit." width="768">
+</p>
+
 **Guías por entorno:** [docs/how-to/](docs/how-to/README.md) (Desktop, VS Code, terminal, JetBrains, web/iOS, GitHub Actions).
 
 ```

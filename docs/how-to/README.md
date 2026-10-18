@@ -16,6 +16,10 @@
 
 ## Cómo funciona
 
+![El flow de principio a fin](../assets/flow.gif)
+
+La animación se genera con `python3 docs/assets/make_flow_gif.py` (requiere Pillow).
+
 ```
  tú ──► /architect ──────────► architecture.md ──► tú lo revisas y apruebas
         último Opus             + wp-manifest
