@@ -1,67 +1,67 @@
-# How-to: Claude Code en terminal
+# Guide: Claude Code in the terminal
 
-**Objetivo:** ejecutar el flow completo desde una terminal, de forma interactiva o por scripts.
-**Estado:** probado con Claude Code 2.1.302. `/implement` completo con el workflow nativo, con agentes reales: ola 0, dos olas en paralelo, verificación, revisión y QA, y ledger cerrado. También sobre un repo con código: línea base, 13 AC nuevos, sin regresiones y con compatibilidad de datos verificada. También el ciclo de corrección con un defecto inyectado (lo encontraron el revisor y QA, y su WP lo corrigió en un ciclo) y la documentación viva. El modo A, también de principio a fin.
+**Goal:** run the whole flow from a terminal, interactively or from scripts.
+**Status:** tested with Claude Code 2.1.302, with real agents:
+- a complete `/implement` with the native workflow, from wave 0 to a closed ledger;
+- an existing codebase, with no regressions and backward-compatible data;
+- a fix cycle with an injected defect, plus the living documentation;
+- the fallback mode, end to end.
 
-Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
+Before you start, meet the [requirements](README.md#requirements) and [install the flow in your project](README.md#install-the-flow-in-a-project).
 
-## 1. Instalar y entrar
+## 1. Install and start
 
-Instalador nativo (recomendado, se actualiza solo):
+The native installer is recommended; it updates itself:
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-Abre una terminal nueva y comprueba la instalación:
+Open a new terminal and check it:
 
 ```bash
 claude --version
 ```
 
-Entra en el proyecto y arranca Claude Code:
+Go to the project and start Claude Code:
 
 ```bash
-cd ~/code/mi-proyecto && claude
+cd ~/code/my-project && claude
 ```
 
-**Resultado esperado:** la primera vez se abre el navegador para iniciar sesión y aparece el aviso de confianza de la carpeta. Acéptalo.
+The first time, a browser opens to sign in, and Claude Code asks whether you trust the folder. Accept: without it, the project's permissions are ignored.
 
-## 2. Diseñar
+## 2. Design
 
-Dentro de la sesión:
+Inside the session:
 
 ```
-/architect Quiero migrar el módulo de pagos de REST a gRPC, manteniendo la API pública
+/architect Move the payments module from REST to gRPC, keeping the public API
 ```
 
-- El comando cambia solo al último Opus. No hace falta `/model`.
-- Responde a las rondas de preguntas, eligiendo con las flechas y `Enter`.
-- **Resultado esperado:** `architecture.md` escrito, `Manifiesto válido` y una petición de aprobación.
+- The command switches to the latest Opus by itself; no `/model` needed.
+- Answer the rounds of questions with the arrow keys and `Enter`.
+- You get `architecture.md`, the message `Manifiesto válido` ("manifest valid") and a request for approval.
 
-Revisa el documento en tu editor y haz commit:
+Read the document in your editor, then commit it:
 
 ```bash
-git add architecture.md && git commit -m "Architecture: pagos gRPC"
+git add architecture.md && git commit -m "Architecture: gRPC payments"
 ```
 
-## 3. Implementar
+## 3. Build
 
 ```
 /implement
 ```
 
-- El lanzador cambia solo al último Sonnet, valida, sincroniza permisos y lanza el workflow `agentic-implement` en segundo plano. Síguelo con `/workflows`. Si los workflows no están disponibles, usa el modo A.
-- Cada ola corre en segundo plano y la sesión te avisa cuando termina.
-- **Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las fases de verificación con la aceptación en verde, el estado del revisor y de QA, la documentación actualizada (si el manifiesto tiene sección `docs`) y los commits propuestos, a la espera de tu aprobación.
+- The launcher switches to the latest Sonnet, validates, syncs permissions and rules, and starts the `agentic-implement` workflow in the background. Follow it with `/workflows`.
+- The session stays free while it works, and tells you when it is done.
+- At the end you get a report and the proposed commits, waiting for your approval:
 
-Para ver el avance en directo desde otra terminal:
+<p align="center"><img src="../assets/screens/report.png" width="760" alt="A real /implement report: result OK, both packages DONE, verification and acceptance green, QA PASS, one fix cycle, documentation updated, proposed commits."></p>
 
-```bash
-tail -f .claude/state/runs/*.log
-```
-
-Mientras corre, puedes seguir usando la sesión. Para ver el estado o parar:
+While it runs, from the session or another terminal:
 
 ```bash
 python3 .claude/bin/agentic.py status
@@ -71,9 +71,15 @@ python3 .claude/bin/agentic.py status
 python3 .claude/bin/agentic.py stop
 ```
 
-## 4. Flujo manual, sin orquestador
+If a stage stops on a blocker, fix the cause and resume from that wave:
 
-Con `architecture.md` aprobado puedes lanzar cada etapa desde la shell. Cada comando devuelve `0` si todo va bien y `3` si hay que revisar.
+```
+/implement 2
+```
+
+## 4. Without the launcher: stage by stage
+
+With an approved `architecture.md`, every stage can run from the shell (this is the fallback mode, which needs the `claude` CLI). Each command exits `0` when all is well and `3` when something needs review.
 
 ```bash
 python3 .claude/bin/agentic.py validate
@@ -84,70 +90,60 @@ python3 .claude/bin/agentic.py run-acceptance && python3 .claude/bin/agentic.py 
 ```
 
 ```bash
-python3 .claude/bin/agentic.py run-wave 1
+for n in $(python3 .claude/bin/agentic.py pipeline-plan | python3 -c "import json,sys; print(*json.load(sys.stdin)['waves'])"); do python3 .claude/bin/agentic.py run-wave "$n" || break; done
 ```
 
 ```bash
 python3 .claude/bin/agentic.py acceptance --expect green && python3 .claude/bin/agentic.py run-review && python3 .claude/bin/agentic.py run-qa
 ```
 
-Todas las olas seguidas, y QA al final:
+## 5. Fixing defects by hand
+
+Read what the reviewer and QA found:
 
 ```bash
-set -e; A=.claude/bin/agentic.py; python3 $A run-acceptance; python3 $A acceptance --expect red; for n in $(python3 -c "import json,re;m=json.loads(re.search(r'\`\`\`json\s+wp-manifest\s*\n(.*?)\n\`\`\`',open('architecture.md').read(),re.S).group(1));print(' '.join(map(str,sorted({w['wave'] for w in m['work_packages']}))))"); do python3 .claude/bin/agentic.py run-wave $n; done; python3 $A acceptance --expect green; python3 $A run-review; python3 $A run-qa
+python3 -c "import json; [print(r, json.load(open(f'.claude/state/runs/{r}.json'))['result'][:2000]) for r in ('REVIEW', 'QA')]"
 ```
 
-## 5. Corregir defectos (revisor o QA)
-
-Lee el informe:
-
-```bash
-python3 -c "import json;[print(r, json.load(open(f'.claude/state/runs/{r}.json'))['result'][:2000]) for r in ('REVIEW','QA')]"
-```
-
-Relanza el WP afectado en modo corrección:
+Relaunch the affected package in fix mode, then verify again:
 
 ```bash
 python3 .claude/bin/agentic.py run-wave 1 WP-01 --fix
 ```
 
-Vuelve a verificar: aceptación, revisor y QA.
-
 ```bash
 python3 .claude/bin/agentic.py acceptance --expect green && python3 .claude/bin/agentic.py run-review && python3 .claude/bin/agentic.py run-qa
 ```
 
-Hay un máximo de 2 ciclos `--fix` por WP. Al tercero, el script sale con código 4: el defecto no se arregla insistiendo y te toca decidir, o revisar el contrato con `/architect`.
+With `--fix`, the implementer is told to fix the defects the reports assign to it and to keep its acceptance tests green. A package gets at most two fix cycles; the third attempt exits with code `4`, because the defect will not yield to repetition: decide yourself, or revisit the contract with `/architect`.
 
-Con `--fix`, el implementer recibe la instrucción de corregir los defectos que le asignan los informes del revisor y de QA, y de dejar en verde sus tests de aceptación. Sin `--fix`, el WP se implementa como si fuera nuevo y no lee ningún informe.
+## 6. On a remote server
 
-## 6. Servidor remoto por SSH
-
-Usa `tmux` para que una ola larga no se corte si se cae la conexión:
+Run inside a terminal multiplexer, so a long wave survives a dropped connection:
 
 ```bash
 tmux new -s agentic
 ```
 
-Para seguir la sesión desde el móvil, activa Remote Control dentro de Claude Code con `/remote-control`.
+To follow the session from your phone, turn on Remote Control inside Claude Code with `/remote-control`.
 
-## Verificación
+## Check
 
-- `git status`: solo deben aparecer los ficheros de los WP y `qa/`.
-- La salida de cada etapa termina en `RESULTADO: OK`.
-- Ejecuta tú mismo la suite del proyecto, con el comando de la sección 3 de `architecture.md`.
+- `git status` shows only the packages' files, `acceptance/`, `qa/` and the documentation zone.
+- Each stage ends in `RESULTADO: OK`.
+- Run the project's own test suite yourself, with the command from section 3 of `architecture.md`.
 
-## Problemas frecuentes
+## Troubleshooting
 
-| Síntoma | Solución |
+| Symptom | Fix |
 |---|---|
-| `claude: command not found` tras instalar | Abre una terminal nueva. Si sigue, añade `~/.local/bin` al `PATH` |
-| `claude update` da un error de permisos | Si instalaste con npm y usas nvm, la shell puede estar usando el npm del sistema: `$(dirname $(which node))/npm install -g @anthropic-ai/claude-code@latest`. O pásate al instalador nativo |
-| `/architect` no aparece | Ejecuta `claude` desde la raíz del repo, donde está `.claude/` |
+| `claude: command not found` after installing | Open a new terminal. If it persists, add `~/.local/bin` to the `PATH` |
+| `claude update` fails with a permissions error | With npm and nvm, the shell may be using the system npm: `$(dirname $(which node))/npm install -g @anthropic-ai/claude-code@latest`. Or switch to the native installer |
+| `/architect` does not appear | Start `claude` at the repo root, where `.claude/` lives |
 
-Para el resto de errores, consulta la [tabla común](README.md#problemas-frecuentes).
+For anything else, see the [common table](README.md#troubleshooting).
 
-## Referencias
+## References
 
-- [Instalación](https://code.claude.com/docs/en/setup)
+- [Setup](https://code.claude.com/docs/en/setup)
 - [Remote Control](https://code.claude.com/docs/en/remote-control)

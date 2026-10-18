@@ -1,28 +1,28 @@
-# How-to: QA automático en GitHub Actions
+# Guide: automatic QA in GitHub Actions
 
-**Objetivo:** que el agente QA valide cada pull request contra `architecture.md`, sin lanzarlo a mano.
-**Estado:** sin probar. El workflow sigue la documentación oficial de autenticación y de GitHub Actions.
+**Goal:** have the QA agent check every pull request against `architecture.md`, without launching it by hand.
+**Status:** not tested. The workflow follows the official authentication and GitHub Actions documentation.
 
-**Por qué QA y no el resto:** el arquitecto necesita conversar contigo y los implementadores trabajan mejor con tu supervisión. QA, en cambio, puede correr solo: lee el diseño, prueba y emite un veredicto.
+**Why QA and not the rest:** the architect needs a conversation with you, and implementers work best under your supervision. QA can run on its own: it reads the design, tests, and returns a verdict.
 
-## Requisitos
+## What you need
 
-- Un plan Pro, Max, Team o Enterprise.
-- Un **token de tu suscripción** guardado como secreto del repo:
-  1. Genera el token en tu máquina con el comando de abajo. Abre el navegador e imprime un token válido durante un año. No lo guarda en ningún sitio.
+- A Pro, Max, Team or Enterprise plan.
+- A **token from your subscription**, stored as a repository secret:
+  1. Generate it on your machine. It opens a browser and prints a token valid for one year; it is not stored anywhere.
 
      ```bash
      claude setup-token
      ```
 
-  2. En GitHub, ve a `Settings → Secrets and variables → Actions → New repository secret`, ponle de nombre `CLAUDE_CODE_OAUTH_TOKEN` y pega el token. No lo pegues en ningún chat ni lo subas al repo.
-- `architecture.md`, con su manifiesto, en la rama del PR.
+  2. In GitHub, go to `Settings → Secrets and variables → Actions → New repository secret`, name it `CLAUDE_CODE_OAUTH_TOKEN` and paste the token. Never paste it in a chat or commit it.
+- `architecture.md`, with its manifest, on the pull request's branch.
 
-El token está ligado a **tu** suscripción: cada ejecución cuenta contra tus límites de uso. Para un equipo, la documentación oficial recomienda una API key de Console en un secreto `ANTHROPIC_API_KEY`. En ese caso, pon `"auth": "inherit"` en `.claude/agentic.json`.
+The token is tied to **your** subscription: every run counts against your usage limits. For a team, the official documentation recommends a Console API key in an `ANTHROPIC_API_KEY` secret; in that case set `"auth": "inherit"` in `.claude/agentic.json`.
 
-## Workflow
+## The workflow
 
-Crea `.github/workflows/agentic-qa.yml`:
+Create `.github/workflows/agentic-qa.yml`:
 
 ```yaml
 name: agentic-qa
@@ -40,7 +40,7 @@ concurrency:
 
 jobs:
   qa:
-    # Solo ramas del propio repo (nunca forks) y nunca borradores; sin architecture.md no hay nada que validar.
+    # Branches of this repo only (never forks), never drafts; without architecture.md there is nothing to check.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false &&
@@ -57,19 +57,19 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      # Aquí, la instalación de las dependencias de tu proyecto (sección 3 de architecture.md).
-      - name: Instalar Claude Code (versión exacta desde npm, sin scripts)
+      # Install your project's dependencies here (section 3 of architecture.md).
+      - name: Install Claude Code (exact version from npm, no install scripts)
         run: |
           npm install --prefix "$RUNNER_TEMP/cc" --no-save --ignore-scripts --no-audit --no-fund @anthropic-ai/claude-code@2.1.302
           echo "$RUNNER_TEMP/cc/node_modules/@anthropic-ai/claude-code-linux-x64" >> "$GITHUB_PATH"
       - run: python3 .claude/bin/agentic.py validate
-      # Determinista, sin secretos y sin coste: los tests de aceptación de la ola 0 deben pasar.
+      # Deterministic, no secrets, no cost: the wave 0 acceptance tests must pass.
       - run: python3 .claude/bin/agentic.py acceptance --expect green
-      - name: Agente QA
+      - name: QA agent
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: python3 .claude/bin/agentic.py run-qa
-      - name: Informe en el resumen del job
+      - name: Report in the job summary
         if: always()
         run: |
           python3 -c "import json;print(json.load(open('.claude/state/runs/QA.json'))['result'])" >> "$GITHUB_STEP_SUMMARY" || true
@@ -82,35 +82,35 @@ jobs:
             .claude/state/runs/
 ```
 
-Qué hace cada parte que no es estándar:
+What each non-standard part is for:
 
-- **Actions fijadas por SHA:** una etiqueta como `@v7` se puede mover y apuntar a otro código; un SHA, no. La versión va en el comentario. Para actualizarlas, resuelve el SHA de la nueva versión con `gh api repos/<owner>/<action>/git/ref/tags/<versión>`.
-- **`permissions: contents: read` y `persist-credentials: false`:** el job no puede escribir en el repo, y el token de GitHub no queda guardado en el checkout, al alcance del código que se ejecute.
-- **Solo ramas del propio repo:** el agente QA ejecuta los tests del PR con tu token de suscripción en el entorno. Un PR malicioso de un fork podría intentar leerlo. GitHub no pasa secretos a los forks, y esta condición lo deja explícito.
-- **El token solo en el paso de QA:** `validate` y la aceptación ejecutan el código del PR sin ningún secreto en el entorno.
-- **Claude Code en versión exacta y sin scripts de instalación:** se instala desde npm con la versión fijada, en lugar de `curl | bash` con la última, y con `--ignore-scripts`, para que ningún paquete ejecute código al instalarse. El binario nativo viene en su propio paquete (`claude-code-linux-x64`) y se usa directamente. Actualiza la versión a propósito, no por sorpresa.
-- **`concurrency`:** si haces push varias veces seguidas, solo corre la última ejecución, lo que ahorra límites de uso.
-- **`timeout-minutes`:** es el freno del job. El flow tiene además su propio `timeout_s`.
+- **Actions pinned by SHA.** A tag like `@v7` can be moved to point at other code; a SHA cannot. The version goes in the comment. To update, resolve the new version's SHA with `gh api repos/<owner>/<action>/git/ref/tags/<version>`.
+- **`permissions: contents: read` and `persist-credentials: false`.** The job cannot write to the repo, and the GitHub token is not left in the checkout, within reach of the code that runs.
+- **Branches of this repo only.** The QA agent runs the pull request's tests with your subscription token in the environment, and a malicious pull request from a fork could try to read it. GitHub does not pass secrets to forks; this condition makes it explicit.
+- **The token only in the QA step.** `validate` and the acceptance tests run the pull request's code with no secret in the environment.
+- **Claude Code at an exact version, without install scripts.** It comes from npm at a pinned version, instead of `curl | bash` with whatever is latest, and with `--ignore-scripts`, so no package runs code when installed. The native binary ships in its own package (`claude-code-linux-x64`) and is used directly. Update the version on purpose, not by surprise.
+- **`concurrency`.** If you push several times in a row, only the last run continues, which saves usage.
+- **`timeout-minutes`.** The job's brake. The flow has its own `timeout_s` as well.
 
-## Resultado
+## What you get
 
-- El job falla si la aceptación no pasa (sin coste: no lanza ningún agente), o si QA devuelve `FAIL` o `BLOCKER` o escribe fuera de `qa/`.
-- El informe aparece en el resumen del job, y los tests de QA se pueden descargar como artifact.
-- Los tests de QA no se commitean desde CI. Si quieres conservarlos, descarga el artifact y haz tú el commit.
+- The job fails if acceptance fails (at no cost: no agent is launched), or if QA returns `FAIL` or `BLOCKER`, or writes outside `qa/`.
+- The report appears in the job summary, and the QA tests can be downloaded as an artifact.
+- CI does not commit the QA tests. To keep them, download the artifact and commit them yourself.
 
-## Alternativa oficial
+## The official alternative
 
-La action [`anthropics/claude-code-action@v1`](https://github.com/anthropics/claude-code-action), con la entrada `claude_code_oauth_token`, sirve para responder a menciones `@claude` y para automatizaciones con `prompt`. Aquí se usa el script directamente, porque aplica los guardarraíles del flow, separa la aceptación (determinista) de QA (agente) y da el código de salida y el informe con el formato del flow. También puedes configurar la action y su secreto con `/install-github-app` desde Claude Code.
+The [`anthropics/claude-code-action@v1`](https://github.com/anthropics/claude-code-action) action, with its `claude_code_oauth_token` input, answers `@claude` mentions and runs `prompt` automations. This guide calls the script directly instead, because it applies the flow's guardrails, separates acceptance (deterministic) from QA (an agent), and reports the exit code and the report in the flow's format. You can also set up the action and its secret with `/install-github-app` from Claude Code.
 
-## Puntos a vigilar
+## Before you rely on it
 
-No he ejecutado este workflow. Antes de fiarte de él:
+This workflow has not been run yet. First:
 
-1. Pruébalo en un PR de prueba.
-2. Comprueba en el log que QA usa tu suscripción. No debe aparecer ningún aviso de API key.
-3. Ajusta los disparadores si tienes muchos PR, por ejemplo para que solo corra con una etiqueta.
+1. Try it on a test pull request.
+2. Check in the log that QA uses your subscription: no API key warning should appear.
+3. Adjust the triggers if you open many pull requests, for example to run only with a label.
 
-## Referencias
+## References
 
 - [Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions)
-- [Token de larga duración](https://code.claude.com/docs/en/authentication#generate-a-long-lived-token)
+- [Long-lived tokens](https://code.claude.com/docs/en/authentication#generate-a-long-lived-token)

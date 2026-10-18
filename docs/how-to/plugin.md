@@ -1,35 +1,35 @@
-# How-to: instalar y actualizar el flow con el plugin
+# Guide: install and update the flow with the plugin
 
-> Revisado el 18-10-2026 con Claude Code 2.1.302. Lo común a todos los entornos está en el [README de las guías](README.md).
+> Reviewed on 2026-10-19 with Claude Code 2.1.302. What every environment shares is in the [guides overview](README.md).
 
-El plugin `agentic-flow` es la forma de llevar el flow a un repo que ya existe y de mantenerlo al día. Para un proyecto nuevo, la plantilla sigue siendo lo más rápido (`gh repo create --template`).
+The `agentic-flow` plugin brings the flow to an existing repo and keeps it up to date. For a new project, the template is still the fastest route (`gh repo create --template`).
 
-## Qué hace y qué no
+## What it does, and what it doesn't
 
-El plugin trae un solo comando, `/agentic-flow:init`, que **copia el flow al repo** (`.claude/`) y lo actualiza cuando hay versión nueva. Los agentes, el workflow y el hook no se ejecutan desde el plugin, sino desde el repo, por cuatro motivos:
+The plugin has a single command, `/agentic-flow:init`, which **copies the flow into the repo** (`.claude/`) and updates it when a new version ships. The agents, the workflow and the hook run from the repo, not from the plugin, for four reasons:
 
-1. **Permisos y hook:** los permisos que necesitan los agentes y el hook de guardarraíles solo se pueden declarar en el `settings.json` del proyecto. Un plugin no puede añadir permisos.
-2. **Nombres:** el workflow llama a los agentes por su nombre (`implementer`, `qa`…), y un plugin los renombraría con su prefijo (`agentic-flow:implementer`).
-3. **Equipo, CI y nube:** el CI, las sesiones en la nube y tus compañeros necesitan el flow aunque no tengan el plugin.
-4. **Reproducibilidad:** la versión del flow queda fijada junto al código que produce.
+1. **Permissions and the hook.** The permissions the agents need and the guardrail hook can only be declared in the project's `settings.json`. A plugin cannot grant permissions.
+2. **Names.** The workflow calls the agents by name (`implementer`, `qa`…), and a plugin would prefix them (`agentic-flow:implementer`).
+3. **Team, CI and cloud.** CI, cloud sessions and your teammates need the flow even without the plugin.
+4. **Reproducibility.** The flow's version stays pinned next to the code it produces.
 
-Desinstalar el plugin no quita el flow del repo.
+Uninstalling the plugin does not remove the flow from the repo.
 
-## Requisitos
+## What you need
 
-- Claude Code 2.1.275 o posterior, para instalarlo en un paso. Con versiones anteriores, usa los dos pasos de abajo.
-- Acceso de lectura a `jagosar/agentic-flow`. Es un repo privado: Claude Code lo clona con git, así que tu git tiene que poder autenticarse en GitHub (por ejemplo, con `gh auth login` y `gh auth setup-git`).
-- `python3` 3.9 o posterior y `git`, como el resto del flow.
+- Claude Code 2.1.275 or later to install in one step; with older versions, use the two steps below.
+- Read access to `jagosar/agentic-flow`. It is a private repo cloned with git, so your git must be able to authenticate with GitHub (for example with `gh auth login` and `gh auth setup-git`).
+- `python3` 3.9+ and `git`, like the rest of the flow.
 
-## Instalar
+## Install
 
-En una sesión de Claude Code dentro de tu repo:
+In a Claude Code session inside your repo:
 
 ```
 /plugin install agentic-flow --marketplace jagosar/agentic-flow
 ```
 
-O en dos pasos, también desde la terminal:
+Or in two steps, which also work from a terminal:
 
 ```bash
 claude plugin marketplace add jagosar/agentic-flow
@@ -39,73 +39,75 @@ claude plugin marketplace add jagosar/agentic-flow
 claude plugin install agentic-flow@agentic-flow
 ```
 
-Después, en la sesión:
+Then, in the session:
 
 ```
 /agentic-flow:init
 ```
 
-`/agentic-flow:init` hace esto:
-- **Copia el flow:** agentes, comandos, workflow, `agentic.py` y la librería de reglas, a `.claude/`. No copia los tests del propio flow.
-- **Combina tu `.claude/settings.json`:** añade los permisos, las reglas `deny`, el hook y `enableWorkflows`, sin quitar nada tuyo.
-- **Configuración y `.gitignore`:** crea `.claude/agentic.json` si no existe y añade al `.gitignore` `.claude/state/` y `.agentic-result.json`.
-- **Reglas:** detecta tu lenguaje e instala sus reglas en `.claude/rules/agentic/`.
-- **Registro:** guarda en `.claude/agentic-install.json` la versión y la huella de cada fichero instalado.
+`/agentic-flow:init`:
+- **Copies the flow** to `.claude/`: agents, commands, workflow, `agentic.py` and the rules library. The flow's own tests are not copied.
+- **Merges your `.claude/settings.json`:** adds the permissions, the `deny` rules, the hook and `enableWorkflows`, removing nothing of yours.
+- **Adds configuration:** creates `.claude/agentic.json` if missing and adds `.claude/state/` and `.agentic-result.json` to `.gitignore`.
+- **Installs rules:** detects your languages and installs their rules in `.claude/rules/agentic/`.
+- **Keeps a record:** stores the version and the fingerprint of every installed file in `.claude/agentic-install.json`.
 
-Con `--dry-run` enseña qué haría, sin escribir nada.
+`--dry-run` shows what it would do without writing anything. This is the installer's real output in a TypeScript repo, first install and a second run:
 
-Luego:
-1. **Abre una sesión nueva** en el repo y acepta el aviso de confianza. Sin él, Claude Code ignora los permisos del proyecto.
-2. **En Pro, activa Dynamic workflows** en `/config`.
-3. **Haz commit de `.claude/`.**
-4. **Empieza** con `/architect`.
+<p align="center"><img src="../assets/screens/install.png" width="760" alt="Real output of the installer: 23 new files, the settings.json additions, the .gitignore lines, the default config and the common and TypeScript rules; a second run reports everything unchanged."></p>
 
-## Actualizar
+Then:
+1. **Open a new session** in the repo and accept the trust prompt. Without it, Claude Code ignores the project's permissions.
+2. **On Pro, enable Dynamic workflows** in `/config`.
+3. **Commit `.claude/`.**
+4. **Start** with `/architect`.
+
+## Update
 
 ```bash
 claude plugin update agentic-flow@agentic-flow
 ```
 
-Reinicia la sesión y vuelve a ejecutar `/agentic-flow:init`. Cada fichero del flow acaba en uno de estos estados:
+Restart the session and run `/agentic-flow:init` again. Each of the flow's files ends in one of these states (the installer prints them in Spanish):
 
-| Estado | Qué pasa |
+| State | What happens |
 |---|---|
-| nuevo | No existía: se copia |
-| actualizado | Ha cambiado en la versión nueva y tú no lo habías tocado: se sustituye |
-| igual | Ya está al día |
-| modificado por ti (no se toca) | Lo has editado desde la última instalación: se conserva y se lista. Compáralo con la versión nueva, o repite con `--force` para sustituirlo |
-| retirado | La versión nueva ya no lo trae y tú no lo habías tocado: se borra |
+| `nuevo` (new) | It did not exist: copied |
+| `actualizado` (updated) | Changed in the new version and untouched by you: replaced |
+| `igual` (unchanged) | Already up to date |
+| `modificado por ti (no se toca)` (modified by you, left alone) | You edited it since the last install: kept and listed. Compare it with the new version, or run again with `--force` to replace it |
+| `retirado` (removed) | The new version no longer ships it and you had not touched it: deleted |
 
-El instalador sabe qué has tocado porque compara cada fichero con la huella guardada en `.claude/agentic-install.json`. Un fichero que no tenía registro (por ejemplo, de una copia a mano) y que es distinto del nuevo cuenta como modificado: no se pisa sin `--force`.
+The installer knows what you touched by comparing each file with the fingerprint in `.claude/agentic-install.json`. A file with no record (from a copy by hand, say) that differs from the new one counts as modified: it is not overwritten without `--force`.
 
-## Probar sin instalar
+## Try it without installing
 
-Para probar una copia local del plugin en una sola sesión, sin tocar tu configuración:
+To try a local copy of the plugin in a single session, without touching your configuration:
 
 ```bash
-claude --plugin-dir /ruta/a/agentic-flow
+claude --plugin-dir /path/to/agentic-flow
 ```
 
-## Publicar una versión (mantenedores)
+## Publish a version (maintainers)
 
-1. Sube `version` en `.claude-plugin/plugin.json`. La versión solo está ahí: la entrada del marketplace no la repite.
-2. Comprueba el plugin, como hace el CI:
+1. Bump `version` in `.claude-plugin/plugin.json`. The version lives only there; the marketplace entry does not repeat it.
+2. Check the plugin, as CI does:
 
    ```bash
    claude plugin validate --strict .
    ```
 
-3. Crea la etiqueta `agentic-flow--v<versión>`:
+3. Create the `agentic-flow--v<version>` tag:
 
    ```bash
    claude plugin tag .
    ```
 
-## Problemas frecuentes
+## Troubleshooting
 
-| Síntoma | Causa y solución |
+| Symptom | Cause and fix |
 |---|---|
-| `/plugin install` no encuentra el marketplace | El repo es privado y git no puede autenticarse. Configura tus credenciales de GitHub para git y repite |
-| `/agentic-flow:init` no aparece | El plugin se carga al iniciar la sesión: reiníciala tras instalarlo o actualizarlo |
-| Tras `init`, `/architect` no aparece | Abre una sesión nueva en el repo: los comandos y agentes del proyecto se cargan al inicio |
-| `modificado por ti` en ficheros que no recuerdas haber tocado | El flow se copió a mano antes, sin registro. Revisa la diferencia y usa `--force` si no hay nada tuyo |
+| `/plugin install` cannot find the marketplace | The repo is private and git cannot authenticate. Set up your GitHub credentials for git and try again |
+| `/agentic-flow:init` does not appear | Plugins load when a session starts: restart it after installing or updating |
+| After `init`, `/architect` does not appear | Open a new session in the repo: project commands and agents load at startup |
+| `modificado por ti` on files you don't remember touching | The flow was copied by hand earlier, without a record. Check the difference and use `--force` if nothing of yours is there |

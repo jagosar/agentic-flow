@@ -1,67 +1,67 @@
-# How-to: JetBrains (IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, Android Studio)
+# Guide: JetBrains IDEs (IntelliJ IDEA, PyCharm, WebStorm, GoLand, PhpStorm, Android Studio)
 
-**Objetivo:** usar el flow desde un IDE de JetBrains, con los diffs en el visor del IDE.
-**Estado:** sin probar. El plugin ejecuta el mismo CLI, así que el flow debería comportarse igual que en [terminal.md](terminal.md).
+**Goal:** use the flow from a JetBrains IDE, with diffs in the IDE's viewer.
+**Status:** not tested. The plugin runs the same CLI, so the flow should behave as in the [terminal](terminal.md).
 
-Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
+Before you start, meet the [requirements](README.md#requirements) and [install the flow in your project](README.md#install-the-flow-in-a-project).
 
-## Requisitos de este entorno
+## What this environment needs
 
-- **El CLI instalado.** El plugin no trae su propia copia, así que es obligatorio.
-- El plugin **Claude Code [Beta]** de JetBrains Marketplace.
+- **The CLI installed.** The plugin does not bundle its own copy, so it is mandatory.
+- The **Claude Code [Beta]** plugin from the JetBrains Marketplace.
 
-## 1. Instalar
+## 1. Install
 
-1. Instala el CLI:
+1. Install the CLI:
 
    ```bash
    curl -fsSL https://claude.ai/install.sh | bash
    ```
 
-2. Ve a `Settings → Plugins → Marketplace`, busca **Claude Code [Beta]**, pulsa Install y reinicia el IDE.
+2. Go to `Settings → Plugins → Marketplace`, search for **Claude Code [Beta]**, install it and restart the IDE.
 
-**Resultado esperado:** el botón de Claude Code en la interfaz del IDE.
+A Claude Code button appears in the IDE.
 
-## 2. Abrir Claude Code
+## 2. Open Claude Code
 
-- Usa el atajo `Ctrl+Esc` (`Cmd+Esc` en Mac) o el botón de Claude Code.
-- O ejecuta `claude` en la terminal integrada, desde la raíz del proyecto.
-- Si usas una terminal externa, conéctala al IDE con `/ide`.
+- Use `Ctrl+Esc` (`Cmd+Esc` on a Mac) or the Claude Code button.
+- Or run `claude` in the integrated terminal, at the project root.
+- From an external terminal, connect to the IDE with `/ide`.
 
-Comprueba que los diffs se abren en el IDE: ejecuta `/config` y pon **Diff tool** en `auto`.
+Make diffs open in the IDE: run `/config` and set **Diff tool** to `auto`.
 
-## 3. Usar el flow
+## 3. Use the flow
 
-Es el mismo que en [terminal.md](terminal.md):
+Exactly as in the [terminal](terminal.md):
 
 ```
-/architect <tu petición>
+/architect <your request>
 ```
 
 ```
 /implement
 ```
 
-- Los cambios se escriben directamente en disco. Revísalos en la ventana **Commit** (`Alt+0`) o en **Git → Local Changes**.
-- El informe de QA está en el resumen de `/implement` y en `.claude/state/runs/workflow-result.json`.
+- Changes are written straight to disk. Review them in the **Commit** window (`Alt+0`) or in **Git → Local Changes**.
+- The QA report is in the `/implement` summary and in `.claude/state/runs/workflow-result.json`.
 
-## Seguridad
+## Security
 
-La documentación oficial avisa de que, en JetBrains, el modo `acceptEdits` puede modificar ficheros de configuración del IDE que el IDE ejecuta. Por eso recomienda el modo Manual para editar.
+The official documentation warns that, in JetBrains IDEs, `acceptEdits` mode can modify IDE configuration files that the IDE executes, so it recommends Manual mode for edits.
 
-- **En tu sesión interactiva:** sigue esa recomendación.
-- **Los agentes del flow** usan `acceptEdits`, pero el hook solo les deja escribir los ficheros de su WP, así que no pueden tocar `.idea/` ni nada fuera del manifiesto.
+- **In your interactive session:** follow that advice.
+- **The flow's agents** use `acceptEdits`, but the hook only lets them write their own package's files, so they cannot touch `.idea/` or anything outside the manifest.
 
-## Problemas frecuentes
+## Troubleshooting
 
-| Síntoma | Solución |
+| Symptom | Fix |
 |---|---|
-| "Cannot launch Claude Code" o "command not found" | Comprueba `claude --version`. Si el IDE no lo encuentra, pon la ruta completa en `Settings → Tools → Claude Code [Beta] → Claude command` |
-| macOS: funciona en la terminal pero no desde el IDE | Si lanzas el IDE desde el Dock, puede no heredar el `PATH` de tu shell. Pon la ruta completa en **Claude command** |
-| Windows con WSL | En **Claude command**, pon `wsl -d Ubuntu -- bash -lic "claude"`, con tu distribución |
-| "No available IDEs detected" en WSL2 | Sigue la sección WSL de la guía oficial (regla de firewall o red en modo *mirrored*) |
-| `Esc` no interrumpe | En `Settings → Tools → Terminal`, desmarca "Move focus to the editor with Escape" |
+| "Cannot launch Claude Code" or "command not found" | Check `claude --version`. If the IDE cannot find it, set the full path in `Settings → Tools → Claude Code [Beta] → Claude command` |
+| macOS: works in the terminal, not from the IDE | An IDE launched from the Dock may not inherit your shell's `PATH`. Set the full path in **Claude command** |
+| Windows with WSL | In **Claude command**, use `wsl -d Ubuntu -- bash -lic "claude"`, with your distribution |
+| "No available IDEs detected" on WSL2 | Follow the WSL section of the official guide (a firewall rule, or mirrored networking) |
+| `Esc` does not interrupt | In `Settings → Tools → Terminal`, untick "Move focus to the editor with Escape" |
 
-## Referencias
+## References
 
-- [Claude Code en JetBrains](https://code.claude.com/docs/en/jetbrains)
+- [Claude Code in JetBrains IDEs](https://code.claude.com/docs/en/jetbrains)

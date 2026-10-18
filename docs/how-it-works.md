@@ -1,290 +1,306 @@
-# Cómo funciona agentic-flow
+# How agentic-flow works
 
-Referencia técnica del flow: qué piezas hay, en qué orden actúan, quién puede escribir qué y dónde intervienes tú. Para usarlo en tu entorno, consulta los [how-to](how-to/README.md).
+The technical reference: which pieces exist, in what order they act, who may write what, and where you come in. To set it up in your environment, see the [guides](how-to/README.md).
 
-Contenido:
+1. [Overview](#1-overview)
+2. [One run, step by step](#2-one-run-step-by-step)
+3. [Lifecycle of a work package](#3-lifecycle-of-a-work-package)
+4. [Guardrails: the hook's decision](#4-guardrails-the-hooks-decision)
+5. [Permission matrix](#5-permission-matrix)
+6. [Native workflow and fallback mode](#6-native-workflow-and-fallback-mode)
+7. [Files and state](#7-files-and-state)
+8. [Glossary](#8-glossary)
 
-1. [Vista general](#1-vista-general)
-2. [Secuencia de una ejecución](#2-secuencia-de-una-ejecución)
-3. [Ciclo de vida de un work package](#3-ciclo-de-vida-de-un-work-package)
-4. [Guardarraíles: decisión del hook](#4-guardarraíles-decisión-del-hook)
-5. [Matriz de permisos](#5-matriz-de-permisos)
-6. [Workflow nativo y modo A](#6-workflow-nativo-y-modo-a)
-7. [Ficheros y estado](#7-ficheros-y-estado)
-8. [Glosario](#8-glosario)
+> **A note on language.** The documentation is in English. The flow's own runtime messages (agent prompts, the ledger, the hook's messages, `RESULTADO: OK` / `REVISAR`) are still in Spanish, and the screenshots show them as they are. `REVISAR` means "needs review".
 
-## 1. Vista general
+## 1. Overview
 
-Cuatro fases y dos puertas humanas. Cada caja es un agente o un paso determinista del script `agentic.py`.
+Four phases and two human gates. Each box is an agent or a deterministic step of `agentic.py`.
 
 ```mermaid
 flowchart TD
-    U(["Tú: petición"]) --> C
+    U(["You: a request"]) --> C
 
-    subgraph A["Arquitectura (último Opus)"]
-        C["Clasificar tipo y tamaño"] -->|trivial| X(["Fuera del flow: pídelo directamente"])
-        C --> R["Investigar y reutilizar<br/>leer decisiones previas"]
-        R --> I["Entrevista"]
-        I --> D["architecture.md<br/>contratos + AC-NNN + manifiesto"]
+    subgraph A["Architecture (latest Opus)"]
+        C["Classify type and size"] -->|trivial| X(["Outside the flow: just ask for it"])
+        C --> R["Research and reuse<br/>read earlier decisions"]
+        R --> I["Interview"]
+        I --> D["architecture.md<br/>contracts + AC-NNN + manifest"]
         D --> V{"validate"}
-        V -->|errores| D
-        V -->|ok| PR["plan-reviewer<br/>contexto limpio"]
-        PR -->|críticos| D
+        V -->|errors| D
+        V -->|ok| PR["plan-reviewer<br/>clean context"]
+        PR -->|critical issues| D
     end
 
-    PR -->|listo| G1{{"Puerta 1: apruebas el diseño"}}
+    PR -->|ready| G1{{"Gate 1: you approve the design"}}
     G1 --> ARC[("docs/architecture")]
 
-    subgraph B["Construcción (último Sonnet)"]
-        BL["Línea base<br/>estado de la suite antes de tocar nada"] --> AT
-        AT["Ola 0: test-author<br/>escribe los tests de aceptación"] --> RED{"acceptance<br/>--expect red"}
-        RED -->|ya pasan| STOP1(["Para: los tests no prueban nada"])
-        RED -->|rojo| W1["Ola 1: implementers en paralelo"]
-        W1 --> CW1{"check-wave"}
-        CW1 --> W2["Ola N: implementers"]
-        W2 --> CWN{"check-wave"}
+    subgraph B["Build (latest Sonnet)"]
+        BL["Baseline<br/>state of the suite before any change"] --> AT
+        AT["Wave 0: test-author<br/>writes the acceptance tests"] --> RED{"acceptance<br/>--expect red"}
+        RED -->|already pass| STOP1(["Stop: the tests prove nothing"])
+        RED -->|red| W1["Wave 1: implementers in parallel"]
+        W1 --> CW1{"ownership check"}
+        CW1 --> W2["Wave N: implementers"]
+        W2 --> CWN{"ownership check"}
     end
 
-    G1 --> RS["rules-sync<br/>reglas comunes y del stack"] --> BL
+    G1 --> RS["rules-sync<br/>common and stack rules"] --> BL
 
-    subgraph C2["Verificación (último Sonnet)"]
-        VF["Fases: build · tipos · lint · tests<br/>regresión frente a la línea base"] --> GREEN{"acceptance<br/>--expect green"}
-        GREEN --> RV["reviewer + verifier<br/>refutación adversarial"]
-        RV --> QA["qa<br/>exploratorio"]
+    subgraph C2["Verification (latest Sonnet)"]
+        VF["Phases: build · types · lint · tests<br/>regressions against the baseline"] --> GREEN{"acceptance<br/>--expect green"}
+        GREEN --> RV["reviewer + verifier<br/>adversarial refutation"]
+        RV --> QA["qa<br/>exploratory"]
     end
 
     CWN --> VF
-    GREEN -->|falla| FIX
-    RV -->|crítico o alto| FIX
-    QA -->|defecto de implementación| FIX["run-wave N WP --fix"]
-    FIX -->|máx. 2 ciclos por WP| VF
-    FIX -->|tope agotado| H(["Decides tú o /architect"])
-    QA -->|defecto de diseño| H
-    QA -->|PASS| DOCQ{"¿Sección docs?"}
+    GREEN -->|fails| FIX
+    RV -->|critical or high| FIX
+    QA -->|implementation defect| FIX["fix cycle for that WP"]
+    FIX -->|at most 2 per WP| VF
+    FIX -->|limit reached| H(["You or /architect decide"])
+    QA -->|design defect| H
+    QA -->|PASS| DOCQ{"docs section?"}
 
-    subgraph D2["Documentación viva (último Sonnet)"]
-        CM["codemap<br/>determinista, sin modelo"] --> DU["doc-updater<br/>README · CHANGELOG · guías"]
-        DU --> DC{"docs-check<br/>enlaces, anclas, rutas"}
+    subgraph D2["Living documentation (latest Sonnet)"]
+        CM["codemap<br/>deterministic, no model"] --> DU["doc-updater<br/>README · CHANGELOG · guides"]
+        DU --> DC{"docs-check<br/>links, anchors, paths"}
     end
 
-    DOCQ -->|sí| CM
-    DOCQ -->|no| G2{{"Puerta 2: apruebas el commit"}}
-    DC -->|"roto: pendiente, no bloquea"| G2
+    DOCQ -->|yes| CM
+    DOCQ -->|no| G2{{"Gate 2: you approve the commit"}}
+    DC -->|"broken: pending item, not a block"| G2
     DC -->|ok| G2
 ```
 
-## 2. Secuencia de una ejecución
+## 2. One run, step by step
 
-`/implement` valida y lanza el workflow nativo `agentic-implement`, que corre en segundo plano. El script decide qué viene después; los pasos deterministas los ejecuta el `gatekeeper` con `agentic.py`. Las flechas discontinuas son respuestas, todas validadas contra un JSON Schema.
+`/implement` validates and launches the native workflow `agentic-implement`, which runs in the background. The script decides what comes next; the deterministic steps are run by the `gatekeeper` agent through `agentic.py`. Dashed arrows are replies, each one validated against a JSON Schema.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as Tú
+    actor U as You
     participant AR as /architect (Opus)
     participant PR as plan-reviewer (Opus)
     participant O as /implement (Sonnet)
     participant W as workflow agentic-implement
     participant G as gatekeeper
-    participant AG as agentes (Sonnet)
+    participant AG as agents (Sonnet)
 
-    U->>AR: petición
-    AR->>U: preguntas (por rondas)
-    U-->>AR: respuestas
-    AR->>PR: Revisa architecture.md
-    PR-->>AR: LISTO o CORREGIR
-    AR-->>U: resumen y petición de aprobación
-    U->>AR: apruebo
-    AR->>AR: archiva, sync-permissions y rules-sync
+    U->>AR: request
+    AR->>U: questions, in rounds
+    U-->>AR: answers
+    AR->>PR: Review architecture.md
+    PR-->>AR: READY or FIX
+    AR-->>U: summary and request for approval
+    U->>AR: approved
+    AR->>AR: archive, sync-permissions, rules-sync
 
     U->>O: /implement
-    O->>O: validate, sync-permissions y rules-sync
-    O->>W: Workflow agentic-implement (segundo plano)
-    O-->>U: lanzado, síguelo con /workflows
+    O->>O: validate, sync-permissions, rules-sync
+    O->>W: launch agentic-implement (background)
+    O-->>U: started, follow it in /workflows
     W->>G: pipeline-plan
-    W->>G: baseline (suite antes de tocar nada)
+    W->>G: baseline (the suite before any change)
     W->>G: open-stage acceptance
     W->>AG: test-author
-    AG-->>W: cobertura de los AC
+    AG-->>W: coverage of each criterion
     W->>G: close-stage acceptance --expect red
-    loop por cada ola
+    loop each wave
         W->>G: open-stage N
-        par un implementer por WP
-            W->>AG: Implementa WP-NN
+        par one implementer per WP
+            W->>AG: Implement WP-NN
         end
-        AG-->>W: informes (estado, ficheros, comprobaciones)
-        W->>G: close-stage N (propiedad + ledger)
+        AG-->>W: reports (status, files, checks)
+        W->>G: close-stage N (ownership + ledger)
     end
-    W->>G: verify (fases frente a la línea base + aceptación)
+    W->>G: verify (phases against the baseline + acceptance)
     W->>AG: reviewer
-    AG-->>W: hallazgos
-    par un verifier por hallazgo grave
-        W->>AG: intenta refutarlo
+    AG-->>W: findings
+    par one verifier per serious finding
+        W->>AG: try to refute it
     end
     W->>AG: qa
-    AG-->>W: defectos (implementación o diseño)
-    opt defectos de implementación (máx. 2 ciclos)
-        W->>AG: Corrige WP-NN con sus defectos
-        W->>G: verify, y de nuevo revisión y QA
+    AG-->>W: defects (implementation or design)
+    opt implementation defects (at most 2 cycles)
+        W->>AG: Fix WP-NN, with its defects
+        W->>G: verify, then review and QA again
     end
-    opt sección docs y código aceptado
-        W->>G: codemap (determinista)
+    opt docs section and accepted code
+        W->>G: codemap (deterministic)
         W->>G: open-stage docs
         W->>AG: doc-updater
-        AG-->>W: ficheros, cambios, afirmaciones sin comprobar
-        W->>G: close-stage docs y docs-check
+        AG-->>W: files, changes, unverified claims
+        W->>G: close-stage docs, docs-check
     end
-    W-->>O: resultado JSON
-    O-->>U: informe y commits propuestos
-    U->>O: apruebo el commit
+    W-->>O: JSON result
+    O-->>U: report and proposed commits
+    U->>O: approve the commit
 ```
 
-## 3. Ciclo de vida de un work package
+When a judge finds a real defect, the workflow sends it back to the package that owns it, with the evidence. This is the prompt WP-02 received in a real run, after the reviewer and QA found the same defect independently:
 
-Estados tal como aparecen en el ledger (`agentic.py status`).
+<p align="center"><img src="assets/screens/fix.png" width="760" alt="The fix prompt sent to WP-02: the reviewer's high-severity finding (stats swallows storage errors and exits 0, contradicting contract 6.2) and QA's defect D1 with its reproduction and test."></p>
+
+And this is how the launcher reports the end of that run, before you approve anything:
+
+<p align="center"><img src="assets/screens/report.png" width="760" alt="The /implement report: result OK, both work packages DONE, verification green, QA PASS, one fix cycle on WP-02, README and CHANGELOG updated, docs-check OK, and the proposed commits waiting for approval."></p>
+
+## 3. Lifecycle of a work package
+
+States as they appear in the ledger (`agentic.py status`).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pendiente: aprobado en architecture.md
-    pendiente --> running: open-stage N y claim, o run-wave N (modo A)
-    running --> done: STATUS DONE y check-wave OK
+    [*] --> pending: approved in architecture.md
+    pending --> running: open-stage N and claim, or run-wave N (fallback)
+    running --> done: STATUS DONE and ownership check OK
     running --> blocker: STATUS BLOCKER
-    running --> error: escritura ajena, fallo del proceso
-    running --> timeout: supera timeout_s
+    running --> error: foreign write, process failure
+    running --> timeout: exceeds timeout_s
     running --> stopped: agentic.py stop
-    done --> running: fix, ciclo 1 o 2
-    done --> escalado: fix con el tope agotado
-    blocker --> [*]: lo resuelves tú o /architect
-    escalado --> [*]: lo resuelves tú o /architect
-    done --> [*]: aceptación en verde y revisión y QA sin defectos suyos
+    done --> running: fix, cycle 1 or 2
+    done --> escalated: fix with the limit reached
+    blocker --> [*]: resolved by you or /architect
+    escalated --> [*]: resolved by you or /architect
+    done --> [*]: acceptance green, no defects from review or QA
 ```
 
-## 4. Guardarraíles: decisión del hook
+The ledger is written by `agentic.py`, not by the model, so it survives context compaction and answers "how is it going?". This one is from the run above; `DONE (fix)` marks the package that went through a fix cycle:
 
-El hook `PreToolUse` (`agentic.py hook`) se ejecuta antes de cada Write, Edit, MultiEdit, NotebookEdit y Bash. **Falla cerrado**: dentro de un agente del flow, cualquier error bloquea.
+<p align="center"><img src="assets/screens/ledger.png" width="760" alt="The ledger after a real run: every stage OK from baseline to docs-check, and six agents done or passed, WP-02 marked DONE (fix)."></p>
+
+## 4. Guardrails: the hook's decision
+
+The `PreToolUse` hook (`agentic.py hook`) runs before every Write, Edit, MultiEdit, NotebookEdit and Bash call. It **fails closed**: inside an agent of the flow, any error blocks.
 
 ```mermaid
 flowchart TD
-    E["Herramienta a punto de ejecutarse"] --> NV{"Bash con --no-verify,<br/>commit -n o core.hooksPath?"}
-    NV -->|sí| BLK[["Bloquear · exit 2"]]
-    NV -->|no| ID{"¿Quién es?"}
-    ID -->|sesión principal| OK[["Permitir"]]
-    ID -->|"claim (workflow) o AGENTIC_WP (modo A)"| T{"Tipo de herramienta"}
-    T -->|Bash| GB{"git que escribe, instalar<br/>dependencias o claude -p?"}
-    GB -->|sí| BLK
+    E["A tool is about to run"] --> NV{"Bash with --no-verify,<br/>commit -n or core.hooksPath?"}
+    NV -->|yes| BLK[["Block · exit 2"]]
+    NV -->|no| ID{"Who is it?"}
+    ID -->|main session| OK[["Allow"]]
+    ID -->|"claim (workflow) or AGENTIC_WP (fallback)"| T{"Tool type"}
+    T -->|Bash| GB{"git write, install<br/>dependencies or claude -p?"}
+    GB -->|yes| BLK
     GB -->|no| OK
-    T -->|escritura| PROT{"¿architecture.md, .claude/,<br/>docs/architecture/ o codemap?"}
-    PROT -->|sí| BLK
-    PROT -->|no| OWN{"¿El fichero es de su zona<br/>según el manifiesto?"}
+    T -->|write| PROT{"architecture.md, .claude/,<br/>docs/architecture/ or codemap?"}
+    PROT -->|yes| BLK
+    PROT -->|no| OWN{"Is the file in its zone,<br/>according to the manifest?"}
     OWN -->|no| BLK
-    OWN -->|sí| SEC{"¿Contiene un secreto?"}
-    SEC -->|sí| BLK
-    SEC -->|no| CFG{"¿Modifica config de calidad<br/>existente sin config_edit?"}
-    CFG -->|sí| BLK
-    CFG -->|no| SKIP{"¿Añade skip, xfail u only<br/>a un fichero de test?"}
-    SKIP -->|sí| BLK
+    OWN -->|yes| SEC{"Does it contain a secret?"}
+    SEC -->|yes| BLK
+    SEC -->|no| CFG{"Does it modify existing quality<br/>config without config_edit?"}
+    CFG -->|yes| BLK
+    CFG -->|no| SKIP{"Does it add skip, xfail or only<br/>to a test file?"}
+    SKIP -->|yes| BLK
     SKIP -->|no| OK
 ```
 
-Además, al cerrar cada etapa, `check-wave` compara todos los ficheros antes y después. Cualquier cambio fuera de la zona de esa etapa la deja en `REVISAR`, incluidos los que se hicieran por Bash esquivando el hook.
+An agent of the flow must claim its zone before it can write anything; that includes custom agents a package declares in its `agent` field. The messages say what was blocked and what to do instead:
 
-## 5. Matriz de permisos
+<p align="center"><img src="assets/screens/hook.png" width="760" alt="Three real hook messages: an implementer that has not claimed its package, WP-02 trying to write a file owned by WP-01, and WP-02 trying to commit."></p>
 
-| Agente | Modelo | Escribe en | Ejecuta | No puede |
+On top of the hook, closing each stage compares the fingerprint of every file before and after. Any change outside that stage's zones leaves it in `REVISAR`, including changes made through Bash to dodge the hook.
+
+## 5. Permission matrix
+
+| Agent | Model | Writes to | Runs | May not |
 |---|---|---|---|---|
-| Arquitecto (`/architect`) | último Opus | `architecture.md`, `docs/architecture/` | `agentic.py validate`, `stack`, `codemap`, `sync-permissions`, `rules-sync` | código, tests |
-| plan-reviewer | último Opus | nada | nada | escribir |
-| Lanzador (`/implement`) | último Sonnet | nada (solo el ledger, vía script) | `agentic.py`, la herramienta Workflow | código, tests, commit sin tu aprobación |
-| Workflow `agentic-implement` | n/a (script) | nada: no tiene shell ni disco | solo agentes | saltarse el orden o los topes del script |
-| gatekeeper | último Sonnet | nada directamente (los comandos de `agentic.py` escriben estado) | solo `python3 .claude/bin/agentic.py …` | ejecutar cualquier otro comando |
-| verifier | último Sonnet | nada | nada (solo lee) | escribir |
-| test-author (`AT`) | último Sonnet | `acceptance.files` (por defecto `acceptance/`) | `allow_bash` + comando de aceptación | código de producción |
-| implementer (`WP-NN`) | último Sonnet | los `files` de su WP | `allow_bash` + comando de aceptación | ficheros ajenos, `acceptance/`, git, dependencias |
-| reviewer (`REVIEW`) | último Sonnet | nada | `git diff/status/log` + `allow_bash` | escribir |
-| qa (`QA`) | último Sonnet | `qa.files` (por defecto `qa/`) | `allow_bash` | código de producción |
-| doc-updater (`DOCS`) | último Sonnet | `docs.files` (por defecto `README.md`, `CHANGELOG.md`, `docs/`) | `git diff/status/log` | código, tests, el codemap, `docs/architecture/` |
+| Architect (`/architect`) | latest Opus | `architecture.md`, `docs/architecture/` | `agentic.py validate`, `stack`, `codemap`, `sync-permissions`, `rules-sync` | write code or tests |
+| plan-reviewer | latest Opus | nothing | nothing | write |
+| Launcher (`/implement`) | latest Sonnet | nothing (the ledger, through the script) | `agentic.py`, the Workflow tool | write code or tests, commit without your approval |
+| Workflow `agentic-implement` | n/a (script) | nothing: it has no shell or disk | agents only | skip the script's order or limits |
+| gatekeeper | latest Sonnet | nothing directly (`agentic.py` writes state) | only `python3 .claude/bin/agentic.py …` | run any other command |
+| verifier | latest Sonnet | nothing | nothing (reads only) | write |
+| test-author (`AT`) | latest Sonnet | `acceptance.files` (default `acceptance/`) | `allow_bash` + the acceptance command | write production code |
+| implementer (`WP-NN`) | latest Sonnet | its package's `files` | `allow_bash` + the acceptance command | touch other files, `acceptance/`, git, dependencies |
+| reviewer (`REVIEW`) | latest Sonnet | nothing | `git diff/status/log` + `allow_bash` | write |
+| qa (`QA`) | latest Sonnet | `qa.files` (default `qa/`) | `allow_bash` | write production code |
+| doc-updater (`DOCS`) | latest Sonnet | `docs.files` (default `README.md`, `CHANGELOG.md`, `docs/`) | `git diff/status/log` | write code, tests, the codemap, `docs/architecture/` |
 
-Para todos los agentes del flow: nada de secretos, de `--no-verify`, de relajar configuración existente ni de desactivar tests. Nadie puede poseer `architecture.md`, `.claude/` ni `docs/architecture/`, y el hook impide escribirlos (y el codemap) aunque una zona los incluya por prefijo, como `docs/`.
+For every agent of the flow: no secrets, no `--no-verify`, no relaxing existing configuration, no disabling tests. Nobody may own `architecture.md`, `.claude/` or `docs/architecture/`, and the hook blocks writes to them (and to the codemap) even when a zone includes them by prefix, such as `docs/`.
 
-## 6. Workflow nativo y modo A
+## 6. Native workflow and fallback mode
 
 ```mermaid
 flowchart LR
-    O["/implement"] --> Q{"¿Herramienta Workflow<br/>disponible?"}
-    Q -->|sí| W["Workflow agentic-implement"]
-    Q -->|no| C{"¿claude CLI<br/>en el PATH?"}
-    C -->|sí| A["Modo A (respaldo)"]
-    C -->|no| X(["Activa Dynamic workflows<br/>o instala el CLI"])
-    W --> W1["script determinista en segundo plano<br/>agentes con parallel() y JSON Schema<br/>identidad: claim + agent_id<br/>se para desde /workflows"]
-    A --> A1["agentic.py run-* en segundo plano<br/>un proceso claude -p por WP<br/>identidad: AGENTIC_WP<br/>stop mata el grupo de procesos"]
+    O["/implement"] --> Q{"Workflow tool<br/>available?"}
+    Q -->|yes| W["agentic-implement workflow"]
+    Q -->|no| C{"claude CLI<br/>on the PATH?"}
+    C -->|yes| A["Fallback mode"]
+    C -->|no| X(["Enable Dynamic workflows<br/>or install the CLI"])
+    W --> W1["deterministic script, in the background<br/>agents via parallel() and JSON Schema<br/>identity: claim + agent_id<br/>stopped from /workflows"]
+    A --> A1["agentic.py run-* in the background<br/>one claude -p process per WP<br/>identity: AGENTIC_WP<br/>stop kills the process group"]
     W1 --> L[("ledger.md")]
     A1 --> L
 ```
 
-| | Workflow nativo (principal) | Modo A (respaldo) |
+| | Native workflow (default) | Fallback mode (`modo A`) |
 |---|---|---|
-| Requisito | Dynamic workflows activado (en Pro, en `/config`, o `"enableWorkflows": true`) | CLI `claude` en el `PATH` |
-| Dónde funciona | CLI, Desktop, IDE, `claude -p` y nube | Donde haya CLI: terminal, Desktop, IDE |
-| Orquestación | El script, de forma determinista | El lanzador, siguiendo las instrucciones de `/implement` |
-| Informes | JSON validado por esquema | Texto con `STATUS:`, leído por regex |
-| Revisión | Con verificación adversarial de cada hallazgo grave | Sin verificación adversarial |
-| Límite de uso en Pro | El run se pausa y continúa solo (en sesión interactiva) | Los agentes en marcha fallan; se relanza a mano |
-| Seguimiento | `/workflows` y el ledger | El ledger |
+| Requirement | Dynamic workflows enabled (on Pro, in `/config`, or `"enableWorkflows": true`) | The `claude` CLI on the `PATH` |
+| Where it works | CLI, Desktop, IDEs, `claude -p` and the cloud | Wherever the CLI is: terminal, Desktop, IDEs |
+| Orchestration | The script, deterministically | The launcher, following `/implement`'s instructions |
+| Reports | JSON validated against a schema | Text with `STATUS:`, read by a regex |
+| Review | Adversarial verification of every serious finding | No adversarial verification |
+| Usage limit on Pro | The run pauses and resumes by itself (interactive sessions) | Running agents fail; relaunch by hand |
+| Following it | `/workflows` and the ledger | The ledger |
 
-## 7. Ficheros y estado
+## 7. Files and state
 
 ```
 .claude/
 ├── commands/
-│   ├── architect.md        /architect   (último Opus)
-│   └── implement.md        /implement   (último Sonnet)
+│   ├── architect.md        /architect   (latest Opus)
+│   └── implement.md        /implement   (latest Sonnet)
 ├── agents/
-│   ├── plan-reviewer.md    último Opus, solo lectura
-│   ├── gatekeeper.md       ejecuta agentic.py para el workflow
-│   ├── verifier.md         refuta hallazgos graves, solo lectura
-│   ├── test-author.md      ola 0
-│   ├── implementer.md      un WP
-│   ├── reviewer.md         solo lectura
-│   ├── qa.md               exploratorio
-│   └── doc-updater.md      documentación viva, zona docs
+│   ├── plan-reviewer.md    latest Opus, read-only
+│   ├── gatekeeper.md       runs agentic.py for the workflow
+│   ├── verifier.md         tries to refute serious findings, read-only
+│   ├── test-author.md      wave 0
+│   ├── implementer.md      one work package
+│   ├── reviewer.md         read-only
+│   ├── qa.md               exploratory
+│   └── doc-updater.md      living documentation, docs zone
 ├── workflows/
-│   └── agentic-implement.js   el pipeline completo como workflow nativo
-├── rules-library/          reglas comunes y de 10 lenguajes (fuente)
-├── rules/agentic/          las que instala rules-sync; Claude Code carga .claude/rules/
+│   └── agentic-implement.js   the whole pipeline as a native workflow
+├── rules-library/          common rules and 10 languages (source)
+├── rules/agentic/          installed by rules-sync; Claude Code loads .claude/rules/
 ├── bin/
 │   ├── agentic.py          validate · pipeline-plan · open/close-stage · verify · stack · rules-sync · codemap ·
 │   │                       docs-check · install · run-* · status · stop · hook
-│   ├── test_agentic.py     tests de agentic.py, del hook y del instalador
-│   ├── test_definitions.py tests de las definiciones: agentes, reglas, plugin, CI y documentación
-│   └── test_workflow.mjs   tests de la lógica del workflow con agentes simulados
-├── settings.json           hook PreToolUse + permisos
+│   ├── test_agentic.py     tests of agentic.py, the hook and the installer
+│   ├── test_definitions.py tests of the definitions: agents, rules, plugin, CI and documentation
+│   └── test_workflow.mjs   tests of the workflow logic with simulated agents
+├── settings.json           PreToolUse hook + permissions
 ├── agentic.json            timeout_s · auth · max_fix_cycles
-├── agentic-install.json    versión y huellas, si se instaló con el plugin
-└── state/                  (ignorado por git)
-    ├── ledger.md           estado legible
-    ├── runs/<ID>.json      informe de cada agente
-    └── snapshot-*.json     huellas para check-wave
-architecture.md             el contrato vigente
-docs/architecture/          diseños aprobados + índice de decisiones
-docs/CODEMAP.md             mapa del código, generado (si hay sección docs)
-acceptance/  qa/            tests de aceptación y de QA
-.claude-plugin/  plugin/    solo en la plantilla: el plugin que instala todo lo anterior
+├── agentic-install.json    version and file fingerprints, when installed by the plugin
+└── state/                  (ignored by git)
+    ├── ledger.md           readable state
+    ├── runs/<ID>.json      each agent's report
+    └── snapshot-*.json     fingerprints for the ownership check
+architecture.md             the current contract
+docs/architecture/          approved designs + decision index
+docs/CODEMAP.md             code map, generated (with a docs section)
+acceptance/  qa/            acceptance and QA tests
+.claude-plugin/  plugin/    template only: the plugin that installs everything above
 ```
 
-## 8. Glosario
+## 8. Glossary
 
-- **WP (work package):** unidad de trabajo con ficheros propios, asignada a un implementer.
-- **Ola:** grupo de WP que corren en paralelo. Una ola solo depende de olas anteriores.
-- **AC-NNN:** criterio de aceptación observable, con su "no debe" y su verificación automática.
-- **Ola 0:** el test-author convierte los AC en tests antes de que exista el código.
-- **Manifiesto:** bloque `json wp-manifest` de `architecture.md` del que leen todos los guardarraíles.
-- **Ledger:** `.claude/state/ledger.md`, el estado de agentes y etapas. Lo escribe el script, no el modelo.
-- **check-wave:** comparación de huellas antes y después de una etapa para detectar escrituras fuera de zona.
-- **Línea base:** estado de build, tipos, lint y tests antes de tocar nada (`.claude/state/baseline.json`). Al verificar, una fase que pasaba y ahora falla es **regresión** (bloquea); una que ya fallaba es **fallo previo** (se informa, no se atribuye a ningún WP).
-- **Patrones a imitar (`mirror`):** referencias `fichero:líneas` al código existente que cada WP debe imitar. `validate` comprueba que existen.
-- **Puertas humanas:** aprobar el diseño y aprobar el commit. Nada pasa de una fase a otra sin ti.
-- **Workflow nativo:** script de Claude Code (`.claude/workflows/`) que orquesta subagentes de forma determinista y en segundo plano. Aquí, `agentic-implement`.
-- **gatekeeper:** agente que ejecuta los pasos deterministas de `agentic.py` en nombre del workflow, que no tiene shell.
-- **Stack y reglas:** `stack` del manifiesto (los lenguajes del proyecto). `rules-sync` instala en `.claude/rules/agentic/` las reglas comunes y las de esos lenguajes, y el workflow pasa la lista a cada agente. Mandan, por este orden: `architecture.md`, el código existente, las reglas del proyecto y estas.
-- **Documentación viva:** etapa final, solo con el código aceptado. El **codemap** (ficheros y símbolos públicos) lo genera `agentic.py`, sin modelo y sin fecha, así que solo cambia cuando cambia el código. El doc-updater actualiza lo que lee el usuario y `docs-check` comprueba enlaces, anclas y rutas.
-- **Plugin:** `agentic-flow`, con un solo comando, `/agentic-flow:init`, que instala o actualiza el flow en el repo sin pisar lo que hayas modificado.
+- **Work package (WP):** a unit of work with its own files, assigned to one implementer.
+- **Wave:** a group of packages that run in parallel. A wave depends only on earlier waves.
+- **AC-NNN:** an observable acceptance criterion, with its "must not" and its automatic check.
+- **Wave 0:** the test-author turns the criteria into tests before any code exists.
+- **Manifest:** the `json wp-manifest` block in `architecture.md`, read by every guardrail.
+- **Ledger:** `.claude/state/ledger.md`, the state of agents and stages, written by the script, not by the model.
+- **Ownership check (`check-wave`):** a comparison of file fingerprints before and after a stage, to catch writes outside a zone.
+- **Baseline:** build, types, lint and tests before any change (`.claude/state/baseline.json`). When verifying, a phase that passed and now fails is a **regression** (blocks); one that already failed is a **pre-existing failure** (reported, never blamed on a package).
+- **Patterns to mirror (`mirror`):** `file:lines` references to existing code that each package must imitate. `validate` checks that they exist.
+- **Human gates:** approving the design and approving the commit. Nothing crosses a gate without you.
+- **Native workflow:** a Claude Code script (`.claude/workflows/`) that orchestrates subagents deterministically, in the background. Here, `agentic-implement`.
+- **gatekeeper:** the agent that runs `agentic.py`'s deterministic steps for the workflow, which has no shell.
+- **Stack and rules:** the manifest's `stack` lists the project's languages. `rules-sync` installs the common rules and those languages' rules in `.claude/rules/agentic/`, and the workflow hands the list to each agent. Precedence: `architecture.md`, the existing code, the project's own rules, then these.
+- **Living documentation:** the last stage, only with accepted code. The **codemap** (files and public symbols) is generated by `agentic.py` with no model and no date, so it only changes when the code does. The doc-updater updates what users read, and `docs-check` validates links, anchors and paths.
+- **Plugin:** `agentic-flow`, with a single command, `/agentic-flow:init`, that installs or updates the flow in a repo without overwriting your changes.

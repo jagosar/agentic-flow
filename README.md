@@ -86,7 +86,7 @@ Models are set by alias (`opus`, `sonnet`), which always resolve to the newest v
 | A failure in the guardrail itself | The hook fails closed inside an agent |
 | Usage billed to the API by mistake | Agents run on your subscription; API keys are removed from their environment |
 
-The full decision diagram is in [How it works](docs/how-it-works.md#4-guardarraíles-decisión-del-hook).
+The full decision diagram is in [How it works](docs/how-it-works.md#4-guardrails-the-hooks-decision).
 
 ## Language rules
 

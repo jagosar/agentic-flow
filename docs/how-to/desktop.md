@@ -1,75 +1,73 @@
-# How-to: Claude Code Desktop
+# Guide: Claude Code Desktop
 
-**Objetivo:** usar el flow desde la pestaña **Code** de la app de Claude.
-**Estado:** parcial. Los scripts, los agentes y las pasadas completas (v1 y v2) se lanzaron desde una sesión de Desktop, como procesos `claude -p`. La entrevista de `/architect` con tarjetas de preguntas no se ha probado en la interfaz.
+**Goal:** use the flow from the **Code** tab of the Claude app.
+**Status:** partly tested. The scripts, the agents and complete runs were launched from a Desktop session. The `/architect` interview with question cards has not been tested in the UI yet.
 
-Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
+Before you start, meet the [requirements](README.md#requirements) and [install the flow in your project](README.md#install-the-flow-in-a-project).
 
-## Requisitos de este entorno
+## What this environment needs
 
-- La app de Claude para macOS, Windows o Linux (beta), con sesión iniciada en un plan Pro, Max, Team o Enterprise.
-- **Dynamic workflows activado** (en Pro, en `/config`). La plantilla ya trae `"enableWorkflows": true` en `.claude/settings.json`.
-- **Opcional, el CLI instalado aparte**, para el modo A de respaldo. La app trae su propio Claude Code, pero no pone `claude` en el `PATH`.
-- En Windows, trabaja con el entorno **WSL**, porque `agentic.py` necesita POSIX.
+- The Claude app for macOS, Windows or Linux (beta), signed in to a Pro, Max, Team or Enterprise plan.
+- **Dynamic workflows enabled** (on Pro, in `/config`). The template already sets `"enableWorkflows": true` in `.claude/settings.json`.
+- **Optionally, the CLI installed separately**, for the fallback mode. The app ships its own Claude Code, but does not put `claude` on the `PATH`.
+- On Windows, use the **WSL** environment: `agentic.py` needs POSIX.
 
-## 1. Abrir la sesión
+## 1. Open a session
 
-1. Abre la app y pulsa la pestaña **Code**, arriba en el centro.
-2. Elige **Local**, o **WSL** en Windows, y pulsa **Select folder**. Selecciona la carpeta del repo.
-3. **Modelo:** el desplegable junto al botón de enviar no importa para el flow. `/architect` cambia solo al último Opus y `/implement`, al último Sonnet.
-4. **Modo de permisos** (selector junto al botón de enviar):
-   - **Manual** la primera vez, para ver cada paso.
-   - **Accept edits** cuando conozcas el flow.
-   - **Auto** no se ha probado con el flow: su clasificador podría frenar el lanzamiento de agentes en paralelo.
+1. Open the app and choose the **Code** tab, at the top.
+2. Choose **Local** (or **WSL** on Windows), click **Select folder** and pick the repo.
+3. **Model:** the picker next to the send button does not matter for the flow. `/architect` switches to the latest Opus and `/implement` to the latest Sonnet.
+4. **Permission mode** (next to the send button):
+   - **Manual** the first time, to see every step.
+   - **Accept edits** once you know the flow.
+   - **Auto** has not been tested with the flow: its classifier could hold back the launch of parallel agents.
 
-**Resultado esperado:** una sesión abierta en tu proyecto. Al escribir `/`, aparecen `/architect` y `/implement`.
+Type `/`: `/architect` and `/implement` should appear.
 
-## 2. Diseñar
+## 2. Design
 
 ```
-/architect Quiero un servicio de reservas con API REST, Postgres y autenticación JWT
+/architect A booking service with a REST API, Postgres and JWT authentication
 ```
 
-- Las preguntas aparecen como tarjetas con opciones, con la recomendada primero.
-- Al final verás `Manifiesto válido` y una petición de aprobación.
-- Abre `architecture.md` en el panel de ficheros (pulsa la ruta) y revísalo. Cuando lo apruebes, pide en la sesión "haz commit de architecture.md".
+- The questions appear as cards with options, the recommended one first.
+- It ends with `Manifiesto válido` ("manifest valid") and a request for approval.
+- Open `architecture.md` from the file pane (click its path) and read it. Once you approve, ask the session to "commit architecture.md".
 
-## 3. Implementar
+## 3. Build
 
 ```
 /implement
 ```
 
-- El workflow corre en segundo plano. La app muestra una tarjeta de aprobación la primera vez (**Once**, **Always** o **Deny**) y el progreso en el panel **Background tasks**, con cada fase y sus agentes.
-- Puedes seguir hablando con la sesión mientras corre. La app te avisa al acabar.
-- Para ver los logs en bruto, abre el terminal integrado con **Ctrl+\`** y ejecuta `tail -f .claude/state/runs/*.log`.
+- The workflow runs in the background. The first time, the app shows an approval card (**Once**, **Always** or **Deny**), and the progress appears in the **Background tasks** pane, phase by phase, with each agent.
+- Keep talking to the session while it runs; the app tells you when it finishes.
+- For the raw logs, open the integrated terminal (**Ctrl+\`**) and run `python3 .claude/bin/agentic.py status`.
 
-**Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las seis fases de verificación (con la aceptación en verde), el estado del revisor y de QA, la documentación actualizada (si el manifiesto tiene sección `docs`) y los commits propuestos, a la espera de tu aprobación.
+You get a report like the one in the [terminal guide](terminal.md#3-build): each package's status, the verification phases, review and QA, the fix cycles, the documentation and the proposed commits, waiting for your approval.
 
-## 4. Revisar y entregar
+## 4. Review and deliver
 
-- Pulsa el indicador `+N -M` para abrir la **vista de diff**. Puedes comentar líneas concretas y Claude lo revisará.
-- El informe de QA está en el resumen de `/implement` y, completo, en `.claude/state/runs/workflow-result.json` (en el modo A, en `qa/report.md`).
-- El revisor del flow ya ha mirado la calidad. Su informe está en `.claude/state/runs/REVIEW.json`.
-- Para el commit, el push y el PR, pídeselo a la sesión o usa los botones de la app. Los agentes del flow no pueden hacer commit ni push; la sesión principal solo lo hace si se lo pides.
+- Click the `+N -M` indicator to open the **diff view**. You can comment on specific lines and Claude will address them.
+- The QA report is in the `/implement` summary and, in full, in `.claude/state/runs/workflow-result.json`.
+- For the commit, the push and the pull request, ask the session or use the app's buttons. The flow's agents cannot commit or push; the main session only does it when you ask.
 
-## Trucos
+## Tips
 
-- **Varias features a la vez:** abre una sesión por feature desde la barra lateral, cada una en su worktree.
-- **Desde el móvil:** activa **Remote Control** en la sesión para responder a la entrevista del arquitecto desde el teléfono. La ejecución sigue en tu máquina, en modo A.
-- **Trabajo largo:** elige **Cloud** al crear la sesión para que siga aunque cierres la app. Consulta [web-ios.md](web-ios.md).
-- **Seguir el avance sin esperar:** mientras una ola trabaja, pregunta "¿cómo va?" y el orquestador responde desde el ledger. Para cortar, di "para" o "para WP-02".
-- **Relanzar un WP:** escribe "relanza WP-03 de la ola 2 para corregir sus defectos". La sesión ejecuta `run-wave 2 WP-03 --fix`, con un máximo de 2 ciclos por WP.
+- **Several features at once:** open one session per feature from the sidebar, each in its own worktree.
+- **From your phone:** turn on **Remote Control** to answer the architect's interview from your phone; the work keeps running on your machine.
+- **Long jobs:** choose **Cloud** when creating the session so it keeps going if you close the app. See [web-ios.md](web-ios.md).
+- **Check progress without waiting:** ask "how is it going?" and the launcher answers from the ledger.
 
-## Problemas frecuentes
+## Troubleshooting
 
-| Síntoma | Solución |
+| Symptom | Fix |
 |---|---|
-| `/implement` usa el modo A | Activa **Dynamic workflows** en `/config` y vuelve a lanzar |
-| La app pide permiso para `agentic.py` cada vez | Abre `claude` una vez en la carpeta desde una terminal y acepta el aviso de confianza |
-| No aparecen `/architect` ni los demás | Comprueba que `.claude/commands/` está en la carpeta que elegiste |
+| `/implement` uses the fallback mode | Enable **Dynamic workflows** in `/config` and launch again |
+| The app asks permission for `agentic.py` every time | Open `claude` once in the folder from a terminal and accept the trust prompt |
+| `/architect` and the rest do not appear | Check that `.claude/commands/` is in the folder you selected |
 
-## Referencias
+## References
 
-- [Primeros pasos con Desktop](https://code.claude.com/docs/en/desktop-quickstart)
-- [Usar Claude Code Desktop](https://code.claude.com/docs/en/desktop)
+- [Desktop quickstart](https://code.claude.com/docs/en/desktop-quickstart)
+- [Using Claude Code Desktop](https://code.claude.com/docs/en/desktop)

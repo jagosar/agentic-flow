@@ -1,63 +1,61 @@
-# How-to: Visual Studio Code (y Cursor)
+# Guide: Visual Studio Code (and Cursor)
 
-**Objetivo:** usar el flow desde la extensión oficial de Claude Code, revisando los cambios en el editor.
-**Estado:** sin probar. Esta guía sigue la documentación oficial de la extensión. El flow usa los mismos ficheros `.claude/` que el CLI.
+**Goal:** use the flow from the official Claude Code extension, reviewing changes in the editor.
+**Status:** not tested. This guide follows the extension's official documentation; the flow uses the same `.claude/` files as the CLI.
 
-Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
+Before you start, meet the [requirements](README.md#requirements) and [install the flow in your project](README.md#install-the-flow-in-a-project).
 
-## Requisitos de este entorno
+## What this environment needs
 
-- VS Code 1.94 o posterior. También funciona en Cursor.
-- Extensión **Claude Code**, de Anthropic (`anthropic.claude-code`).
-- **Dynamic workflows activado** (en Pro, en `/config`).
-- **Opcional, el CLI instalado aparte**, para el modo A de respaldo. La extensión trae su propia copia del CLI para el panel, pero no la pone en el `PATH`.
+- VS Code 1.94 or later. It also works in Cursor.
+- The **Claude Code** extension by Anthropic (`anthropic.claude-code`).
+- **Dynamic workflows enabled** (on Pro, in `/config`).
+- **Optionally, the CLI installed separately**, for the fallback mode. The extension bundles a CLI for its panel, but does not put it on the `PATH`.
 
-## 1. Instalar
+## 1. Install
 
-1. Abre Extensiones (`Ctrl+Shift+X`, o `Cmd+Shift+X` en Mac), busca **Claude Code** y pulsa **Install**.
-2. Abre el panel con el icono **Spark**. Está en la barra de herramientas del editor (con un fichero abierto), en la Activity Bar o en **✻ Claude Code**, en la barra de estado.
-3. Pulsa **Sign in** y autoriza en el navegador con tu cuenta del plan. No necesitas API key.
+1. Open Extensions (`Ctrl+Shift+X`, or `Cmd+Shift+X` on a Mac), search for **Claude Code** and click **Install**.
+2. Open the panel with the **Spark** icon: in the editor toolbar (with a file open), in the Activity Bar, or from **✻ Claude Code** in the status bar.
+3. Click **Sign in** and authorise in the browser with your plan's account. No API key needed.
 
-**Resultado esperado:** el panel abierto y con sesión iniciada.
+## 2. Open the project
 
-## 2. Abrir el proyecto
+Use `File → Open Folder` on the repo root, where `.claude/` lives. Typing `/` in the panel should show `/architect` and `/implement`.
 
-Usa `File → Open Folder` sobre la raíz del repo, donde está `.claude/`. Al escribir `/` en el panel, deberían aparecer `/architect` y `/implement`.
-
-## 3. Usar el flow
+## 3. Use the flow
 
 ```
-/architect Quiero añadir exportación a PDF de las facturas
+/architect Add PDF export to invoices
 ```
 
-- No hace falta elegir modelo: cada comando fija el suyo. Para ver el modelo de la sesión, pulsa su nombre al pie de la caja de texto.
-- El indicador de modo de permisos, al pie de la caja de texto, funciona como en Desktop. Empieza con un modo que te pregunte.
-- Revisa `architecture.md` en el editor y apruébalo.
+- No need to choose a model: each command sets its own. Click the model name under the input box to see the session's.
+- The permission mode indicator under the input box works as in Desktop. Start with a mode that asks you.
+- Read `architecture.md` in the editor and approve it.
 
 ```
 /implement
 ```
 
-- **Workflow:** síguelo con `/workflows`, o desde el contador de agentes, que abre el **mapa de agentes** con cada uno, su estado y su transcripción.
-- **Cambios:** se escriben directamente en disco. Revísalos en **Source Control** (`Ctrl+Shift+G`).
+- **Workflow:** follow it with `/workflows`, or from the agent counter, which opens the **agent map** with each agent, its state and its transcript.
+- **Changes** are written straight to disk. Review them in **Source Control** (`Ctrl+Shift+G`).
 
-## 4. Revisar y commit
+## 4. Review and commit
 
-- **Source Control** muestra cada fichero tocado: código, `acceptance/` (ola 0) y `qa/`. El informe de QA está en el resumen de `/implement` y en `.claude/state/runs/workflow-result.json`.
-- Haz el commit y el push desde Source Control, o pídeselos a la sesión.
+- **Source Control** lists every file touched: code, `acceptance/` (wave 0), `qa/` and the documentation. The QA report is in the `/implement` summary and in `.claude/state/runs/workflow-result.json`.
+- Commit and push from Source Control, or ask the session.
 
-## Alternativa: el CLI en la terminal integrada
+## Alternative: the CLI in the integrated terminal
 
-Abre la terminal integrada (`` Ctrl+` ``) y sigue [terminal.md](terminal.md). Si arrancas `claude` desde ahí, se conecta con el editor para mostrar los diffs.
+Open the integrated terminal (`` Ctrl+` ``) and follow [terminal.md](terminal.md). When started from there, `claude` connects to the editor to show diffs.
 
-## Problemas frecuentes
+## Troubleshooting
 
-| Síntoma | Solución |
+| Symptom | Fix |
 |---|---|
-| `/implement` usa el modo A | Activa **Dynamic workflows** en `/config` y vuelve a lanzar |
-| No aparecen los comandos del flow | Abre la carpeta raíz del repo, no una subcarpeta |
-| Las preguntas del arquitecto salen como texto en vez de opciones | Contesta en el chat: el arquitecto acepta respuestas en texto |
+| `/implement` uses the fallback mode | Enable **Dynamic workflows** in `/config` and launch again |
+| The flow's commands do not appear | Open the repo's root folder, not a subfolder |
+| The architect's questions arrive as text instead of options | Answer in the chat: the architect accepts free-text answers |
 
-## Referencias
+## References
 
-- [Claude Code en VS Code](https://code.claude.com/docs/en/vs-code)
+- [Claude Code in VS Code](https://code.claude.com/docs/en/vs-code)

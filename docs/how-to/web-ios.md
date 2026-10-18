@@ -1,68 +1,68 @@
-# How-to: sesiones en la nube (web e iOS)
+# Guide: cloud sessions (web and iOS)
 
-**Objetivo:** ejecutar el flow en una sesión en la nube de Claude Code, lanzada desde el navegador, el móvil, Desktop o la terminal.
-**Estado:** sin probar. Esta guía sigue la documentación oficial de las sesiones en la nube.
+**Goal:** run the flow in a Claude Code cloud session, started from the browser, your phone, Desktop or the terminal.
+**Status:** not tested. This guide follows the official documentation for cloud sessions.
 
-Antes, lee los [requisitos comunes](README.md#requisitos-comunes). En la nube no necesitas instalar nada en tu máquina.
+Before you start, read the [requirements](README.md#requirements). Nothing needs installing on your machine.
 
-## Qué es una sesión en la nube
+## What a cloud session is
 
-- Corre en una máquina virtual de Anthropic (Ubuntu 24.04, con Python 3, git y otras herramientas ya instaladas) sobre un clon de tu repo de GitHub.
-- Sigue funcionando aunque cierres el portátil.
-- Está disponible en Pro, Max y Team. Cuenta contra los límites de uso de tu plan, sin cargo aparte, y siempre usa tu suscripción.
-- Carga los `.claude/agents/` del repo y el `.claude/settings.json` (hooks y permisos), así que los guardarraíles del flow se aplican también aquí.
+- It runs in an Anthropic virtual machine (Ubuntu 24.04, with Python 3, git and other tools preinstalled) on a clone of your GitHub repo.
+- It keeps working when you close your laptop.
+- It is available on Pro, Max and Team, counts against your plan's usage limits with no extra charge, and always uses your subscription.
+- It loads the repo's `.claude/agents/` and `.claude/settings.json` (hooks and permissions), so the flow's guardrails apply here too.
 
-## 1. Preparar
+## 1. Prepare
 
-1. Conecta GitHub con una de estas opciones:
-   - **En el navegador:** instala la **Claude GitHub App** durante la configuración inicial en [claude.ai/code](https://claude.ai/code).
-   - **Desde la terminal:** ejecuta `/web-setup`, que reutiliza tu sesión de `gh`.
-2. Haz push de la rama con `.claude/` y `architecture.md`, si ya existe. La nube clona lo que está en GitHub, no tu copia local.
+1. Connect GitHub, either way:
+   - **In the browser:** install the **Claude GitHub App** during the first setup at [claude.ai/code](https://claude.ai/code).
+   - **From the terminal:** run `/web-setup`, which reuses your `gh` login.
+2. Push the branch with `.claude/` (and `architecture.md`, if it exists). The cloud clones what is on GitHub, not your local copy.
 
-## 2. Lanzar la sesión
+## 2. Start a session
 
-Elige una de estas opciones:
+Pick one:
 
-- **Navegador:** [claude.ai/code](https://claude.ai/code), luego el repo y la rama.
-- **iPhone:** pestaña **Code** de la app de Claude.
-- **Desktop:** al crear la sesión, elige **Cloud** en vez de **Local**.
+- **Browser:** [claude.ai/code](https://claude.ai/code), then the repo and the branch.
+- **iPhone:** the **Code** tab of the Claude app.
+- **Desktop:** choose **Cloud** instead of **Local** when creating the session.
 - **Terminal:**
 
   ```bash
   claude --cloud "/implement"
   ```
 
-## 3. Usar el flow
+## 3. Use the flow
 
 ```
-/architect <tu petición>
+/architect <your request>
 ```
 
 ```
 /implement
 ```
 
-- **En la nube se usa el workflow nativo**, igual que en local: los workflows están disponibles en las sesiones en la nube, y su progreso se guarda con la sesión. El modo A (procesos `claude -p`) no se ha probado dentro de la VM.
-- Los cambios aparecen con el indicador `+N -M`. Ábrelo para ver el diff y comentar líneas.
-- Cuando termine, crea el PR desde la interfaz de la sesión.
+- **The cloud uses the native workflow**, as locally: workflows are available in cloud sessions and their progress is saved with the session. The fallback mode (`claude -p` processes) has not been tested inside the VM.
+- Changes appear behind the `+N -M` indicator; open it to see the diff and comment on lines.
+- When it finishes, create the pull request from the session.
 
-## Recomendado desde el móvil
+## From your phone
 
-La entrevista del arquitecto encaja bien en el móvil: son preguntas cortas con opciones. Dos formas de aprovecharlo:
+The architect's interview suits a phone well: short questions with options. Two ways to use it:
 
-- **Diseño en el móvil, ejecución en Desktop:** haz `/architect` desde el iPhone y, cuando apruebes, lanza `/implement` en Desktop. Para continuar una sesión en la nube en tu terminal: `claude --teleport`.
-- **Todo en tu máquina:** empieza la sesión en Desktop o en la terminal y síguela desde el móvil con **Remote Control**.
+- **Design on the phone, build on Desktop:** run `/architect` from the iPhone and, once you approve, `/implement` on Desktop. To continue a cloud session in your terminal: `claude --teleport`.
+- **Everything on your machine:** start the session on Desktop or in the terminal and follow it from your phone with **Remote Control**.
 
-## Problemas frecuentes
+## Troubleshooting
 
-| Síntoma | Solución |
+| Symptom | Fix |
 |---|---|
-| La sesión no ve `.claude/` o el `architecture.md` | No hiciste push de esa rama. La nube clona el remoto |
-| No aparecen repositorios | Revisa la conexión con GitHub (App instalada en el repo, o `/web-setup`) |
-| Se agotan los límites de uso | Las sesiones en la nube comparten límites con el resto de tu uso. Lanza menos WP por ola o espera a que se renueven |
+| The session does not see `.claude/` or `architecture.md` | That branch was not pushed. The cloud clones the remote |
+| No repositories appear | Check the GitHub connection (the App installed on the repo, or `/web-setup`) |
+| Usage limits run out | Cloud sessions share limits with the rest of your usage. Run fewer packages per wave, or wait for the reset |
 
-## Referencias
+## References
 
-- [Claude Code en la nube](https://code.claude.com/docs/en/claude-code-on-the-web)
-- [Entornos en la nube](https://code.claude.com/docs/en/cloud-environments)
+- [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web)
+- [Cloud environments](https://code.claude.com/docs/en/cloud-environments)
 - [Remote Control](https://code.claude.com/docs/en/remote-control)
