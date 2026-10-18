@@ -236,7 +236,7 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 76 tests de los guardarraíles, los comandos del pipeline, el lanzador y el ledger, más 14 escenarios de la lógica del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
+Son 78 tests de los guardarraíles, los comandos del pipeline, el lanzador y el ledger, más 14 escenarios de la lógica del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
 
 ## Problemas frecuentes
 

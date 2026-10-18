@@ -37,7 +37,13 @@ Mientras corre:
 
 # 3. Presentar el resultado (puerta humana)
 
-El workflow devuelve un JSON. Primero guárdalo tal cual en `.claude/state/runs/workflow-result.json`: es el registro completo de la ejecución, incluido el informe de QA. Después preséntalo así:
+El workflow devuelve un JSON. Primero guárdalo, porque es el registro completo de la ejecución, incluido el informe de QA:
+1. Escríbelo tal cual con la herramienta Write en `.agentic-result.json`, en la raíz del repo.
+2. Ejecuta `python3 .claude/bin/agentic.py save-result .agentic-result.json`, que lo mueve a `.claude/state/runs/workflow-result.json`.
+
+No lo escribas directamente en `.claude/`, que es una ruta protegida, ni lo pases por un heredoc, porque el filtro de seguridad de Bash lo bloquea.
+
+Después preséntalo así:
 
 - **Estado:** `result` (`OK` o `REVISAR`) y, si falló, `failed_stage` y `detail`.
 - **WP:** tabla con WP, estado, ficheros y comprobaciones, tomada de `work_packages`.

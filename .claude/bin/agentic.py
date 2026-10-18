@@ -15,6 +15,9 @@ Subcomandos:
   baseline            Línea base: fases de verify ANTES de tocar nada (separa regresiones de fallos previos).
   verify              Fases build/types/lint/tests + aceptación en verde, comparadas con la línea base. JSON.
   sync-permissions    Añade a .claude/settings.local.json los permisos que necesitan los agentes.
+  save-result [FICHERO]
+                      Guarda el JSON del workflow en .claude/state/runs/workflow-result.json (de FICHERO, que
+                      borra, o de stdin). El lanzador no puede escribir en .claude/, que es una ruta protegida.
   wave-plan N         Imprime en JSON los WP de la ola N.
   open-wave N         Valida, toma el snapshot de la ola N e imprime sus WP en JSON (workflow nativo).
   close-wave N ID=estado...
@@ -823,7 +826,8 @@ def ledger_render():
     agents = {k: v for k, v in d.items() if not k.startswith("_")}
     order = lambda kv: (kv[1].get("stage") == "qa", str(kv[1].get("stage")), kv[0])
     lines = ["# Ledger del flow", "", f"Actualizado: {now_hm()}", "", "## Etapas", ""]
-    pipeline = {"acceptance": 0, "aceptación (red)": 1, "aceptación (green)": 3, "review": 4, "qa": 5}
+    pipeline = {"línea base": -1, "acceptance": 0, "aceptación (red)": 1, "aceptación (green)": 3, "verificación": 3.5,
+                "review": 4, "qa": 5}
     order_st = lambda k: (2, k.zfill(4)) if k.isdigit() else (pipeline.get(k, 6), k)  # orden del pipeline
     lines += [f"- {'ola ' + k if k.isdigit() else k}: {stages[k]}" for k in sorted(stages, key=order_st)] or ["- (ninguna)"]
     lines += ["", "## Agentes", ""]
@@ -1044,6 +1048,22 @@ def main():
         verify(require_valid())
     elif cmd == "baseline":
         baseline(require_valid())
+    elif cmd == "save-result":
+        # El lanzador no puede escribir en .claude/ (ruta protegida): guarda aquí el JSON del workflow, leído de stdin.
+        # Con FICHERO (p. ej. .agentic-result.json en la raíz), lo lee y lo borra; sin él, lee stdin.
+        src = (ROOT / args[0]) if args else None
+        if src is not None and (src.resolve().parent != ROOT.resolve() or not src.is_file()):
+            die("save-result: el fichero debe existir y estar en la raíz del repo.")
+        try:
+            data = json.loads(src.read_text(encoding="utf-8")) if src else json.load(sys.stdin)
+        except json.JSONDecodeError as e:
+            die(f"save-result: no es JSON válido: {e}")
+        if src:
+            src.unlink()
+        out = STATE / "runs" / "workflow-result.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Guardado en {out.relative_to(ROOT)} (result: {data.get('result', '?')})")
     elif cmd == "sync-permissions":
         sync_permissions(require_valid())
     elif cmd in ("wave-plan", "open-wave"):

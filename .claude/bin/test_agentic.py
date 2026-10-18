@@ -467,6 +467,31 @@ class BrownfieldTests(Base):
         self.set_manifest(m)
         self.assertEqual(self.repo.run("baseline").returncode, 1)
 
+    def test_save_result(self):
+        payload = {"result": "OK", "qa": {"status": "PASS"}, "nota": "ñandú"}
+        r = self.repo.run("save-result", stdin=json.dumps(payload))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        saved = json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text())
+        self.assertEqual(saved, payload)
+        self.assertEqual(self.repo.run("save-result", stdin="no es json").returncode, 1)
+        (self.repo.dir / ".agentic-result.json").write_text(json.dumps({"result": "REVISAR"}))
+        r = self.repo.run("save-result", ".agentic-result.json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse((self.repo.dir / ".agentic-result.json").exists(), "el fichero temporal se borra")
+        self.assertEqual(json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text())["result"], "REVISAR")
+        self.repo.write("src/x.json", "{}")
+        self.assertEqual(self.repo.run("save-result", "src/x.json").returncode, 1, "solo desde la raíz")
+
+    def test_orden_del_ledger(self):
+        self.scripts(0, 0)
+        self.repo.run("baseline")
+        self.repo.run("open-stage", "1")
+        self.repo.run("close-stage", "1", "WP-01=done", "WP-02=done")
+        self.repo.run("verify")
+        st = self.repo.run("status").stdout
+        self.assertLess(st.index("línea base"), st.index("ola 1"))
+        self.assertLess(st.index("ola 1"), st.index("verificación"))
+
     def test_pipeline_plan_indica_linea_base(self):
         self.scripts(0, 0)
         self.assertTrue(json.loads(self.repo.run("pipeline-plan").stdout)["baseline"])

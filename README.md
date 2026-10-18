@@ -88,8 +88,9 @@ El detalle, con el diagrama de decisión, está en [Cómo funciona § 4](docs/ho
 - **Probado de principio a fin con agentes reales:**
   - `/implement` con el workflow nativo: ola 0 (16 AC en rojo), dos olas en paralelo, verificación, revisión, QA y ledger cerrado, en unos 5 minutos;
   - el hook bloquea escrituras ajenas también dentro del workflow (probado con una sonda adversarial);
+  - **sobre un repo con código** (añadir expiración al acortador): el arquitecto generó la sección 4b y referencias `fichero:línea` exactas, con el *gotcha* de compatibilidad. El workflow fijó la línea base, pasó 13 AC nuevos y mantuvo en verde los 16 antiguos. El fichero de datos de la versión anterior sigue funcionando byte a byte, y los implementers siguieron los patrones citados;
   - el modo A de respaldo, de principio a fin.
-- **Tests del propio flow:** 76 tests (Python) + 14 escenarios del workflow (Node) en CI, con Python 3.9, 3.12 y 3.14.
+- **Tests del propio flow:** 78 tests (Python) + 14 escenarios del workflow (Node) en CI, con Python 3.9, 3.12 y 3.14.
 - **Sin probar:** el ciclo de corrección con agentes reales (solo con tests simulados); la entrevista interactiva en la interfaz; VS Code, JetBrains, nube y GitHub Actions.
 
 ## Créditos
