@@ -19,6 +19,7 @@ Tú decides en dos puntos: apruebas el diseño y apruebas el commit.
 ## Inicio rápido
 
 Requisitos:
+- **Dynamic workflows activado:** en Pro, en `/config`. La plantilla ya trae `"enableWorkflows": true`.
 - macOS, Linux o WSL 2.
 - `python3` 3.9 o posterior.
 - `git`.
@@ -47,12 +48,15 @@ Para un proyecto que ya existe, copia `.claude/` y las líneas del `.gitignore`:
 |---|---|---|---|
 | `/architect` | `.claude/commands/architect.md` | último Opus | Clasifica la petición, investiga, entrevista y escribe `architecture.md` con contratos y criterios AC-NNN |
 | plan-reviewer | `.claude/agents/plan-reviewer.md` | último Opus | Revisa `architecture.md` en contexto limpio antes de tu aprobación |
-| `/implement` | `.claude/commands/implement.md` | último Sonnet | Orquesta: ola 0, olas, verificación por fases, revisión, QA y correcciones |
+| `/implement` | `.claude/commands/implement.md` | último Sonnet | Valida, lanza el workflow y gestiona tu puerta de commit |
+| `agentic-implement` | `.claude/workflows/agentic-implement.js` | n/a (script) | Workflow nativo: ola 0, olas en paralelo, verificación, revisión adversarial, QA y correcciones con tope, de forma determinista y en segundo plano |
 | test-author | `.claude/agents/test-author.md` | último Sonnet | Escribe los tests de aceptación desde los AC, antes del código |
 | implementer | `.claude/agents/implementer.md` | último Sonnet | Implementa un work package, en paralelo con los demás de su ola |
 | reviewer | `.claude/agents/reviewer.md` | último Sonnet | Revisión de calidad y seguridad, de solo lectura y con filtro de confianza |
+| verifier | `.claude/agents/verifier.md` | último Sonnet | Intenta refutar cada hallazgo grave; la incertidumbre nunca rebaja un bloqueo |
 | qa | `.claude/agents/qa.md` | último Sonnet | Pruebas exploratorias más allá de los AC |
-| `agentic.py` | `.claude/bin/agentic.py` | n/a | Guardarraíles (hook), lanzador paralelo, ledger y verificaciones |
+| gatekeeper | `.claude/agents/gatekeeper.md` | último Sonnet | Ejecuta los pasos deterministas de `agentic.py` para el workflow, que no tiene shell |
+| `agentic.py` | `.claude/bin/agentic.py` | n/a | Guardarraíles (hook), pasos deterministas (`verify`, `open/close-stage`…), ledger y lanzador del modo A |
 
 Los modelos están fijados por alias (`opus`, `sonnet`), que siempre apuntan a la versión más reciente que conoce tu Claude Code. `validate` falla si alguien fija otro modelo.
 
@@ -68,7 +72,8 @@ Los modelos están fijados por alias (`opus`, `sonnet`), que siempre apuntan a l
 | Saltarse los hooks de git | `--no-verify`, `commit -n` y `core.hooksPath` bloqueados para todos, también para la sesión principal |
 | Git, dependencias o sesiones anidadas desde un agente | Bloqueados dentro de cualquier agente del flow |
 | Escrituras que esquivan el hook (por Bash) | `check-wave` compara las huellas antes y después de cada etapa |
-| Bucles de corrección sin fin | Máximo 2 ciclos `--fix` por WP. Después decides tú |
+| Falsos positivos de revisión que bloquean | Un `verifier` independiente intenta refutar cada hallazgo grave; solo se descarta si lo refuta con confianza |
+| Bucles de corrección sin fin | Máximo 2 ciclos de corrección por WP. Después decides tú |
 | Instrucciones inyectadas en el repo | Defensa explícita en las instrucciones de cada agente |
 | Un fallo del propio guardarraíl | El hook falla cerrado: dentro de un agente, cualquier error bloquea |
 | Agentes que se quedan colgados | `timeout_s` por etapa y `agentic.py stop` |
@@ -79,10 +84,11 @@ El detalle, con el diagrama de decisión, está en [Cómo funciona § 4](docs/ho
 ## Estado
 
 - **Probado de principio a fin con agentes reales:**
-  - flow v2 en modo A: arquitecto, revisión del plan, ola 0, dos olas en paralelo, verificación, revisor y QA;
-  - flow v1 también en modo B.
-- **Tests del propio flow:** 62 tests en CI, con Python 3.9, 3.12 y 3.14.
-- **Sin probar:** el modo B de v2 con subagentes reales; la entrevista interactiva en la interfaz; VS Code, JetBrains, nube y GitHub Actions.
+  - `/implement` con el workflow nativo: ola 0 (16 AC en rojo), dos olas en paralelo, verificación, revisión, QA y ledger cerrado, en unos 5 minutos;
+  - el hook bloquea escrituras ajenas también dentro del workflow (probado con una sonda adversarial);
+  - el modo A de respaldo, de principio a fin.
+- **Tests del propio flow:** 71 tests (Python) + 11 escenarios del workflow (Node) en CI, con Python 3.9, 3.12 y 3.14.
+- **Sin probar:** el ciclo de corrección con agentes reales (solo con tests simulados); la entrevista interactiva en la interfaz; VS Code, JetBrains, nube y GitHub Actions.
 
 ## Créditos
 

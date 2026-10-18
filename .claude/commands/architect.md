@@ -138,6 +138,7 @@ Al final de la sección 8 va el manifiesto que leen los guardarraíles. Es oblig
     {
       "allow_bash": ["Bash(python3 -m pytest:*)"],
       "acceptance": {"files": ["acceptance/"], "command": "python3 -m pytest acceptance -q"},
+      "verify": {"build": "python3 -m compileall -q src", "lint": "ruff check src", "tests": "python3 -m pytest -q"},
       "work_packages": [
         {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/models.py", "tests/test_models.py"]},
         {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["src/api/"]}
@@ -150,6 +151,7 @@ Campos del manifiesto:
 - **`files`:** rutas relativas al repo. Una ruta que acaba en `/` posee todo el directorio. Debe coincidir con la sección 4.
 - **`acceptance` (obligatorio salvo en refactor):** `files` es la zona del test-author y `command` el comando, sin shell, que ejecuta los tests de aceptación. Elige un comando que funcione aunque los módulos todavía no existan (los imports fallarán, y eso cuenta como rojo). En un refactor, `command` es la suite existente.
 - **`allow_bash`:** los únicos comandos que pueden ejecutar los agentes sin pedir permiso (build, lint y test de la sección 3). Mínimos y concretos: `validate` rechaza las reglas que dan ejecución arbitraria.
+- **`verify` (recomendado):** los comandos de las fases de verificación (`build`, `types`, `lint`, `tests`), los mismos de la sección 3. El flow los ejecuta tal cual, sin shell, después de las olas. Las fases que no tengan comando se marcan como "no aplica".
 - **`ignore` (opcional):** artefactos del build o de los tests que no son de nadie, por ejemplo `["dist/", "*.log"]`.
 - **`qa` (opcional):** la zona de QA. Por defecto, `qa/`.
 - **`agent` (opcional, por WP):** el subagente que lo implementa. Por defecto, `implementer`. Su definición debe declarar `model: sonnet`.
@@ -190,5 +192,6 @@ El revisor no ha visto esta conversación, a propósito.
 - **Cuando la tengas, archiva el diseño:**
   1. Copia `architecture.md` a `docs/architecture/NNNN-<tema-en-kebab>.md`. `NNNN` es el siguiente número.
   2. Añade una línea a `docs/architecture/README.md` con el número, la fecha, el título, el tipo y las 2-3 decisiones clave. Crea el índice si no existe.
-  3. Indica al usuario que lance `/implement`.
+  3. Ejecuta `python3 .claude/bin/agentic.py sync-permissions`, para que los agentes puedan ejecutar los comandos del manifiesto sin pedir permiso cada vez.
+  4. Indica al usuario que lance `/implement`.
 - No lances la implementación tú.

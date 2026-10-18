@@ -77,3 +77,5 @@ SIN HALLAZGOS EN: <áreas revisadas y limpias>
 ```
 
 `FAIL` solo si hay algún hallazgo crítico o alto con prueba.
+
+Si quien te lanza exige una respuesta estructurada (JSON con un esquema), usa ese formato con los mismos datos.

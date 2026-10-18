@@ -8,6 +8,12 @@ Subcomandos:
   run-wave N [WP...] [--fix]
                       Lanza en paralelo un `claude -p --agent implementer` por WP de la ola N (o solo
                       los WP indicados). Con --fix, les pide corregir sus defectos del último informe de QA.
+  pipeline-plan       JSON con olas, WP, aceptación, tipo, fases de verify y tope de fix (workflow).
+  open-stage L        Snapshot de la etapa L (ola, acceptance, review, qa) y sus propietarios en JSON.
+  close-stage L ID=estado... [--expect red|green] [--fix]
+                      Propiedad + estados en el ledger (+ aceptación) (+ cuenta de fix), en una llamada.
+  verify              Fases build/types/lint/tests del manifiesto + aceptación en verde. Salida JSON.
+  sync-permissions    Añade a .claude/settings.local.json los permisos que necesitan los agentes.
   wave-plan N         Imprime en JSON los WP de la ola N.
   open-wave N         Valida, toma el snapshot de la ola N e imprime sus WP en JSON (workflow nativo).
   close-wave N ID=estado...
@@ -21,7 +27,7 @@ Subcomandos:
   claim ID            Asocia el subagente actual a un WP o a QA (lo registra el hook).
   status              Muestra el ledger: estado de cada agente y de cada etapa.
   mark ID ESTADO [NOTA]
-                      Actualiza el ledger a mano (modo B): running, done, blocker, pass, fail, stopped.
+                      Actualiza el ledger a mano: running, done, blocker, pass, fail, stopped.
   stop [ID...]        Para los agentes en marcha (todos si no se indica ninguno) y lo anota en el ledger.
   hook                Hook PreToolUse (lee JSON por stdin).
 
@@ -57,6 +63,9 @@ QA_DEFAULT_FILES = ["qa/"]
 AT_DEFAULT_FILES = ["acceptance/"]
 RESERVED_IDS = {"QA", "AT", "REVIEW"}
 ARCHIVE_DIR = "docs/architecture/"  # archivo de decisiones: lo escribe /architect, nunca un WP
+VERIFY_PHASES = ("build", "types", "lint", "tests")
+WORKFLOW_NAME = "agentic-implement"
+TYPE_RE = re.compile(r"^Tipo:\s*(feature|change|fix|refactor)\b", re.M | re.I)
 REVIEW_TOOLS = ["Read", "Glob", "Grep", "Bash(git diff:*)", "Bash(git status:*)", "Bash(git log:*)"]
 # Todos los agentes orquestados (implementadores y QA) usan siempre el último Sonnet. `sonnet` es el alias
 # que Claude Code resuelve al Sonnet más reciente que conoce; no se puede cambiar por config ni por entorno.
@@ -279,6 +288,10 @@ def validate(manifest):
                           "Usa el comando concreto, p. ej. Bash(npm test:*) o Bash(python3 -m pytest:*).")
     if not isinstance(manifest.get("ignore", []), list):
         errors.append("'ignore' debe ser una lista de patrones.")
+    verify_cfg = manifest.get("verify", {})
+    if not isinstance(verify_cfg, dict) or any(k not in VERIFY_PHASES or not isinstance(v, str) or not v.strip()
+                                                  for k, v in verify_cfg.items()):
+        errors.append(f"'verify' debe ser un objeto con comandos (texto) para {', '.join(VERIFY_PHASES)}.")
     errors += agent_model_errors(manifest)
     return errors
 
@@ -297,7 +310,7 @@ def frontmatter_model(path):
 def agent_model_errors(manifest):
     """Agentes orquestados en el último Sonnet y arquitecto en el último Opus, declarados con su alias."""
     errors = []
-    names = {"implementer", "qa", "test-author", "reviewer"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
+    names = {"implementer", "qa", "test-author", "reviewer", "gatekeeper", "verifier"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
     for name in sorted(names):
         f = ROOT / ".claude" / "agents" / f"{name}.md"
         if not f.exists():
@@ -502,22 +515,28 @@ def run_review(manifest):
     finish(manifest, "review", statuses, "PASS")
 
 
-def acceptance(manifest, expect):
-    """Ejecuta el comando de aceptación. red: deben fallar (ola 0). green: deben pasar (tras las olas)."""
+def run_command(cmd, timeout=900):
+    """Ejecuta un comando del manifiesto sin shell. Devuelve (código, últimas líneas de salida)."""
+    try:
+        r = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=timeout,
+                           env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)))
+        return r.returncode, (r.stdout + r.stderr).strip().splitlines()[-8:]
+    except FileNotFoundError:
+        return 127, [f"comando no encontrado: {cmd}"]
+    except subprocess.TimeoutExpired:
+        return 124, [f"el comando superó {timeout // 60} minutos"]
+
+
+def acceptance_check(manifest, expect, quiet=False):
+    """red: deben fallar (ola 0). green: deben pasar (tras las olas). Devuelve (ok, veredicto)."""
     cmd = at_entity(manifest)["command"]
     if not cmd:
         die("El manifiesto no tiene sección 'acceptance'.")
-    try:
-        r = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=900,
-                           env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)))
-        code, tail = r.returncode, (r.stdout + r.stderr).strip().splitlines()[-6:]
-    except FileNotFoundError:
-        code, tail = 127, [f"comando no encontrado: {cmd}"]
-    except subprocess.TimeoutExpired:
-        code, tail = 124, ["el comando de aceptación superó 15 minutos"]
-    print(f"$ {cmd}  ->  exit {code}")
-    for line in tail:
-        print("  " + line)
+    code, tail = run_command(cmd)
+    if not quiet:
+        print(f"$ {cmd}  ->  exit {code}")
+        for line in tail:
+            print("  " + line)
     if code in (124, 126, 127):
         ok, verdict = False, "ERROR: el comando no se pudo ejecutar; eso no cuenta como rojo ni como verde"
     elif expect == "red":
@@ -527,9 +546,117 @@ def acceptance(manifest, expect):
         ok = code == 0
         verdict = "VERDE" if ok else "SIGUEN FALLANDO"
     ledger_stage(f"aceptación ({expect})", "OK" if ok else "REVISAR")
+    return ok, verdict
+
+
+def acceptance(manifest, expect):
+    ok, verdict = acceptance_check(manifest, expect)
     print(f"ACEPTACIÓN: {verdict}")
     print("RESULTADO:", "OK" if ok else "REVISAR")
     sys.exit(0 if ok else 3)
+
+
+# ---------- comandos del workflow nativo (los ejecuta el agente gatekeeper) ----------
+
+def architecture_type():
+    m = TYPE_RE.search(ARCH.read_text(encoding="utf-8")) if ARCH.exists() else None
+    return m.group(1).lower() if m else None
+
+
+def pipeline_plan(manifest):
+    waves = sorted({wp["wave"] for wp in wps(manifest).values()})
+    plan = {"waves": waves, "acceptance": bool(at_entity(manifest)["command"]), "type": architecture_type(),
+            "verify": sorted(manifest.get("verify", {})), "max_fix_cycles": int(load_config().get("max_fix_cycles", 2)),
+            "agents": {wp["id"]: wp.get("agent", "implementer") for wp in wps(manifest).values()},
+            "wave_of": {wp["id"]: wp["wave"] for wp in wps(manifest).values()},
+            "work_packages": {str(w): sorted(wp["id"] for wp in stage_owners(manifest, str(w))) for w in waves}}
+    print(json.dumps(plan))
+
+
+def stage_label(arg):
+    if not (arg.isdigit() or arg in STAGE_LABELS):
+        die(f"Etapa desconocida: {arg}. Usa un número de ola o {', '.join(STAGE_LABELS)}.")
+    return arg
+
+
+def open_stage(manifest, label):
+    owners = sorted(o["id"] for o in stage_owners(manifest, label))
+    if owners:
+        with open(os.devnull, "w") as quiet:  # el snapshot no debe ensuciar la salida JSON
+            old, sys.stdout = sys.stdout, quiet
+            try:
+                snapshot(label)
+            finally:
+                sys.stdout = old
+    print(json.dumps({"stage": label, "owners": owners}))
+    sys.exit(0 if owners else 3)
+
+
+def close_stage(manifest, label, items):
+    """close-stage L ID=estado... [--expect red|green] [--fix]: propiedad, estados, aceptación y ciclos de fix."""
+    expect = None
+    if "--expect" in items:
+        i = items.index("--expect")
+        expect = items[i + 1] if i + 1 < len(items) else None
+        if expect not in ("red", "green"):
+            die("close-stage: --expect necesita red o green")
+        items = items[:i] + items[i + 2:]
+    fix = "--fix" in items
+    items = [x for x in items if x != "--fix"]
+    known = entities(manifest)
+    marks = []
+    for item in items:
+        jid, _, state = item.partition("=")
+        if jid not in known or state not in LEDGER_STATES:
+            die(f"close-stage: entrada inválida '{item}' (ID del manifiesto y estado en {', '.join(LEDGER_STATES)})")
+        marks.append((jid, state))
+    ledger = ledger_read()
+    for jid, state in marks:
+        extra = {"fix_count": ledger.get(jid, {}).get("fix_count", 0) + 1} if fix else {}
+        ledger_update(jid, state=state, stage=stage_of(jid), pid=None, note=state.upper() + (" (fix)" if fix else ""), **extra)
+    ok = check_stage(manifest, label) and all(state in ("done", "pass") for _, state in marks)
+    if expect:
+        acc_ok, verdict = acceptance_check(manifest, expect, quiet=True)
+        print(f"ACEPTACIÓN ({expect}): {verdict}")
+        ok = ok and acc_ok
+    ledger_stage(label, "OK" if ok else "REVISAR")
+    print("RESULTADO:", "OK" if ok else "REVISAR")
+    sys.exit(0 if ok else 3)
+
+
+def verify(manifest):
+    """Fases de verificación con los comandos del manifiesto, más la aceptación en verde. Salida JSON."""
+    cfg = manifest.get("verify", {})
+    phases = []
+    for name in VERIFY_PHASES:
+        if name not in cfg:
+            phases.append({"name": name, "skipped": True})
+            continue
+        code, tail = run_command(cfg[name])
+        phases.append({"name": name, "command": cfg[name], "exit": code, "passed": code == 0, "tail": tail})
+    if at_entity(manifest)["command"]:
+        acc_ok, verdict = acceptance_check(manifest, "green", quiet=True)
+        phases.append({"name": "acceptance", "command": at_entity(manifest)["command"], "passed": acc_ok, "verdict": verdict})
+    ok = all(ph.get("passed", True) for ph in phases)
+    ledger_stage("verificación", "OK" if ok else "REVISAR")
+    print(json.dumps({"ok": ok, "phases": phases}, ensure_ascii=False))
+    sys.exit(0 if ok else 3)
+
+
+def sync_permissions(manifest):
+    """Escribe en .claude/settings.local.json los permisos que necesitan los agentes, para que no pregunten."""
+    rules = {"Workflow(" + WORKFLOW_NAME + ")", "Bash(python3 .claude/bin/agentic.py:*)"}
+    rules |= set(manifest.get("allow_bash", [])) | set(qa_entity(manifest)["allow_bash"]) | set(at_entity(manifest)["allow_bash"])
+    for cmd in [at_entity(manifest)["command"], *manifest.get("verify", {}).values()]:
+        if cmd:
+            rules |= {f"Bash({cmd})", f"Bash({cmd}:*)"}
+    local = ROOT / ".claude" / "settings.local.json"
+    data = json.loads(local.read_text(encoding="utf-8")) if local.exists() else {}
+    allow = data.setdefault("permissions", {}).setdefault("allow", [])
+    added = sorted(r for r in rules if r not in allow)
+    allow.extend(added)
+    local.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"{len(added)} regla(s) añadidas a .claude/settings.local.json" + (": " + ", ".join(added) if added else ""))
 
 
 def run_qa(manifest):
@@ -671,7 +798,7 @@ def stop(ids):
             kill_group(e["pid"])
             print(f"{jid}: parado (pid {e['pid']}).")
         else:
-            print(f"{jid}: marcado como parado. Es un subagente del modo B: páralo también con TaskStop en la sesión.")
+            print(f"{jid}: marcado como parado. Es un agente del workflow: páralo desde /workflows (tecla x).")
 
 
 def block(msg):
@@ -699,7 +826,7 @@ def claim(agent_id, wanted):
     if conflict:
         block(conflict["msg"])
     try:  # el ledger es informativo: un fallo aquí no debe bloquear la reclamación
-        ledger_update(wanted, state="running", stage=stage_of(wanted), mode="B", pid=None, started=now_hm(), note="")
+        ledger_update(wanted, state="running", stage=stage_of(wanted), mode="workflow", pid=None, started=now_hm(), note="")
     except Exception:  # noqa: BLE001
         pass
 
@@ -828,7 +955,7 @@ def main():
         if jid not in entities(require_valid()):
             die(f"{jid} no existe en el manifiesto.")
         prev = ledger_read().get(jid, {})
-        fields = dict(state=state, stage=stage_of(jid), mode=prev.get("mode", "B"), note=" ".join(args[2:]))
+        fields = dict(state=state, stage=stage_of(jid), mode=prev.get("mode", "workflow"), note=" ".join(args[2:]))
         if not prev:
             fields["started"] = now_hm()
         ledger_update(jid, **fields)
@@ -840,6 +967,20 @@ def main():
         print("Manifiesto válido.")
     elif cmd == "run-qa":
         run_qa(require_valid())
+    elif cmd == "pipeline-plan":
+        pipeline_plan(require_valid())
+    elif cmd == "open-stage":
+        if not args:
+            die("Uso: open-stage N|acceptance|review|qa")
+        open_stage(require_valid(), stage_label(args[0]))
+    elif cmd == "close-stage":
+        if not args:
+            die("Uso: close-stage N|acceptance|review|qa ID=estado... [--expect red|green] [--fix]")
+        close_stage(require_valid(), stage_label(args[0]), args[1:])
+    elif cmd == "verify":
+        verify(require_valid())
+    elif cmd == "sync-permissions":
+        sync_permissions(require_valid())
     elif cmd in ("wave-plan", "open-wave"):
         if not args or not args[0].isdigit():
             die(f"Uso: {cmd} N")

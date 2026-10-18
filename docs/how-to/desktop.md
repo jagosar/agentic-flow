@@ -8,7 +8,8 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 ## Requisitos de este entorno
 
 - La app de Claude para macOS, Windows o Linux (beta), con sesión iniciada en un plan Pro, Max, Team o Enterprise.
-- **El CLI instalado aparte**, para el modo A. La app trae su propio Claude Code, pero no pone `claude` en el `PATH`. Sin el CLI, `/implement` usa el modo B.
+- **Dynamic workflows activado** (en Pro, en `/config`). La plantilla ya trae `"enableWorkflows": true` en `.claude/settings.json`.
+- **Opcional, el CLI instalado aparte**, para el modo A de respaldo. La app trae su propio Claude Code, pero no pone `claude` en el `PATH`.
 - En Windows, trabaja con el entorno **WSL**, porque `agentic.py` necesita POSIX.
 
 ## 1. Abrir la sesión
@@ -39,7 +40,7 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 /implement
 ```
 
-- En el modo A, cada ola corre como tarea en segundo plano. Ábrela en el **panel de tareas**, donde también aparecen los subagentes del modo B.
+- El workflow corre en segundo plano. La app muestra una tarjeta de aprobación la primera vez (**Once**, **Always** o **Deny**) y el progreso en el panel **Background tasks**, con cada fase y sus agentes.
 - Puedes seguir hablando con la sesión mientras corre. La app te avisa al acabar.
 - Para ver los logs en bruto, abre el terminal integrado con **Ctrl+\`** y ejecuta `tail -f .claude/state/runs/*.log`.
 
@@ -48,7 +49,7 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 ## 4. Revisar y entregar
 
 - Pulsa el indicador `+N -M` para abrir la **vista de diff**. Puedes comentar líneas concretas y Claude lo revisará.
-- Revisa el informe de QA en `qa/report.md`.
+- El informe de QA está en el resumen de `/implement` y, completo, en `.claude/state/runs/workflow-result.json` (en el modo A, en `qa/report.md`).
 - El revisor del flow ya ha mirado la calidad. Su informe está en `.claude/state/runs/REVIEW.json`.
 - Para el commit, el push y el PR, pídeselo a la sesión o usa los botones de la app. Los agentes del flow no pueden hacer commit ni push; la sesión principal solo lo hace si se lo pides.
 
@@ -64,7 +65,7 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 
 | Síntoma | Solución |
 |---|---|
-| `/implement` siempre usa el modo B | Instala el CLI (ver requisitos) y reinicia la app |
+| `/implement` usa el modo A | Activa **Dynamic workflows** en `/config` y vuelve a lanzar |
 | La app pide permiso para `agentic.py` cada vez | Abre `claude` una vez en la carpeta desde una terminal y acepta el aviso de confianza |
 | No aparecen `/architect` ni los demás | Comprueba que `.claude/commands/` está en la carpeta que elegiste |
 

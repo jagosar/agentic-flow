@@ -8,7 +8,7 @@
 
 | Entorno | Guía | Úsalo para | Estado |
 |---|---|---|---|
-| Terminal (CLI) | [terminal.md](terminal.md) | Control total, scripts, SSH | **Probado**: flow v2 completo en modo A (arquitecto, revisión del plan, ola 0, 2 olas, verificación, revisor, QA); v1 también en modo B |
+| Terminal (CLI) | [terminal.md](terminal.md) | Control total, scripts, SSH | **Probado**: `/implement` completo con el workflow nativo (ola 0, 2 olas en paralelo, verificación, revisión, QA); el modo A, también de principio a fin |
 | Claude Code Desktop | [desktop.md](desktop.md) | Uso diario con interfaz gráfica | **Parcial**: scripts y agentes probados desde la app; la entrevista de `/architect` en la interfaz, no |
 | Visual Studio Code / Cursor | [vscode.md](vscode.md) | Trabajar con los diffs en el editor | Sin probar |
 | JetBrains | [jetbrains.md](jetbrains.md) | IntelliJ, PyCharm, WebStorm… | Sin probar |
@@ -69,15 +69,15 @@ Los modelos están fijados por alias y no se pueden cambiar: `validate` falla si
 
 ### Dos modos de ejecución
 
-- **Modo A (por defecto):** `agentic.py run-wave N` lanza un proceso `claude -p` por WP, todos a la vez. El paralelismo es real y no depende del modelo. Necesita el CLI `claude` en el `PATH`.
-- **Modo B:** si no hay CLI, como en la nube, el orquestador lanza subagentes con varias llamadas a Agent en un mismo mensaje. Claude Code admite por defecto hasta 20 subagentes simultáneos por sesión.
+- **Workflow nativo (por defecto):** `/implement` lanza el workflow `agentic-implement` (`.claude/workflows/`). Es un script de Claude Code que orquesta todo el pipeline de forma determinista y en segundo plano: agentes en paralelo, informes validados por esquema y revisión con verificación adversarial. Lo sigues con `/workflows`. En Pro hay que activar **Dynamic workflows** en `/config`; la plantilla ya trae `"enableWorkflows": true` en `.claude/settings.json`.
+- **Modo A (respaldo):** si los workflows no están disponibles, `/implement` usa los comandos `agentic.py run-*`, que lanzan un proceso `claude -p` por WP. Necesita el CLI `claude` en el `PATH`.
 
-`/implement` elige solo. Para forzar un modo: `/implement modo A` o `/implement modo B`.
+`/implement` elige solo. Para forzar el respaldo: `/implement modo A`. Los esquemas de ambas vías están en [Cómo funciona § 6](../how-it-works.md#6-workflow-nativo-y-modo-a).
 
 ## Requisitos comunes
 
 1. **Plan:** Pro, Max, Team o Enterprise (o cuenta de Console). El plan gratuito no incluye Claude Code.
-2. **CLI de Claude Code instalado** (lo necesita el modo A en todos los entornos). La app de escritorio y la extensión de VS Code traen su propio Claude Code, pero eso no pone `claude` en tu `PATH`. Instalador recomendado (se actualiza solo):
+2. **CLI de Claude Code instalado.** Lo necesita el modo A; con el workflow nativo es recomendable, pero no obligatorio. La app de escritorio y la extensión de VS Code traen su propio Claude Code, pero eso no pone `claude` en tu `PATH`. Instalador recomendado (se actualiza solo):
 
    ```bash
    curl -fsSL https://claude.ai/install.sh | bash
@@ -172,6 +172,10 @@ Resultado esperado: `No existe .../architecture.md. Lanza /architect primero.`, 
 
 ```bash
 python3 .claude/bin/agentic.py validate                # manifiesto y modelos coherentes
+python3 .claude/bin/agentic.py sync-permissions        # permisos de los agentes en settings.local.json
+python3 .claude/bin/agentic.py pipeline-plan           # el plan que sigue el workflow (JSON)
+python3 .claude/bin/agentic.py verify                  # build, tipos, lint, tests y aceptación (JSON)
+# Modo A (respaldo), etapa por etapa:
 python3 .claude/bin/agentic.py run-acceptance         # ola 0: test-author escribe la aceptación
 python3 .claude/bin/agentic.py acceptance --expect red # debe fallar antes del código
 python3 .claude/bin/agentic.py run-wave 1              # ola 1 en paralelo (modo A)
@@ -180,12 +184,11 @@ python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # corregir sus defectos d
 python3 .claude/bin/agentic.py acceptance --expect green  # debe pasar después
 python3 .claude/bin/agentic.py run-review              # revisor de código (solo lectura)
 python3 .claude/bin/agentic.py run-qa                  # agente QA (modo A)
-python3 .claude/bin/agentic.py snapshot 1              # antes de una ola en modo B
 python3 .claude/bin/agentic.py check-wave 1            # verificación de propiedad
 python3 .claude/bin/agentic.py status                  # ledger: estado de cada agente y etapa
 python3 .claude/bin/agentic.py stop                    # parar todos los agentes en marcha
 python3 .claude/bin/agentic.py stop WP-02              # parar uno
-python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano (modo B)
+python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano
 ```
 
 - **Códigos de salida:** `0` si todo está bien, `1` si hay un error de uso o el manifiesto no es válido, `3` si hay que revisar y `4` si se agotó el tope de ciclos `--fix`.
@@ -202,11 +205,11 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano (modo B)
 
   ## Agentes
   - [done]    WP-01 (sonnet) — etapa 1 — modo A — inicio 20:48 — DONE
-  - [blocker] WP-03 (sonnet) — etapa 2 — modo B — inicio 20:48 — falta firma 6.2
+  - [blocker] WP-03 (sonnet) — etapa 2 — modo workflow — inicio 20:48 — BLOCKER
   ```
 
-- **"Para" o "para WP-02".** El orquestador ejecuta `stop`. En el modo A mata los procesos y la etapa queda en `REVISAR` con `STOPPED`. En el modo B también para el subagente con `TaskStop`.
-- **Informes cortos.** Implementers y QA responden en menos de 300 palabras, con el resultado primero. El detalle de QA va en `qa/report.md`.
+- **"Para".** Con el workflow nativo, desde `/workflows`: selecciona el run y pulsa `x`. Con `p` lo pausas y reanudas; un run parado se puede relanzar y reutiliza lo ya terminado. En el modo A, `agentic.py stop` mata los procesos y la etapa queda en `REVISAR` con `STOPPED`.
+- **Informes cortos.** Implementers y QA responden en menos de 300 palabras, con el resultado primero. El resultado completo de cada ejecución del workflow se guarda en `.claude/state/runs/workflow-result.json`.
 
 ## Configuración
 
@@ -231,7 +234,7 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano (modo B)
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 62 tests de los guardarraíles (incluidos los de contenido), el lanzador, el ledger y las etapas del flow v2. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
+Son 71 tests de los guardarraíles, los comandos del pipeline, el lanzador y el ledger, más 11 escenarios de la lógica del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
 
 ## Problemas frecuentes
 
@@ -252,7 +255,8 @@ Son 62 tests de los guardarraíles (incluidos los de contenido), el lanzador, el
 | `saltarse los hooks de git ... no está permitido` | `--no-verify`, `commit -n` o `core.hooksPath` | Arregla lo que hace fallar el hook de git, o hazlo tú a mano si de verdad hace falta |
 | Todas las olas tienen un solo WP | El arquitecto eligió capas reales | Pídele "contratos primero" |
 | Un WP relanzado devuelve `BLOCKER` hablando de defectos que no son suyos | Usaste `--fix` con un informe de QA viejo | Relánzalo sin `--fix`, o ejecuta `run-qa` antes |
-| Las olas van en serie en el modo B | El orquestador no agrupó las llamadas a Agent | Usa el modo A, o pídeselo de nuevo explícitamente |
+| `/implement` usa el modo A aunque tienes Pro | Los workflows no están activados | Actívalos en `/config` (Dynamic workflows) o con `"enableWorkflows": true` |
+| El workflow se para pidiendo permiso para un comando | Faltan reglas en `settings.local.json` | Ejecuta `agentic.py sync-permissions`, o elige "permitir siempre" la primera vez |
 
 ## Referencias oficiales
 

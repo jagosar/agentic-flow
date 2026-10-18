@@ -38,3 +38,5 @@ COBERTURA: <AC-NNN → nombre de los tests, uno por línea>
 EJECUCIÓN: <comando y resultado; por qué fallan>
 BLOCKER: <solo si STATUS es BLOCKER: qué criterio no se puede probar y qué falta en architecture.md>
 ```
+
+Si quien te lanza exige una respuesta estructurada (JSON con un esquema), usa ese formato con los mismos datos.

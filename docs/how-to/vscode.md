@@ -9,7 +9,8 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 
 - VS Code 1.94 o posterior. También funciona en Cursor.
 - Extensión **Claude Code**, de Anthropic (`anthropic.claude-code`).
-- **El CLI instalado aparte**, para el modo A. La extensión trae su propia copia del CLI para el panel de chat, pero no la pone en el `PATH`.
+- **Dynamic workflows activado** (en Pro, en `/config`).
+- **Opcional, el CLI instalado aparte**, para el modo A de respaldo. La extensión trae su propia copia del CLI para el panel, pero no la pone en el `PATH`.
 
 ## 1. Instalar
 
@@ -37,12 +38,12 @@ Usa `File → Open Folder` sobre la raíz del repo, donde está `.claude/`. Al e
 /implement
 ```
 
-- **Modo B:** pulsa el contador de agentes para abrir el **mapa de agentes**. Ahí ves cada subagente con su estado y su transcripción.
-- **Modo A:** los procesos escriben directamente en disco. Revisa los cambios en **Source Control** (`Ctrl+Shift+G`).
+- **Workflow:** síguelo con `/workflows`, o desde el contador de agentes, que abre el **mapa de agentes** con cada uno, su estado y su transcripción.
+- **Cambios:** se escriben directamente en disco. Revísalos en **Source Control** (`Ctrl+Shift+G`).
 
 ## 4. Revisar y commit
 
-- **Source Control** muestra cada fichero tocado: código, `acceptance/` (ola 0) y `qa/`. Abre `qa/report.md` para ver el resultado de QA.
+- **Source Control** muestra cada fichero tocado: código, `acceptance/` (ola 0) y `qa/`. El informe de QA está en el resumen de `/implement` y en `.claude/state/runs/workflow-result.json`.
 - Haz el commit y el push desde Source Control, o pídeselos a la sesión.
 
 ## Alternativa: el CLI en la terminal integrada
@@ -53,7 +54,7 @@ Abre la terminal integrada (`` Ctrl+` ``) y sigue [terminal.md](terminal.md). Si
 
 | Síntoma | Solución |
 |---|---|
-| `/implement` siempre usa el modo B | Instala el CLI aparte y reinicia VS Code |
+| `/implement` usa el modo A | Activa **Dynamic workflows** en `/config` y vuelve a lanzar |
 | No aparecen los comandos del flow | Abre la carpeta raíz del repo, no una subcarpeta |
 | Las preguntas del arquitecto salen como texto en vez de opciones | Contesta en el chat: el arquitecto acepta respuestas en texto |
 

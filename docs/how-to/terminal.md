@@ -1,7 +1,7 @@
 # How-to: Claude Code en terminal
 
 **Objetivo:** ejecutar el flow completo desde una terminal, de forma interactiva o por scripts.
-**Estado:** probado con Claude Code 2.1.302. Pasada completa del flow v2 en modo A (arquitecto, revisión del plan, ola 0, olas, verificación, revisor y QA), y del v1 también en modo B.
+**Estado:** probado con Claude Code 2.1.302. `/implement` completo con el workflow nativo, con agentes reales: ola 0, dos olas en paralelo, verificación, revisión y QA, y ledger cerrado. El modo A, también de principio a fin.
 
 Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
 
@@ -51,7 +51,7 @@ git add architecture.md && git commit -m "Architecture: pagos gRPC"
 /implement
 ```
 
-- El orquestador cambia solo al último Sonnet, comprueba que `claude` existe y usa el modo A.
+- El lanzador cambia solo al último Sonnet, valida, sincroniza permisos y lanza el workflow `agentic-implement` en segundo plano. Síguelo con `/workflows`. Si los workflows no están disponibles, usa el modo A.
 - Cada ola corre en segundo plano y la sesión te avisa cuando termina.
 - **Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las fases de verificación con la aceptación en verde, el estado del revisor y de QA y los commits propuestos, a la espera de tu aprobación.
 

@@ -334,6 +334,90 @@ class WorkflowCommandTests(Base):
         self.assertEqual(self.repo.run("close-wave", "1", "WP-77=done").returncode, 1)
 
 
+class PipelineCommandTests(Base):
+    """Comandos que usa el workflow agentic-implement (los ejecuta el gatekeeper)."""
+    manifest = dict(MANIFEST, verify={"tests": "python3 ok.py", "lint": "python3 lint.py"})
+
+    def setUp(self):
+        super().setUp()
+        self.repo.write("ok.py", "print('tests ok')\n")
+        self.repo.write("lint.py", "import sys\nsys.exit(0)\n")
+        self.repo.write("acc.py", "import sys\nsys.exit(0)\n")
+
+    def test_pipeline_plan(self):
+        (self.repo.dir / "architecture.md").write_text(
+            "# A\nTipo: fix · Tamaño: pequeño\n\n```json wp-manifest\n" + json.dumps(self.manifest) + "\n```\n")
+        r = self.repo.run("pipeline-plan")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        plan = json.loads(r.stdout)
+        self.assertEqual(plan["waves"], [1, 2])
+        self.assertEqual(plan["work_packages"]["1"], ["WP-01", "WP-02"])
+        self.assertEqual(plan["type"], "fix")
+        self.assertTrue(plan["acceptance"])
+        self.assertEqual(plan["max_fix_cycles"], 2)
+        self.assertEqual(plan["wave_of"]["WP-03"], 2)
+        self.assertEqual(plan["agents"]["WP-01"], "implementer")
+
+    def test_open_y_close_stage_con_etiquetas(self):
+        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(1)\n")  # antes del snapshot: no es de nadie
+        r = self.repo.run("open-stage", "acceptance")
+        self.assertEqual(json.loads(r.stdout), {"stage": "acceptance", "owners": ["AT"]})
+        self.repo.write("acceptance/test_ac_001.py")
+        r = self.repo.run("close-stage", "acceptance", "AT=done", "--expect", "red")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("ROJO", r.stdout)
+        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(0)\n")
+        self.repo.run("open-stage", "acceptance")
+        self.assertEqual(self.repo.run("close-stage", "acceptance", "AT=done", "--expect", "red").returncode, 3,
+                         "si ya pasan sin código, la ola 0 falla")
+        self.assertEqual(self.repo.run("open-stage", "inventada").returncode, 1)
+
+    def test_close_stage_fix_cuenta_ciclos(self):
+        for _ in range(2):
+            self.repo.run("open-stage", "1")
+            self.repo.run("close-stage", "1", "WP-02=done", "--fix")
+        ledger = json.loads((self.repo.dir / ".claude/state/ledger.json").read_text())
+        self.assertEqual(ledger["WP-02"]["fix_count"], 2)
+
+    def test_verify_json(self):
+        r = self.repo.run("verify")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        out = json.loads(r.stdout)
+        names = [p["name"] for p in out["phases"]]
+        self.assertEqual(names, ["build", "types", "lint", "tests", "acceptance"])
+        self.assertTrue(out["phases"][0]["skipped"])
+        self.repo.write("lint.py", "import sys\nsys.exit(2)\n")
+        r = self.repo.run("verify")
+        self.assertEqual(r.returncode, 3)
+        self.assertFalse(json.loads(r.stdout)["ok"])
+
+    def test_verify_mal_formado(self):
+        m = dict(self.manifest, verify={"deploy": "x"})
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+        self.assertEqual(self.repo.run("validate").returncode, 1)
+
+    def test_sync_permissions(self):
+        local = self.repo.dir / ".claude/settings.local.json"
+        local.write_text(json.dumps({"permissions": {"allow": ["Read"]}, "otra": 1}))
+        r = self.repo.run("sync-permissions")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        data = json.loads(local.read_text())
+        allow = data["permissions"]["allow"]
+        for rule in ["Read", "Workflow(agentic-implement)", "Bash(python3 -m unittest:*)", "Bash(python3 acc.py)",
+                     "Bash(python3 ok.py:*)"]:
+            self.assertIn(rule, allow)
+        self.assertEqual(data["otra"], 1, "conserva el resto del fichero")
+        self.repo.run("sync-permissions")
+        self.assertEqual(len(json.loads(local.read_text())["permissions"]["allow"]), len(allow), "idempotente")
+
+
+@unittest.skipUnless(shutil.which("node"), "node no está instalado")
+class WorkflowLogicTests(unittest.TestCase):
+    def test_escenarios_del_workflow(self):
+        r = subprocess.run(["node", str(SCRIPT.parent / "test_workflow.mjs")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
 class HookFailClosedTests(unittest.TestCase):
     def setUp(self):
         self.repo = Repo(raw_manifest='{"work_packages": [ roto')
@@ -569,12 +653,12 @@ class LauncherTests(Base):
         self.assertEqual(self.repo.run("mark", "WP-02", "raro").returncode, 1)
         self.assertEqual(self.repo.run("mark", "WP-99", "done").returncode, 1)
 
-    def test_claim_registra_modo_b(self):
+    def test_claim_registra_modo_workflow(self):
         self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="ag1"))
         st = self.status()
         self.assertIn("[running]", st)
         self.assertIn("WP-01 (sonnet)", st)
-        self.assertIn("modo B", st)
+        self.assertIn("modo workflow", st)
 
     def test_stop_para_la_ola(self):
         proc = subprocess.Popen([sys.executable, str(SCRIPT), "run-wave", "1"], cwd=self.repo.dir,

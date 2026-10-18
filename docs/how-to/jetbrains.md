@@ -42,8 +42,8 @@ Es el mismo que en [terminal.md](terminal.md):
 /implement
 ```
 
-- Los cambios del modo A se escriben directamente en disco. Revísalos en la ventana **Commit** (`Alt+0`) o en **Git → Local Changes**.
-- Abre `qa/report.md` para ver el resultado de QA.
+- Los cambios se escriben directamente en disco. Revísalos en la ventana **Commit** (`Alt+0`) o en **Git → Local Changes**.
+- El informe de QA está en el resumen de `/implement` y en `.claude/state/runs/workflow-result.json`.
 
 ## Seguridad
 

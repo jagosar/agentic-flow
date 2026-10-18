@@ -29,7 +29,7 @@ Elige una de estas opciones:
 - **Terminal:**
 
   ```bash
-  claude --cloud "/implement modo B"
+  claude --cloud "/implement"
   ```
 
 ## 3. Usar el flow
@@ -39,10 +39,10 @@ Elige una de estas opciones:
 ```
 
 ```
-/implement modo B
+/implement
 ```
 
-- **Usa el modo B en la nube.** El test-author, los implementers, el revisor y QA se lanzan como subagentes de la propia sesión, con los mismos guardarraíles. No está comprobado que dentro de la VM haya un CLI que pueda lanzar sesiones `claude -p`. El modo B reparte el trabajo en subagentes de la propia sesión, con los mismos guardarraíles.
+- **En la nube se usa el workflow nativo**, igual que en local: los workflows están disponibles en las sesiones en la nube, y su progreso se guarda con la sesión. El modo A (procesos `claude -p`) no se ha probado dentro de la VM.
 - Los cambios aparecen con el indicador `+N -M`. Ábrelo para ver el diff y comentar líneas.
 - Cuando termine, crea el PR desde la interfaz de la sesión.
 
@@ -50,7 +50,7 @@ Elige una de estas opciones:
 
 La entrevista del arquitecto encaja bien en el móvil: son preguntas cortas con opciones. Dos formas de aprovecharlo:
 
-- **Diseño en el móvil, ejecución en Desktop:** haz `/architect` desde el iPhone y, cuando apruebes, lanza `/implement` en Desktop, donde el modo A garantiza el paralelismo. Para continuar una sesión en la nube en tu terminal: `claude --teleport`.
+- **Diseño en el móvil, ejecución en Desktop:** haz `/architect` desde el iPhone y, cuando apruebes, lanza `/implement` en Desktop. Para continuar una sesión en la nube en tu terminal: `claude --teleport`.
 - **Todo en tu máquina:** empieza la sesión en Desktop o en la terminal y síguela desde el móvil con **Remote Control**.
 
 ## Problemas frecuentes
