@@ -20,7 +20,7 @@
 
 ![El flow de principio a fin](../assets/flow.gif)
 
-La animación se genera con `python3 docs/assets/make_flow_gif.py` (requiere Pillow).
+La animación se genera con `python3 docs/assets/make_flow_gif.py` (requiere Pillow y la tipografía IBM Plex Sans).
 
 ```
  tú ──► /architect (último Opus)
