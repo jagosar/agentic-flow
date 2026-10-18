@@ -50,7 +50,7 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 - Pulsa el indicador `+N -M` para abrir la **vista de diff**. Puedes comentar líneas concretas y Claude lo revisará.
 - Revisa el informe de QA en `qa/report.md`.
 - Opcional: `/code-review` hace una revisión de calidad además de QA.
-- Para el commit, pídeselo a la sesión. Para el push y el PR, usa los botones de la app o hazlo tú, porque los agentes no pueden hacer push.
+- Para el commit, el push y el PR, pídeselo a la sesión o usa los botones de la app. Los agentes del flow no pueden hacer commit ni push; la sesión principal solo lo hace si se lo pides.
 
 ## Trucos
 

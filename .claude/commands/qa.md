@@ -17,4 +17,4 @@ Eres el orquestador de QA. No escribes tests ni corriges código: lanzas al agen
    - El estado **tal como lo devolvió QA** (`PASS`, `FAIL` o `BLOCKER`) y si QA tocó solo su zona. No lo cambies: `PASS` significa "sin defectos críticos ni altos" y puede venir con tests en rojo de defectos medios o bajos. Si es así, dilo ("PASS con 2 defectos bajos y 3 tests en rojo").
    - Los defectos agrupados por WP responsable, de mayor a menor severidad.
    - Por cada defecto, el siguiente paso: un defecto de implementación se arregla con `python3 .claude/bin/agentic.py run-wave <ola> <WP> --fix`; uno de diseño se arregla con `/architect`.
-4. No arregles nada tú. No hagas commit salvo que el usuario lo pida.
+4. No arregles nada tú. No hagas commit ni push salvo que el usuario lo pida explícitamente.

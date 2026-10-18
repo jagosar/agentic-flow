@@ -56,7 +56,7 @@ Para cada ola N, en orden:
 ## Reglas para los dos modos
 
 - No resuelvas tú un `BLOCKER` ni edites ficheros de un WP.
-- No hagas commit salvo que el usuario lo pida. El push está bloqueado por `settings.json`.
+- No hagas commit ni push salvo que el usuario lo pida explícitamente en esta sesión. Los agentes del flow (implementers y QA) no pueden hacerlo: el hook se lo bloquea.
 
 ## 3. Integración
 

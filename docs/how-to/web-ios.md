@@ -59,7 +59,6 @@ La entrevista del arquitecto encaja bien en el móvil: son preguntas cortas con 
 |---|---|
 | La sesión no ve `.claude/` o el `architecture.md` | No hiciste push de esa rama. La nube clona el remoto |
 | No aparecen repositorios | Revisa la conexión con GitHub (App instalada en el repo, o `/web-setup`) |
-| La sesión no puede subir su rama porque `git push` está bloqueado | Las reglas `deny` de `.claude/settings.json` lo impiden a todos los agentes. Crea el PR desde la interfaz y, si eso tampoco funciona en tu caso, quita la regla de `git push` en la rama que uses en la nube |
 | Se agotan los límites de uso | Las sesiones en la nube comparten límites con el resto de tu uso. Lanza menos WP por ola o espera a que se renueven |
 
 ## Referencias

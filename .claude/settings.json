@@ -4,8 +4,6 @@
       "Bash(python3 .claude/bin/agentic.py:*)"
     ],
     "deny": [
-      "Bash(git push:*)",
-      "Bash(git push)",
       "Bash(git reset --hard:*)",
       "Bash(git clean:*)",
       "Bash(rm -rf:*)"

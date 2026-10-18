@@ -39,7 +39,9 @@ Requisitos: macOS, Linux o WSL 2; `python3` ≥ 3.9; `git`; y el CLI de Claude C
 |---|---|
 | Cada WP solo escribe sus ficheros; QA solo escribe en `qa/` | Hook `PreToolUse` sobre Write/Edit, contra el manifiesto |
 | Sin git, sin dependencias nuevas, sin lanzar otras sesiones de Claude | Hook `PreToolUse` sobre Bash, dentro de un WP o de QA |
-| Sin push ni borrados masivos | `permissions.deny` en `settings.json`, para todos |
+| Los agentes del flow no hacen commit ni push | Hook `PreToolUse` sobre Bash, dentro de un WP o de QA |
+| La sesión principal solo hace push si se lo pides | Instrucción en `/implement` y `/qa` |
+| Sin borrados masivos | `permissions.deny` en `settings.json` (`git reset --hard`, `git clean`, `rm -rf`) |
 | Comandos permitidos mínimos | `allow_bash` del manifiesto (modo A) |
 | Comprobación de propiedad al cerrar cada etapa | `snapshot` + `check-wave`: cualquier fichero cambiado fuera de su propietario hace fallar la etapa |
 | Manifiesto coherente | `validate`: propietarios únicos (QA incluido), olas y dependencias |

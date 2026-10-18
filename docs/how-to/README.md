@@ -139,7 +139,7 @@ Resultado esperado: `No existe .../architecture.md. Lanza /architect primero.`, 
      ```
 
    - **De diseño:** vuelve a `/architect` con el informe.
-6. **Commit final.** El push lo haces tú, porque está bloqueado para los agentes.
+6. **Commit y push.** Hazlos tú o pídeselos a la sesión principal. Los agentes del flow no pueden: el hook se lo bloquea.
 
 ## Buenas prácticas
 
