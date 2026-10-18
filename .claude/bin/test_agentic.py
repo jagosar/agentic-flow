@@ -1,7 +1,7 @@
 """Tests de los guardarraíles y del lanzador.
 
 Ejecutar: python3 -m unittest discover -s .claude/bin -p "test_*.py"
-Cada test trabaja en un repo git temporal; el lanzador usa un `claude` falso, sin coste.
+Cada test trabaja en un repo git temporal; el lanzador usa un `claude` falso, sin llamadas reales.
 """
 import json
 import os
@@ -32,9 +32,11 @@ FAKE_CLAUDE = textwrap.dedent("""\
     wp = os.environ["AGENTIC_WP"]
     with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".args"), "w") as f:
         json.dump(sys.argv[1:], f)
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".env"), "w") as f:
+        json.dump({k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}, f)
     time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
     status = os.environ.get("FAKE_STATUS", "DONE" if wp != "QA" else "PASS")
-    print(json.dumps({"result": "STATUS: " + status + "\\nWP: " + wp, "total_cost_usd": 0.25}))
+    print(json.dumps({"result": "STATUS: " + status + "\\nWP: " + wp}))
 """)
 
 
@@ -283,14 +285,14 @@ class LauncherTests(Base):
         elapsed = time.time() - start
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertLess(elapsed, 2.8, "los dos WP deberían correr a la vez")
-        self.assertIn("Coste de la etapa: 0.50 USD", r.stdout)
+        self.assertNotIn("USD", r.stdout, "sin información de coste")
 
     def test_flags_de_cada_agente(self):
         self.repo.run("run-wave", "1")
         a = self.args("WP-01")
         self.assertEqual(a[a.index("--agent") + 1], "implementer")
         self.assertEqual(a[a.index("--model") + 1], "claude-sonnet-5-5")
-        self.assertEqual(a[a.index("--max-budget-usd") + 1], "3")
+        self.assertNotIn("--max-budget-usd", a)
         self.assertIn("--strict-mcp-config", a)
         self.assertIn("Bash(python3 -m unittest:*)", a)
         self.assertNotIn("Bash", a, "nunca Bash sin restricción")
@@ -298,11 +300,23 @@ class LauncherTests(Base):
 
     def test_config_del_proyecto(self):
         (self.repo.dir / ".claude").mkdir(exist_ok=True)
-        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"max_budget_usd": {"qa": 1.5}, "models": {"qa": "m-qa"}}))
+        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"models": {"qa": "m-qa"}}))
         self.repo.run("run-qa")
         a = self.args("QA")
-        self.assertEqual(a[a.index("--max-budget-usd") + 1], "1.5")
         self.assertEqual(a[a.index("--model") + 1], "m-qa")
+
+    def env_of(self, wp):
+        return json.loads((self.logs / f"{wp}.env").read_text())
+
+    def test_suscripcion_no_hereda_api_key(self):
+        self.repo.run("run-wave", "1", env={"ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_AUTH_TOKEN": "tok"})
+        self.assertEqual(self.env_of("WP-01"), {"ANTHROPIC_API_KEY": None, "ANTHROPIC_AUTH_TOKEN": None})
+
+    def test_auth_inherit_mantiene_api_key(self):
+        (self.repo.dir / ".claude").mkdir(exist_ok=True)
+        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"auth": "inherit"}))
+        self.repo.run("run-wave", "1", env={"ANTHROPIC_API_KEY": "sk-test"})
+        self.assertEqual(self.env_of("WP-01")["ANTHROPIC_API_KEY"], "sk-test")
 
     def test_solo_un_wp(self):
         r = self.repo.run("run-wave", "1", "WP-02")

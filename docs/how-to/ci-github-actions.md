@@ -4,7 +4,8 @@ Por qué lo recomiendo: el arquitecto necesita conversar contigo, pero QA no. Ej
 
 ## Requisitos
 
-- Una API key de Anthropic guardada como secreto del repo: `Settings → Secrets and variables → Actions → New repository secret`, con el nombre `ANTHROPIC_API_KEY`. Créala tú en la consola de Anthropic y no la pegues en ningún chat.
+- Un token de tu suscripción guardado como secreto del repo. Genéralo en tu máquina con `claude setup-token` y guárdalo en `Settings → Secrets and variables → Actions → New repository secret` con el nombre `CLAUDE_CODE_OAUTH_TOKEN`. No lo pegues en ningún chat.
+  - Alternativa con créditos de API: una API key como secreto `ANTHROPIC_API_KEY`. En ese caso, pon `"auth": "inherit"` en `.claude/agentic.json`.
 - `architecture.md` con su manifiesto en la rama del PR.
 
 ## Workflow
@@ -37,7 +38,7 @@ jobs:
       - run: python3 .claude/bin/agentic.py validate
       - name: Agente QA
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: python3 .claude/bin/agentic.py run-qa
       - name: Informe
         if: always()
@@ -62,6 +63,6 @@ jobs:
 
 No he ejecutado este workflow. Los puntos a vigilar:
 
-- Que el CLI use `ANTHROPIC_API_KEY` sin login interactivo en modo `-p`. Es lo habitual, pero no lo he comprobado aquí.
-- Los costes: cada ejecución de QA con Opus cuesta dinero. En la prueba local, la QA de un proyecto mínimo con Sonnet costó unos 0,15 $. Uno real costará más.
+- Que el CLI acepte `CLAUDE_CODE_OAUTH_TOKEN` en modo `-p` dentro de Actions. Es el mecanismo previsto para usar la suscripción fuera de tu máquina, pero no lo he comprobado aquí.
+- Cada ejecución de QA en CI cuenta contra los límites de uso de tu suscripción, igual que si la lanzaras en local. Con muchos PR, puedes limitarla a los que lleven una etiqueta.
 - Existe también la action oficial `anthropics/claude-code-action`, pensada para responder a menciones en PRs. Para este caso, el script es más directo porque ya aplica los guardarraíles.

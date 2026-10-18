@@ -74,33 +74,28 @@ python3 .claude/bin/agentic.py check-wave 1      # verificación de propiedad
 
 Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>.log`.
 
-## Modelos, límites y coste
+## Modelos, tiempo y suscripción
 
 `.claude/agentic.json` fija lo que usa el lanzador (modos A y QA):
 
 ```json
 {
   "models": {"implementer": "claude-sonnet-5-5", "qa": "claude-opus-5-5"},
-  "max_budget_usd": {"implementer": 3, "qa": 5},
-  "timeout_s": 1800
+  "timeout_s": 1800,
+  "auth": "subscription"
 }
 ```
 
-- `max_budget_usd`: límite de gasto **por agente**. Si un agente lo supera, Claude Code lo corta y la etapa queda en `REVISAR`.
-- `timeout_s`: tiempo máximo de cada etapa. Al cumplirse, los agentes que sigan vivos se terminan y quedan como `TIMEOUT`.
-- Cada etapa termina con el coste de cada agente y el total.
+- `auth: "subscription"` (por defecto): los agentes usan tu sesión de Claude, es decir, tu suscripción. El lanzador les quita `ANTHROPIC_API_KEY` y `ANTHROPIC_AUTH_TOKEN` aunque estén en tu entorno, para que no consuman créditos de API sin que te des cuenta. Usa `"inherit"` solo si quieres que los agentes usen la API key (por ejemplo, en CI).
+- `timeout_s`: tiempo máximo de cada etapa. Al cumplirse, los agentes que sigan vivos se terminan y quedan como `TIMEOUT`. Es el freno si un agente se atasca.
 - Para cambiar algo puntualmente sin tocar el fichero: `AGENTIC_IMPLEMENTER_MODEL`, `AGENTIC_QA_MODEL` y `AGENTIC_TIMEOUT_S`.
 - Los modelos de `/architect` y del modo B salen del frontmatter de `.claude/commands/architect.md` y de `.claude/agents/*.md`. Si cambias de modelo, cámbialo también allí.
 
-Coste orientativo de la pasada de prueba completa, de principio a fin (CLI de tareas en Python, 3 WP):
+**Consumo de la suscripción:** cada agente cuenta contra los límites de uso de tu plan, y en paralelo los gastan más deprisa. Ten en cuenta que:
 
-| Fase | Modo A | Modo B |
-|---|---|---|
-| `/architect` (Opus 5.5) | 0,85 $ · 3,5 min | (el mismo) |
-| `/implement`: 3 WP (Sonnet 5.5), integración y QA (Opus 5.5) | 1,41 $ | 2,14 $ |
-| Total | **2,26 $** | 2,99 $ |
-
-El modo B sale más caro porque los informes de los subagentes pasan por el contexto del orquestador (Opus).
+- Opus (arquitecto y QA) consume más que Sonnet (implementadores).
+- El modo B consume más que el A, porque los informes de los subagentes pasan por el contexto del orquestador.
+- Si llegas al límite, los agentes que estén en marcha fallan y la etapa queda en `REVISAR`. Relanza esos WP con `run-wave N WP-…` cuando se renueve el límite.
 
 ## Tests del propio flow
 
@@ -108,7 +103,7 @@ El modo B sale más caro porque los informes de los subagentes pasan por el cont
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 34 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no gastan nada. En el repo plantilla corren en CI.
+Son 36 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI.
 
 ## Problemas frecuentes
 

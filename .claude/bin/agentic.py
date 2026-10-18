@@ -12,7 +12,7 @@ Subcomandos:
   hook                Hook PreToolUse (lee JSON por stdin).
 
 El manifiesto es un bloque ```json wp-manifest``` dentro de architecture.md.
-Límites y modelos del lanzador: .claude/agentic.json (opcional) y variables AGENTIC_*.
+Modelos, timeout y autenticación del lanzador: .claude/agentic.json (opcional) y variables AGENTIC_*.
 """
 import fcntl
 import fnmatch
@@ -35,9 +35,13 @@ BASE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"]
 QA_DEFAULT_FILES = ["qa/"]
 DEFAULT_CONFIG = {
     "models": {"implementer": "claude-sonnet-5-5", "qa": "claude-opus-5-5"},
-    "max_budget_usd": {"implementer": 3, "qa": 5},
     "timeout_s": 1800,
+    # "subscription": los agentes usan tu sesión de Claude (suscripción) aunque haya una API key en el entorno.
+    # "inherit": heredan el entorno tal cual (útil en CI con API key).
+    "auth": "subscription",
 }
+# Variables que harían que un agente facturase contra la API en vez de contra la suscripción.
+API_AUTH_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 # Cachés y artefactos que generan las herramientas de test y build: no cuentan como cambios.
 DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/",
                   "node_modules/", ".coverage", "coverage/", ".nyc_output/", ".DS_Store", ".tsbuildinfo"]
@@ -272,24 +276,31 @@ def check_stage(manifest, label):
 
 # ---------- lanzadores ----------
 
+def child_env(cfg, **extra):
+    env = dict(os.environ, **extra)
+    if cfg.get("auth", "subscription") == "subscription":
+        for var in API_AUTH_VARS:
+            env.pop(var, None)
+    return env
+
+
 def launch(label, jobs, cfg):
-    """jobs: lista de (id, agent, model, prompt, allowed, budget). Los lanza todos a la vez y espera."""
+    """jobs: lista de (id, agent, model, prompt, allowed). Los lanza todos a la vez y espera."""
     runs = STATE / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     snapshot(label)
     procs = {}
-    for jid, agent, model, prompt, allowed, budget in jobs:
+    for jid, agent, model, prompt, allowed in jobs:
         cmd = ["claude", "-p", prompt, "--agent", agent, "--model", model,
                "--output-format", "json", "--permission-mode", "acceptEdits",
                "--strict-mcp-config",  # sin conectores MCP: un WP solo necesita el repo
-               "--max-budget-usd", str(budget),
                "--allowedTools", *allowed, "Bash(python3 .claude/bin/agentic.py claim:*)"]
-        env = dict(os.environ, AGENTIC_WP=jid, CLAUDE_PROJECT_DIR=str(ROOT))
+        env = child_env(cfg, AGENTIC_WP=jid, CLAUDE_PROJECT_DIR=str(ROOT))
         out = open(runs / f"{jid}.json", "w")
         err = open(runs / f"{jid}.log", "w")
         proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL)
         procs[jid] = (proc, out, err)
-        print(f"Lanzado {jid} [{agent}, {model}, máx. {budget} USD] (pid {proc.pid})", flush=True)
+        print(f"Lanzado {jid} [{agent}, {model}] (pid {proc.pid})", flush=True)
 
     start = time.time()
     deadline = start + cfg["timeout_s"]
@@ -326,7 +337,7 @@ def run_wave(manifest, wave, only=None):
         if only and (STATE / "runs" / "QA.json").exists() else "")
     statuses = launch(str(wave), [
         (wp["id"], wp.get("agent", "implementer"), cfg["models"]["implementer"], prompt.format(id=wp["id"]),
-         allowed, cfg["max_budget_usd"]["implementer"])
+         allowed)
         for wp in wave_wps], cfg)
     finish(manifest, str(wave), statuses, "DONE")
 
@@ -337,26 +348,15 @@ def run_qa(manifest):
     allowed = BASE_TOOLS + manifest.get("allow_bash", []) + qa["allow_bash"]
     statuses = launch("qa", [("QA", "qa", cfg["models"]["qa"],
                               "Ejecuta la validación QA del sistema según architecture.md.",
-                              allowed, cfg["max_budget_usd"]["qa"])], cfg)
+                              allowed)], cfg)
     finish(manifest, "qa", statuses, "PASS")
-
-
-def run_cost(jid):
-    try:
-        return float(json.loads((STATE / "runs" / f"{jid}.json").read_text()).get("total_cost_usd") or 0)
-    except (json.JSONDecodeError, OSError, ValueError):
-        return 0.0
 
 
 def finish(manifest, label, statuses, expected):
     ownership_ok = check_stage(manifest, label)
     print(f"\nRESUMEN ETAPA {label}")
-    total = 0.0
     for jid, st in statuses.items():
-        cost = run_cost(jid)
-        total += cost
-        print(f"  {jid}: {st}   {cost:.2f} USD   informe: .claude/state/runs/{jid}.json")
-    print(f"  Coste de la etapa: {total:.2f} USD")
+        print(f"  {jid}: {st}   informe: .claude/state/runs/{jid}.json")
     ok = ownership_ok and all(s == expected for s in statuses.values())
     print("RESULTADO:", "OK" if ok else "REVISAR")
     sys.exit(0 if ok else 3)
