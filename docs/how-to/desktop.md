@@ -45,4 +45,4 @@ Antes, lee los requisitos de [README.md](README.md).
 
 - **Varias features a la vez:** abre una sesión por feature, cada una en su worktree. Cada una tiene su propio `architecture.md` en su rama.
 - **Desde el móvil:** activa Remote Control en la sesión y podrás seguir la entrevista del arquitecto desde el teléfono.
-- **Relanzar un WP:** escribe en la sesión "relanza WP-03 de la ola 2 para corregir los defectos de QA". Lo hace con `run-wave 2 WP-03`.
+- **Relanzar un WP:** escribe en la sesión "relanza WP-03 de la ola 2 para corregir los defectos de QA". Lo hace con `run-wave 2 WP-03 --fix`.

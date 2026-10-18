@@ -1,5 +1,5 @@
 ---
-description: Orquestador. Valida architecture.md y lanza un implementer (Sonnet 5.5) por work package, en paralelo por olas.
+description: Orquestador. Valida architecture.md y lanza un implementer (último Sonnet) por work package, en paralelo por olas.
 argument-hint: "[número de ola opcional, p. ej. 2]"
 ---
 
@@ -33,7 +33,7 @@ Para cada ola N, en orden, ejecuta con Bash **en segundo plano** (`run_in_backgr
 python3 .claude/bin/agentic.py run-wave N
 ```
 
-El script lanza un proceso `claude -p --agent implementer --model claude-sonnet-5-5` por WP, todos a la vez. A cada uno le pasa la variable `AGENTIC_WP` y solo los comandos de `allow_bash`. Espera a que terminen todos y comprueba que cada uno solo tocó sus ficheros. Cuando te avise de que ha terminado, lee su salida:
+El script lanza un proceso `claude -p --agent implementer --model sonnet` (el último Sonnet) por WP, todos a la vez. A cada uno le pasa la variable `AGENTIC_WP` y solo los comandos de `allow_bash`. Espera a que terminen todos y comprueba que cada uno solo tocó sus ficheros. Cuando te avise de que ha terminado, lee su salida:
 
 - `RESULTADO: OK`: pasa a la ola siguiente.
 - `RESULTADO: REVISAR`: para. Lee los informes de los WP que no estén en `DONE` (`.claude/state/runs/<WP>.json`, campo `result`; y `.log` si hubo error) y los ficheros fuera de propiedad, y preséntaselo al usuario.
@@ -43,7 +43,7 @@ El script lanza un proceso `claude -p --agent implementer --model claude-sonnet-
 Para cada ola N, en orden:
 
 1. Ejecuta `python3 .claude/bin/agentic.py snapshot N`.
-2. Lanza **en un único mensaje** una llamada a la herramienta Agent por cada WP de la ola (`subagent_type: implementer`). Tienen que ir todas en el mismo mensaje: solo así se ejecutan en paralelo. El prompt de cada una es solo esto:
+2. Lanza **en un único mensaje** una llamada a la herramienta Agent por cada WP de la ola (`subagent_type: implementer`). No pases el parámetro `model`: el agente usa siempre el último Sonnet desde su definición. Tienen que ir todas en el mismo mensaje: solo así se ejecutan en paralelo. El prompt de cada una es solo esto:
 
    ```
    Implementa <WP-ID> según architecture.md.

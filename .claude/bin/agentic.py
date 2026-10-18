@@ -5,14 +5,15 @@ Subcomandos:
   validate            Valida el manifiesto de architecture.md.
   snapshot L          Guarda el estado de los ficheros antes de la etapa L (número de ola o "qa").
   check-wave L        Comprueba que la etapa L solo tocó ficheros de sus propietarios.
-  run-wave N [WP...]  Lanza en paralelo un `claude -p --agent implementer` por WP de la ola N
-                      (o solo los WP indicados, p. ej. para corregir defectos de QA).
+  run-wave N [WP...] [--fix]
+                      Lanza en paralelo un `claude -p --agent implementer` por WP de la ola N (o solo
+                      los WP indicados). Con --fix, les pide corregir sus defectos del último informe de QA.
   run-qa              Lanza el agente QA (`claude -p --agent qa`) sobre el resultado integrado.
   claim ID            Asocia el subagente actual a un WP o a QA (lo registra el hook).
   hook                Hook PreToolUse (lee JSON por stdin).
 
 El manifiesto es un bloque ```json wp-manifest``` dentro de architecture.md.
-Modelos, timeout y autenticación del lanzador: .claude/agentic.json (opcional) y variables AGENTIC_*.
+Timeout y autenticación del lanzador: .claude/agentic.json (opcional) y variables AGENTIC_*.
 """
 import fcntl
 import fnmatch
@@ -33,8 +34,10 @@ CLAIMS = STATE / "claims.json"
 CONFIG = ROOT / ".claude" / "agentic.json"
 BASE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"]
 QA_DEFAULT_FILES = ["qa/"]
+# Todos los agentes orquestados (implementadores y QA) usan siempre el último Sonnet. `sonnet` es el alias
+# que Claude Code resuelve al Sonnet más reciente que conoce; no se puede cambiar por config ni por entorno.
+WORKER_MODEL = "sonnet"
 DEFAULT_CONFIG = {
-    "models": {"implementer": "claude-sonnet-5-5", "qa": "claude-opus-5-5"},
     "timeout_s": 1800,
     # "subscription": los agentes usan tu sesión de Claude (suscripción) aunque haya una API key en el entorno.
     # "inherit": heredan el entorno tal cual (útil en CI con API key).
@@ -91,8 +94,6 @@ def load_config():
             else:
                 cfg[key] = value
     env = os.environ
-    cfg["models"]["implementer"] = env.get("AGENTIC_IMPLEMENTER_MODEL", cfg["models"]["implementer"])
-    cfg["models"]["qa"] = env.get("AGENTIC_QA_MODEL", cfg["models"]["qa"])
     if "AGENTIC_TIMEOUT_S" in env:
         cfg["timeout_s"] = int(env["AGENTIC_TIMEOUT_S"])
     return cfg
@@ -204,6 +205,30 @@ def validate(manifest):
                           "Usa el comando concreto, p. ej. Bash(npm test:*) o Bash(python3 -m pytest:*).")
     if not isinstance(manifest.get("ignore", []), list):
         errors.append("'ignore' debe ser una lista de patrones.")
+    errors += agent_model_errors(manifest)
+    return errors
+
+
+FRONTMATTER_MODEL_RE = re.compile(r"\A---\s*\n(.*?)\n---", re.S)
+
+
+def agent_model_errors(manifest):
+    """Cada agente orquestado debe declarar `model: sonnet` (el último Sonnet) en su frontmatter."""
+    errors = []
+    names = {"implementer", "qa"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
+    for name in sorted(names):
+        f = ROOT / ".claude" / "agents" / f"{name}.md"
+        if not f.exists():
+            errors.append(f"Agente '{name}': no existe {f.relative_to(ROOT)}.")
+            continue
+        fm = FRONTMATTER_MODEL_RE.match(f.read_text(encoding="utf-8"))
+        model = None
+        if fm:
+            m = re.search(r"^model:\s*(\S+)\s*$", fm.group(1), re.M)
+            model = m.group(1).strip("\"'") if m else None
+        if model != WORKER_MODEL:
+            errors.append(f"Agente '{name}': su frontmatter debe decir 'model: {WORKER_MODEL}' (el último Sonnet), "
+                          f"no '{model}'.")
     return errors
 
 
@@ -285,13 +310,13 @@ def child_env(cfg, **extra):
 
 
 def launch(label, jobs, cfg):
-    """jobs: lista de (id, agent, model, prompt, allowed). Los lanza todos a la vez y espera."""
+    """jobs: lista de (id, agent, prompt, allowed). Los lanza todos a la vez y espera."""
     runs = STATE / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     snapshot(label)
     procs = {}
-    for jid, agent, model, prompt, allowed in jobs:
-        cmd = ["claude", "-p", prompt, "--agent", agent, "--model", model,
+    for jid, agent, prompt, allowed in jobs:
+        cmd = ["claude", "-p", prompt, "--agent", agent, "--model", WORKER_MODEL,
                "--output-format", "json", "--permission-mode", "acceptEdits",
                "--strict-mcp-config",  # sin conectores MCP: un WP solo necesita el repo
                "--allowedTools", *allowed, "Bash(python3 .claude/bin/agentic.py claim:*)"]
@@ -300,7 +325,7 @@ def launch(label, jobs, cfg):
         err = open(runs / f"{jid}.log", "w")
         proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL)
         procs[jid] = (proc, out, err)
-        print(f"Lanzado {jid} [{agent}, {model}] (pid {proc.pid})", flush=True)
+        print(f"Lanzado {jid} [{agent}, {WORKER_MODEL}] (pid {proc.pid})", flush=True)
 
     start = time.time()
     deadline = start + cfg["timeout_s"]
@@ -321,7 +346,7 @@ def launch(label, jobs, cfg):
     return statuses
 
 
-def run_wave(manifest, wave, only=None):
+def run_wave(manifest, wave, only=None, fix=False):
     cfg = load_config()
     wave_wps = sorted(stage_owners(manifest, wave), key=lambda w: w["id"])
     if only:
@@ -332,11 +357,13 @@ def run_wave(manifest, wave, only=None):
     if not wave_wps:
         die(f"No hay WP en la ola {wave}.")
     allowed = BASE_TOOLS + manifest.get("allow_bash", [])
+    if fix and not (STATE / "runs" / "QA.json").exists():
+        die("--fix necesita un informe de QA (.claude/state/runs/QA.json). Ejecuta run-qa antes.")
     prompt = "Implementa {id} según architecture.md." + (
         " El código ya existe: corrige los defectos de .claude/state/runs/QA.json que te asignan, sin salirte del contrato."
-        if only and (STATE / "runs" / "QA.json").exists() else "")
+        if fix else "")
     statuses = launch(str(wave), [
-        (wp["id"], wp.get("agent", "implementer"), cfg["models"]["implementer"], prompt.format(id=wp["id"]),
+        (wp["id"], wp.get("agent", "implementer"), prompt.format(id=wp["id"]),
          allowed)
         for wp in wave_wps], cfg)
     finish(manifest, str(wave), statuses, "DONE")
@@ -346,7 +373,7 @@ def run_qa(manifest):
     cfg = load_config()
     qa = qa_entity(manifest)
     allowed = BASE_TOOLS + manifest.get("allow_bash", []) + qa["allow_bash"]
-    statuses = launch("qa", [("QA", "qa", cfg["models"]["qa"],
+    statuses = launch("qa", [("QA", "qa",
                               "Ejecuta la validación QA del sistema según architecture.md.",
                               allowed)], cfg)
     finish(manifest, "qa", statuses, "PASS")
@@ -503,7 +530,8 @@ def main():
         elif cmd == "check-wave":
             sys.exit(0 if check_stage(require_valid(), label) else 3)
         else:
-            run_wave(require_valid(), int(label), only=args[1:])
+            rest = args[1:]
+            run_wave(require_valid(), int(label), only=[a for a in rest if a != "--fix"], fix="--fix" in rest)
     else:
         die(__doc__)
 

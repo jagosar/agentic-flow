@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: Implementa un único work package (WP) de architecture.md. Úsalo desde /implement, un subagente por WP.
-model: claude-sonnet-5-5
+model: sonnet
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 

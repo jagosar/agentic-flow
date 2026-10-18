@@ -1,7 +1,7 @@
 ---
 name: qa
 description: Ingeniero de QA. Valida el sistema integrado contra architecture.md, decide qué tests hacen falta, los escribe en su zona y los ejecuta. No corrige código de producción.
-model: claude-opus-5-5
+model: sonnet
 tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 

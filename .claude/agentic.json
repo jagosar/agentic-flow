@@ -1,8 +1,4 @@
 {
-  "models": {
-    "implementer": "claude-sonnet-5-5",
-    "qa": "claude-opus-5-5"
-  },
   "timeout_s": 1800,
   "auth": "subscription"
 }

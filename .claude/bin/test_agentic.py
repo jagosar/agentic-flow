@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "agentic.py"
+AGENTS_DIR = SCRIPT.parents[1] / "agents"
 
 MANIFEST = {
     "allow_bash": ["Bash(python3 -m unittest:*)"],
@@ -45,6 +46,7 @@ class Repo:
         self.dir = Path(tempfile.mkdtemp(prefix="agentic-test-"))
         body = raw_manifest if raw_manifest is not None else json.dumps(manifest, indent=2)
         (self.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{body}\n```\n")
+        shutil.copytree(AGENTS_DIR, self.dir / ".claude" / "agents")
         subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
         self.env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.dir))
         self.env.pop("AGENTIC_WP", None)
@@ -291,19 +293,38 @@ class LauncherTests(Base):
         self.repo.run("run-wave", "1")
         a = self.args("WP-01")
         self.assertEqual(a[a.index("--agent") + 1], "implementer")
-        self.assertEqual(a[a.index("--model") + 1], "claude-sonnet-5-5")
+        self.assertEqual(a[a.index("--model") + 1], "sonnet")
         self.assertNotIn("--max-budget-usd", a)
         self.assertIn("--strict-mcp-config", a)
         self.assertIn("Bash(python3 -m unittest:*)", a)
         self.assertNotIn("Bash", a, "nunca Bash sin restricción")
         self.assertFalse((self.logs / "WP-03.args").exists(), "WP-03 es de la ola 2")
 
-    def test_config_del_proyecto(self):
-        (self.repo.dir / ".claude").mkdir(exist_ok=True)
-        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"models": {"qa": "m-qa"}}))
-        self.repo.run("run-qa")
+    def test_modelo_no_se_puede_cambiar(self):
+        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"models": {"qa": "claude-opus-5-5"}}))
+        self.repo.run("run-qa", env={"AGENTIC_QA_MODEL": "opus", "AGENTIC_IMPLEMENTER_MODEL": "opus"})
         a = self.args("QA")
-        self.assertEqual(a[a.index("--model") + 1], "m-qa")
+        self.assertEqual(a[a.index("--model") + 1], "sonnet")
+        self.assertEqual(a[a.index("--agent") + 1], "qa")
+
+    def test_agente_con_otro_modelo_no_valida(self):
+        f = self.repo.dir / ".claude/agents/qa.md"
+        f.write_text(f.read_text().replace("model: sonnet", "model: claude-opus-5-5"))
+        r = self.repo.run("run-wave", "1")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("model: sonnet", r.stderr)
+        self.assertFalse((self.logs / "WP-01.args").exists())
+
+    def test_agente_especializado_debe_existir_y_ser_sonnet(self):
+        m = json.loads(json.dumps(MANIFEST))
+        m["work_packages"][0]["agent"] = "frontend"
+        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```")
+        r = self.repo.run("validate")
+        self.assertIn("no existe", r.stderr)
+        (self.repo.dir / ".claude/agents/frontend.md").write_text("---\nname: frontend\nmodel: haiku\n---\nx")
+        self.assertIn("no 'haiku'", self.repo.run("validate").stderr)
+        (self.repo.dir / ".claude/agents/frontend.md").write_text("---\nname: frontend\nmodel: sonnet\n---\nx")
+        self.assertEqual(self.repo.run("validate").returncode, 0)
 
     def env_of(self, wp):
         return json.loads((self.logs / f"{wp}.env").read_text())
@@ -323,6 +344,23 @@ class LauncherTests(Base):
         self.assertEqual(r.returncode, 0)
         self.assertFalse((self.logs / "WP-01.args").exists())
         self.assertEqual(self.repo.run("run-wave", "1", "WP-03").returncode, 1)
+
+    def prompt_of(self, wp):
+        return self.args(wp)[1]
+
+    def test_fix_solo_si_se_pide(self):
+        runs = self.repo.dir / ".claude/state/runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        (runs / "QA.json").write_text(json.dumps({"result": "STATUS: FAIL"}))
+        self.repo.run("run-wave", "1", "WP-02")
+        self.assertNotIn("QA.json", self.prompt_of("WP-02"), "sin --fix no debe usar un informe de QA viejo")
+        self.repo.run("run-wave", "1", "WP-02", "--fix")
+        self.assertIn("QA.json", self.prompt_of("WP-02"))
+
+    def test_fix_sin_informe_falla(self):
+        r = self.repo.run("run-wave", "1", "WP-01", "--fix")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("run-qa", r.stderr)
 
     def test_timeout(self):
         start = time.time()

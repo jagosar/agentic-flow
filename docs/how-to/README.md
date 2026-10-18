@@ -20,7 +20,7 @@ Guía común. Lee esta primero y luego la de tu entorno.
                            /implement
                                 │
               ┌── ola 1 ────────┼────────────┐   en paralelo
-          implementer      implementer   implementer   Sonnet 5.5
+          implementer      implementer   implementer   último Sonnet
             WP-01            WP-02          WP-03
               └── check-wave 1: ¿cada uno tocó solo lo suyo? ──┘
                                 │
@@ -28,7 +28,7 @@ Guía común. Lee esta primero y luego la de tu entorno.
                                 │
                      integración (build + tests)
                                 │
-                             /qa  ──► qa/report.md   Opus 5.5
+                             /qa  ──► qa/report.md   último Sonnet
                                 │
             PASS: listo para commit   FAIL: defectos por WP
 ```
@@ -39,8 +39,8 @@ Guía común. Lee esta primero y luego la de tu entorno.
 |---|---|---|---|---|
 | Arquitecto | `.claude/commands/architect.md` | Opus 5.5 | Entrevista, diseña y escribe `architecture.md` | Escribir código de producción |
 | Orquestador | `.claude/commands/implement.md` | El de la sesión | Valida, lanza las olas, verifica e integra | Interpretar la arquitectura o resolver bloqueos |
-| Implementador | `.claude/agents/implementer.md` | Sonnet 5.5 | Implementa un WP con sus tests unitarios | Tocar ficheros de otro WP, git, dependencias |
-| QA | `.claude/agents/qa.md` | Opus 5.5 | Decide qué probar (contratos, integración, límites…), escribe esos tests en `qa/` y los ejecuta | Corregir código de producción |
+| Implementador | `.claude/agents/implementer.md` | Último Sonnet (`sonnet`) | Implementa un WP con sus tests unitarios | Tocar ficheros de otro WP, git, dependencias |
+| QA | `.claude/agents/qa.md` | Último Sonnet (`sonnet`) | Decide qué probar (contratos, integración, límites…), escribe esos tests en `qa/` y los ejecuta | Corregir código de producción |
 
 ## Requisitos (todos los entornos)
 
@@ -58,7 +58,7 @@ Guía común. Lee esta primero y luego la de tu entorno.
 3. **Commit del diseño** (recomendado): `git add architecture.md && git commit -m "Architecture: ..."`. Así cada ola parte de un punto limpio.
 4. **Implementación:** `/implement`. Al acabar lanza QA solo.
 5. **Defectos:**
-   - **De implementación:** relanza solo ese WP con `python3 .claude/bin/agentic.py run-wave <ola> WP-02` y después `/qa`.
+   - **De implementación:** relanza solo ese WP en modo corrección con `python3 .claude/bin/agentic.py run-wave <ola> WP-02 --fix` y después `/qa`.
    - **De diseño:** vuelve a `/architect` con el informe de QA.
 6. **Commit final:** tú, o pídeselo a Claude. El push está bloqueado para los agentes y lo haces tú.
 
@@ -68,6 +68,7 @@ Guía común. Lee esta primero y luego la de tu entorno.
 python3 .claude/bin/agentic.py validate          # manifiesto coherente
 python3 .claude/bin/agentic.py run-wave 1        # ola 1 en paralelo
 python3 .claude/bin/agentic.py run-wave 1 WP-02  # solo un WP
+python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # corregir sus defectos de QA
 python3 .claude/bin/agentic.py run-qa            # agente QA
 python3 .claude/bin/agentic.py check-wave 1      # verificación de propiedad
 ```
@@ -80,7 +81,6 @@ Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>
 
 ```json
 {
-  "models": {"implementer": "claude-sonnet-5-5", "qa": "claude-opus-5-5"},
   "timeout_s": 1800,
   "auth": "subscription"
 }
@@ -88,12 +88,12 @@ Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>
 
 - `auth: "subscription"` (por defecto): los agentes usan tu sesión de Claude, es decir, tu suscripción. El lanzador les quita `ANTHROPIC_API_KEY` y `ANTHROPIC_AUTH_TOKEN` aunque estén en tu entorno, para que no consuman créditos de API sin que te des cuenta. Usa `"inherit"` solo si quieres que los agentes usen la API key (por ejemplo, en CI).
 - `timeout_s`: tiempo máximo de cada etapa. Al cumplirse, los agentes que sigan vivos se terminan y quedan como `TIMEOUT`. Es el freno si un agente se atasca.
-- Para cambiar algo puntualmente sin tocar el fichero: `AGENTIC_IMPLEMENTER_MODEL`, `AGENTIC_QA_MODEL` y `AGENTIC_TIMEOUT_S`.
-- Los modelos de `/architect` y del modo B salen del frontmatter de `.claude/commands/architect.md` y de `.claude/agents/*.md`. Si cambias de modelo, cámbialo también allí.
+- Para cambiar el timeout puntualmente sin tocar el fichero: `AGENTIC_TIMEOUT_S`.
+- **Modelos:** los implementadores y QA usan siempre el último Sonnet (alias `sonnet`), tanto en el modo A (`--model sonnet`) como en el B (`model: sonnet` en `.claude/agents/*.md`). No se puede cambiar por config ni por entorno, y `validate` rechaza cualquier agente orquestado que declare otro modelo, incluidos los agentes especializados del campo `agent`. El alias apunta al Sonnet más reciente que conoce tu versión de Claude Code: actualízala (`claude update`) para recibir los nuevos. El arquitecto sigue en Opus 5.5 (frontmatter de `.claude/commands/architect.md`).
 
 **Consumo de la suscripción:** cada agente cuenta contra los límites de uso de tu plan, y en paralelo los gastan más deprisa. Ten en cuenta que:
 
-- Opus (arquitecto y QA) consume más que Sonnet (implementadores).
+- El arquitecto (Opus) consume más que los agentes orquestados (Sonnet).
 - El modo B consume más que el A, porque los informes de los subagentes pasan por el contexto del orquestador.
 - Si llegas al límite, los agentes que estén en marcha fallan y la etapa queda en `REVISAR`. Relanza esos WP con `run-wave N WP-…` cuando se renueve el límite.
 
@@ -103,7 +103,7 @@ Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 36 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI.
+Son 40 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI.
 
 ## Problemas frecuentes
 

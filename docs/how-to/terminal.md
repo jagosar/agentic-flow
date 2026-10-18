@@ -77,14 +77,14 @@ python3 -c "import json;print(json.load(open('.claude/state/runs/QA.json'))['res
 ```
 
 ```bash
-python3 .claude/bin/agentic.py run-wave 1 WP-01
+python3 .claude/bin/agentic.py run-wave 1 WP-01 --fix
 ```
 
 ```bash
 python3 .claude/bin/agentic.py run-qa
 ```
 
-Cuando se relanza un WP con la lista `WP-...` y ya existe un informe de QA, el implementador recibe la instrucción de corregir los defectos que QA le asignó.
+Con `--fix`, el implementador recibe la instrucción de corregir los defectos que QA le asignó en el último informe. Sin `--fix`, el WP se implementa desde cero, aunque haya un informe de QA anterior.
 
 ## 5. Servidor remoto (SSH)
 
