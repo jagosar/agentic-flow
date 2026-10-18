@@ -36,6 +36,7 @@ flowchart TD
     G1 --> ARC[("docs/architecture")]
 
     subgraph B["Construcción (último Sonnet)"]
+        BL["Línea base<br/>estado de la suite antes de tocar nada"] --> AT
         AT["Ola 0: test-author<br/>escribe los tests de aceptación"] --> RED{"acceptance<br/>--expect red"}
         RED -->|ya pasan| STOP1(["Para: los tests no prueban nada"])
         RED -->|rojo| W1["Ola 1: implementers en paralelo"]
@@ -44,10 +45,10 @@ flowchart TD
         W2 --> CWN{"check-wave"}
     end
 
-    G1 --> AT
+    G1 --> BL
 
     subgraph C2["Verificación (último Sonnet)"]
-        VF["Fases: build · tipos · lint · tests"] --> GREEN{"acceptance<br/>--expect green"}
+        VF["Fases: build · tipos · lint · tests<br/>regresión frente a la línea base"] --> GREEN{"acceptance<br/>--expect green"}
         GREEN --> RV["reviewer + verifier<br/>refutación adversarial"]
         RV --> QA["qa<br/>exploratorio"]
     end
@@ -91,6 +92,7 @@ sequenceDiagram
     O->>W: Workflow agentic-implement (segundo plano)
     O-->>U: lanzado, síguelo con /workflows
     W->>G: pipeline-plan
+    W->>G: baseline (suite antes de tocar nada)
     W->>G: open-stage acceptance
     W->>AG: test-author
     AG-->>W: cobertura de los AC
@@ -103,7 +105,7 @@ sequenceDiagram
         AG-->>W: informes (estado, ficheros, comprobaciones)
         W->>G: close-stage N (propiedad + ledger)
     end
-    W->>G: verify (build, tipos, lint, tests, aceptación)
+    W->>G: verify (fases frente a la línea base + aceptación)
     W->>AG: reviewer
     AG-->>W: hallazgos
     par un verifier por hallazgo grave
@@ -250,6 +252,8 @@ acceptance/  qa/            tests de aceptación y de QA
 - **Manifiesto:** bloque `json wp-manifest` de `architecture.md` del que leen todos los guardarraíles.
 - **Ledger:** `.claude/state/ledger.md`, el estado de agentes y etapas. Lo escribe el script, no el modelo.
 - **check-wave:** comparación de huellas antes y después de una etapa para detectar escrituras fuera de zona.
+- **Línea base:** estado de build, tipos, lint y tests antes de tocar nada (`.claude/state/baseline.json`). Al verificar, una fase que pasaba y ahora falla es **regresión** (bloquea); una que ya fallaba es **fallo previo** (se informa, no se atribuye a ningún WP).
+- **Patrones a imitar (`mirror`):** referencias `fichero:líneas` al código existente que cada WP debe imitar. `validate` comprueba que existen.
 - **Puertas humanas:** aprobar el diseño y aprobar el commit. Nada pasa de una fase a otra sin ti.
 - **Workflow nativo:** script de Claude Code (`.claude/workflows/`) que orquesta subagentes de forma determinista y en segundo plano. Aquí, `agentic-implement`.
 - **gatekeeper:** agente que ejecuta los pasos deterministas de `agentic.py` en nombre del workflow, que no tiene shell.

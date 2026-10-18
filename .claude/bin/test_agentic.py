@@ -411,6 +411,67 @@ class PipelineCommandTests(Base):
         self.assertEqual(len(json.loads(local.read_text())["permissions"]["allow"]), len(allow), "idempotente")
 
 
+class BrownfieldTests(Base):
+    """Plan estilo PRP (referencias mirror validadas) y línea base de regresión."""
+    manifest = dict(MANIFEST, verify={"tests": "python3 t.py", "lint": "python3 l.py"})
+
+    def set_manifest(self, m):
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+
+    def test_mirror_validado(self):
+        self.repo.write("legacy/orders.py", "\n".join(f"linea {i}" for i in range(1, 41)))
+        cases = {
+            "legacy/orders.py": 0, "legacy/orders.py:5": 0, "legacy/orders.py:1-40": 0,
+            "legacy/orders.py:30-41": 1, "legacy/inventado.py": 1, "legacy/orders.py:abc": 1, "../fuera.py": 1,
+            "legacy/orders.py:20-10": 1,
+        }
+        for ref, expected in cases.items():
+            with self.subTest(ref=ref):
+                m = json.loads(json.dumps(self.manifest))
+                m["work_packages"][0]["mirror"] = [ref]
+                self.set_manifest(m)
+                r = self.repo.run("validate")
+                self.assertEqual(r.returncode, expected, r.stderr)
+
+    def scripts(self, tests, lint):
+        self.repo.write("t.py", f"import sys\nsys.exit({tests})\n")
+        self.repo.write("l.py", f"import sys\nsys.exit({lint})\n")
+        self.repo.write("acc.py", "import sys\nsys.exit(0)\n")
+
+    def test_regresion_frente_a_fallo_previo(self):
+        self.scripts(tests=0, lint=1)  # antes de tocar nada: lint ya falla
+        r = self.repo.run("baseline")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["preexisting_failures"], ["lint"])
+        out = json.loads(self.repo.run("verify").stdout)
+        self.assertTrue(out["ok"], "un fallo previo no bloquea")
+        self.assertEqual(out["preexisting_failures"], ["lint"])
+        self.scripts(tests=1, lint=1)  # ahora los tests, que pasaban, fallan
+        r = self.repo.run("verify")
+        self.assertEqual(r.returncode, 3)
+        out = json.loads(r.stdout)
+        self.assertEqual(out["blocking"], ["tests"])
+        status = {p["name"]: p.get("status") for p in out["phases"]}
+        self.assertEqual(status["tests"], "regresión")
+        self.assertEqual(status["lint"], "fallo previo")
+        self.assertIn("línea base: con fallos previos: lint", self.repo.run("status").stdout)
+
+    def test_sin_linea_base_un_fallo_bloquea(self):
+        self.scripts(tests=0, lint=1)
+        r = self.repo.run("verify")
+        self.assertEqual(r.returncode, 3)
+        self.assertEqual(json.loads(r.stdout)["blocking"], ["lint"])
+
+    def test_baseline_con_comando_inexistente_falla(self):
+        m = dict(self.manifest, verify={"tests": "comando-que-no-existe"})
+        self.set_manifest(m)
+        self.assertEqual(self.repo.run("baseline").returncode, 1)
+
+    def test_pipeline_plan_indica_linea_base(self):
+        self.scripts(0, 0)
+        self.assertTrue(json.loads(self.repo.run("pipeline-plan").stdout)["baseline"])
+
+
 @unittest.skipUnless(shutil.which("node"), "node no está instalado")
 class WorkflowLogicTests(unittest.TestCase):
     def test_escenarios_del_workflow(self):

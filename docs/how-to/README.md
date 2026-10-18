@@ -148,7 +148,7 @@ Resultado esperado: `No existe .../architecture.md. Lanza /architect primero.`, 
    git add architecture.md && git commit -m "Architecture: <tema>"
    ```
 
-4. **Implementación:** `/implement`. Ejecuta la ola 0 (tests de aceptación), las olas, la verificación por fases, la revisión y QA.
+4. **Implementación:** `/implement`. Fija la línea base de la suite y ejecuta la ola 0 (tests de aceptación), las olas, la verificación por fases (que separa regresiones de fallos previos), la revisión y QA.
 5. **Defectos de QA:**
    - **De implementación:** relanza solo ese WP en modo corrección. Hay un máximo de 2 ciclos por WP; al tercero, el script se niega y decides tú.
 
@@ -162,6 +162,7 @@ Resultado esperado: `No existe .../architecture.md. Lanza /architect primero.`, 
 ## Buenas prácticas
 
 - **Un `CLAUDE.md` en la raíz** con las convenciones del repo (estilo, comandos de test, prohibiciones). Todos los agentes lo leen, así que deja de ser necesario repetirlo en cada `architecture.md`.
+- **En repos con código, exige referencias.** Cada WP debe traer sus "Patrones a imitar" con `fichero:líneas`. Si el plan dice "sigue el estilo del proyecto" sin señalar dónde, está incompleto.
 - **Contratos exactos.** El paralelismo depende de la sección 6. Un contrato vago no falla en la ola: falla en la integración.
 - **Una feature por sesión**, cada una en su rama o worktree, con su propio `architecture.md`.
 - **No edites a mano los ficheros de un WP mientras corre su ola:** `check-wave` lo marcaría como violación.
@@ -174,7 +175,8 @@ Resultado esperado: `No existe .../architecture.md. Lanza /architect primero.`, 
 python3 .claude/bin/agentic.py validate                # manifiesto y modelos coherentes
 python3 .claude/bin/agentic.py sync-permissions        # permisos de los agentes en settings.local.json
 python3 .claude/bin/agentic.py pipeline-plan           # el plan que sigue el workflow (JSON)
-python3 .claude/bin/agentic.py verify                  # build, tipos, lint, tests y aceptación (JSON)
+python3 .claude/bin/agentic.py baseline                # estado de la suite antes de tocar nada
+python3 .claude/bin/agentic.py verify                  # fases frente a la línea base + aceptación (JSON)
 # Modo A (respaldo), etapa por etapa:
 python3 .claude/bin/agentic.py run-acceptance         # ola 0: test-author escribe la aceptación
 python3 .claude/bin/agentic.py acceptance --expect red # debe fallar antes del código
@@ -234,7 +236,7 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 71 tests de los guardarraíles, los comandos del pipeline, el lanzador y el ledger, más 11 escenarios de la lógica del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
+Son 76 tests de los guardarraíles, los comandos del pipeline, el lanzador y el ledger, más 14 escenarios de la lógica del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
 
 ## Problemas frecuentes
 
@@ -249,6 +251,8 @@ Son 71 tests de los guardarraíles, los comandos del pipeline, el lanzador y el 
 | `[agentic guard] ... no posee ...` | El hook hizo su trabajo | Si ese fichero debía ser del WP, corrige el manifiesto con `/architect` |
 | `YA PASAN SIN CÓDIGO` en la ola 0 | Los tests de aceptación no prueban nada | Revisa los AC con `/architect`: les falta un resultado observable concreto |
 | `agotó sus 2 ciclos --fix` | El defecto no se arregla insistiendo | Decide tú, o cambia el contrato o el AC con `/architect` |
+| `mirror apunta a un fichero que no existe` o `fuera de rango` | El plan cita código que no está ahí | Pídele a `/architect` que corrija las referencias de "Patrones a imitar" |
+| La verificación informa de un `fallo previo` | Esa fase ya fallaba antes de empezar | No bloquea ni se atribuye a ningún WP. Arréglalo aparte, o pídelo como un `fix` |
 | `... es configuración de calidad ya existente` | Un agente intentó relajar un linter o formatter | Es lo correcto. Si el diseño de verdad exige cambiarla, añade `"config_edit": true` a ese WP con `/architect` |
 | `no se desactivan tests para ponerlos en verde` | Un agente intentó añadir `skip`, `xfail` u `only` | El test se arregla o se reporta como `BLOCKER`. Los saltos condicionales (`skipIf`) sí se permiten |
 | `... parece una clave ...` | Un agente iba a escribir algo con forma de credencial | Usa variables de entorno o valores sintéticos. Si es un falso positivo en un fixture, cambia el valor de ejemplo |

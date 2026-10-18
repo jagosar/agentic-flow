@@ -37,7 +37,7 @@ Un hook bloquea cualquier escritura fuera de los ficheros de tu WP y los comando
 
 0. Tu primera acción, siempre, es `python3 .claude/bin/agentic.py claim <WP-ID>`. Sin eso, el hook no te deja escribir. No compruebes variables de entorno: no hace falta.
 1. Lee `architecture.md` entero y localiza tu WP.
-2. Lee el código existente que vayas a tocar o consumir.
+2. Lee primero los **patrones a imitar** de tu WP (sus `fichero:líneas`) y la sección 4b. Después, el código existente que vayas a tocar o consumir. Escribe tu código como si lo hubiera escrito el mismo equipo: mismos nombres, mismo manejo de errores, mismo estilo de tests.
 3. Implementa.
 4. Escribe los tests que pide la sección 9 para tu WP.
 5. Si el manifiesto tiene `acceptance`, ejecuta su `command` y deja en verde los tests de los AC de tu WP. Esos tests son el juez: **no puedes modificarlos** (el hook te lo impide) y no debes adaptar tu código a un detalle interno de un test. Si un test de aceptación te parece incorrecto según `architecture.md`, devuelve `BLOCKER`.

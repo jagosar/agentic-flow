@@ -3,6 +3,7 @@ export const meta = {
   description: 'Lleva architecture.md a código verificado: ola 0 (aceptación primero), olas en paralelo, verificación, revisión adversarial, QA y correcciones con tope.',
   phases: [
     { title: 'Preparar', detail: 'pipeline-plan: olas, WP, aceptación y tope de correcciones' },
+    { title: 'Línea base', detail: 'estado de build, tipos, lint y tests antes de tocar nada' },
     { title: 'Ola 0', detail: 'test-author escribe la aceptación; debe quedar en rojo' },
     { title: 'Olas', detail: 'implementers en paralelo por ola, con propiedad verificada' },
     { title: 'Verificación', detail: 'build, tipos, lint, tests y aceptación en verde' },
@@ -95,7 +96,7 @@ const lastJson = out => {
   try { return lines.length ? JSON.parse(lines[lines.length - 1]) : null } catch (e) { return null }
 }
 const BLOCKING = new Set(['critica', 'alta'])
-const run = { result: 'REVISAR', stages: [], work_packages: {}, verification: null, review: null, qa: null, fix_cycles: 0, pending: [] }
+const run = { result: 'REVISAR', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, fix_cycles: 0, pending: [] }
 const stop = (stage, detail, extra) => ({ ...run, failed_stage: stage, detail, ...(extra || {}) })
 
 async function runWave(wave, wpIds, defectsByWp) {
@@ -122,6 +123,16 @@ phase('Preparar')
 const planGate = await gate('pipeline-plan', 'pipeline-plan')
 const plan = planGate && planGate.exit_code === 0 ? lastJson(planGate.output) : null
 if (!plan) return stop('preparar', 'pipeline-plan falló: el manifiesto no es válido', { gate: planGate })
+
+// ---------- Línea base ----------
+// Antes de tocar nada: así, al final, una fase que ya fallaba es "fallo previo" y no se atribuye a ningún WP.
+// Al retomar desde una ola (start_wave) se conserva la línea base de la ejecución original.
+if (startWave === null && plan.baseline) {
+  phase('Línea base')
+  const base = await gate('baseline', 'baseline')
+  run.baseline = base ? lastJson(base.output) : null
+  if (!base || base.exit_code !== 0) return stop('línea base', 'algún comando de verify no se pudo ejecutar (no existe o superó el tiempo)', { gate: base })
+}
 
 // ---------- Ola 0 ----------
 if (startWave === null && plan.acceptance) {

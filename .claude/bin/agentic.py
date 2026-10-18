@@ -12,7 +12,8 @@ Subcomandos:
   open-stage L        Snapshot de la etapa L (ola, acceptance, review, qa) y sus propietarios en JSON.
   close-stage L ID=estado... [--expect red|green] [--fix]
                       Propiedad + estados en el ledger (+ aceptación) (+ cuenta de fix), en una llamada.
-  verify              Fases build/types/lint/tests del manifiesto + aceptación en verde. Salida JSON.
+  baseline            Línea base: fases de verify ANTES de tocar nada (separa regresiones de fallos previos).
+  verify              Fases build/types/lint/tests + aceptación en verde, comparadas con la línea base. JSON.
   sync-permissions    Añade a .claude/settings.local.json los permisos que necesitan los agentes.
   wave-plan N         Imprime en JSON los WP de la ola N.
   open-wave N         Valida, toma el snapshot de la ola N e imprime sus WP en JSON (workflow nativo).
@@ -64,6 +65,8 @@ AT_DEFAULT_FILES = ["acceptance/"]
 RESERVED_IDS = {"QA", "AT", "REVIEW"}
 ARCHIVE_DIR = "docs/architecture/"  # archivo de decisiones: lo escribe /architect, nunca un WP
 VERIFY_PHASES = ("build", "types", "lint", "tests")
+BASELINE = STATE / "baseline.json"
+MIRROR_RE = re.compile(r"^([^:]+?)(?::(\d+)(?:-(\d+))?)?$")  # ruta[:inicio[-fin]]
 WORKFLOW_NAME = "agentic-implement"
 TYPE_RE = re.compile(r"^Tipo:\s*(feature|change|fix|refactor)\b", re.M | re.I)
 REVIEW_TOOLS = ["Read", "Glob", "Grep", "Bash(git diff:*)", "Bash(git status:*)", "Bash(git log:*)"]
@@ -260,6 +263,7 @@ def validate(manifest):
         for key in ("wave", "files"):
             if key not in wp:
                 errors.append(f"{wp['id']}: falta el campo '{key}'.")
+        errors += mirror_errors(wp)
         if "config_edit" in wp and not isinstance(wp["config_edit"], bool):
             errors.append(f"{wp['id']}: 'config_edit' debe ser true o false.")
         if not isinstance(wp.get("wave", 0), int):
@@ -330,6 +334,30 @@ def agent_model_errors(manifest):
         if f.exists() and frontmatter_model(f) != expected:
             errors.append(f"/{command}: su frontmatter debe decir 'model: {expected}' ({label}), "
                           f"no '{frontmatter_model(f)}'.")
+    return errors
+
+
+def mirror_errors(wp):
+    """Las referencias a código existente ("mirror") deben existir de verdad: atrapa rutas o líneas inventadas."""
+    errors = []
+    mirror = wp.get("mirror", [])
+    if not isinstance(mirror, list):
+        return [f"{wp['id']}: 'mirror' debe ser una lista de 'ruta[:inicio[-fin]]'."]
+    for ref in mirror:
+        m = MIRROR_RE.match(str(ref))
+        if not m:
+            errors.append(f"{wp['id']}: referencia mirror mal formada: {ref}")
+            continue
+        rel, start, end = m.group(1), m.group(2), m.group(3)
+        f = ROOT / rel
+        if ".." in Path(rel).parts or rel.startswith("/") or not f.is_file():
+            errors.append(f"{wp['id']}: mirror apunta a un fichero que no existe: {rel}")
+            continue
+        if start:
+            n = sum(1 for _ in f.open(encoding="utf-8", errors="replace"))
+            a, b = int(start), int(end or start)
+            if not (1 <= a <= b <= n):
+                errors.append(f"{wp['id']}: mirror {ref} fuera de rango ({rel} tiene {n} líneas).")
     return errors
 
 
@@ -568,6 +596,7 @@ def pipeline_plan(manifest):
     plan = {"waves": waves, "acceptance": bool(at_entity(manifest)["command"]), "type": architecture_type(),
             "verify": sorted(manifest.get("verify", {})), "max_fix_cycles": int(load_config().get("max_fix_cycles", 2)),
             "agents": {wp["id"]: wp.get("agent", "implementer") for wp in wps(manifest).values()},
+            "baseline": bool(manifest.get("verify")),
             "wave_of": {wp["id"]: wp["wave"] for wp in wps(manifest).values()},
             "work_packages": {str(w): sorted(wp["id"] for wp in stage_owners(manifest, str(w))) for w in waves}}
     print(json.dumps(plan))
@@ -624,8 +653,7 @@ def close_stage(manifest, label, items):
     sys.exit(0 if ok else 3)
 
 
-def verify(manifest):
-    """Fases de verificación con los comandos del manifiesto, más la aceptación en verde. Salida JSON."""
+def run_phases(manifest):
     cfg = manifest.get("verify", {})
     phases = []
     for name in VERIFY_PHASES:
@@ -634,12 +662,47 @@ def verify(manifest):
             continue
         code, tail = run_command(cfg[name])
         phases.append({"name": name, "command": cfg[name], "exit": code, "passed": code == 0, "tail": tail})
+    return phases
+
+
+def baseline(manifest):
+    """Línea base: estado de las fases de verify ANTES de tocar nada. Separa regresiones de fallos previos."""
+    phases = run_phases(manifest)
+    STATE.mkdir(parents=True, exist_ok=True)
+    BASELINE.write_text(json.dumps({"phases": phases}, ensure_ascii=False, indent=2))
+    failing = [p["name"] for p in phases if p.get("passed") is False]
+    ledger_stage("línea base", "OK" if not failing else "con fallos previos: " + ", ".join(failing))
+    print(json.dumps({"phases": phases, "preexisting_failures": failing}, ensure_ascii=False))
+    errored = [p["name"] for p in phases if p.get("exit") in (124, 126, 127)]
+    sys.exit(1 if errored else 0)
+
+
+def verify(manifest):
+    """Fases de verify y aceptación en verde. Con línea base, una fase que ya fallaba es 'fallo previo'
+    (se informa, no bloquea) y una que pasaba y ahora falla es 'regresión' (bloquea). Salida JSON."""
+    base = {p["name"]: p for p in json.loads(BASELINE.read_text()).get("phases", [])} if BASELINE.exists() else {}
+    phases = run_phases(manifest)
+    for ph in phases:
+        if ph.get("skipped"):
+            continue
+        was = base.get(ph["name"], {}).get("passed")
+        ph["baseline_passed"] = was
+        if ph["passed"]:
+            ph["status"] = "ok"
+        elif was is False:
+            ph["status"] = "fallo previo"
+        else:
+            ph["status"] = "regresión" if was else "falla"
     if at_entity(manifest)["command"]:
         acc_ok, verdict = acceptance_check(manifest, "green", quiet=True)
-        phases.append({"name": "acceptance", "command": at_entity(manifest)["command"], "passed": acc_ok, "verdict": verdict})
-    ok = all(ph.get("passed", True) for ph in phases)
-    ledger_stage("verificación", "OK" if ok else "REVISAR")
-    print(json.dumps({"ok": ok, "phases": phases}, ensure_ascii=False))
+        phases.append({"name": "acceptance", "command": at_entity(manifest)["command"], "passed": acc_ok,
+                       "verdict": verdict, "status": "ok" if acc_ok else "falla"})
+    blocking = [p["name"] for p in phases if p.get("status") in ("regresión", "falla")]
+    preexisting = [p["name"] for p in phases if p.get("status") == "fallo previo"]
+    ok = not blocking
+    ledger_stage("verificación", "OK" if ok else "REVISAR: " + ", ".join(blocking))
+    print(json.dumps({"ok": ok, "blocking": blocking, "preexisting_failures": preexisting, "phases": phases},
+                     ensure_ascii=False))
     sys.exit(0 if ok else 3)
 
 
@@ -979,6 +1042,8 @@ def main():
         close_stage(require_valid(), stage_label(args[0]), args[1:])
     elif cmd == "verify":
         verify(require_valid())
+    elif cmd == "baseline":
+        baseline(require_valid())
     elif cmd == "sync-permissions":
         sync_permissions(require_valid())
     elif cmd in ("wave-plan", "open-wave"):

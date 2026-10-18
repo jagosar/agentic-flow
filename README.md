@@ -73,6 +73,8 @@ Los modelos están fijados por alias (`opus`, `sonnet`), que siempre apuntan a l
 | Git, dependencias o sesiones anidadas desde un agente | Bloqueados dentro de cualquier agente del flow |
 | Escrituras que esquivan el hook (por Bash) | `check-wave` compara las huellas antes y después de cada etapa |
 | Falsos positivos de revisión que bloquean | Un `verifier` independiente intenta refutar cada hallazgo grave; solo se descarta si lo refuta con confianza |
+| Romper lo que ya funcionaba | Línea base antes de tocar nada; una fase que pasaba y ahora falla es regresión y bloquea. Los fallos previos se informan sin culpar a ningún WP |
+| Un plan que "sigue el estilo" sin decir cuál | Cada WP trae patrones a imitar con `fichero:líneas`; `validate` comprueba que existen |
 | Bucles de corrección sin fin | Máximo 2 ciclos de corrección por WP. Después decides tú |
 | Instrucciones inyectadas en el repo | Defensa explícita en las instrucciones de cada agente |
 | Un fallo del propio guardarraíl | El hook falla cerrado: dentro de un agente, cualquier error bloquea |
@@ -87,7 +89,7 @@ El detalle, con el diagrama de decisión, está en [Cómo funciona § 4](docs/ho
   - `/implement` con el workflow nativo: ola 0 (16 AC en rojo), dos olas en paralelo, verificación, revisión, QA y ledger cerrado, en unos 5 minutos;
   - el hook bloquea escrituras ajenas también dentro del workflow (probado con una sonda adversarial);
   - el modo A de respaldo, de principio a fin.
-- **Tests del propio flow:** 71 tests (Python) + 11 escenarios del workflow (Node) en CI, con Python 3.9, 3.12 y 3.14.
+- **Tests del propio flow:** 76 tests (Python) + 14 escenarios del workflow (Node) en CI, con Python 3.9, 3.12 y 3.14.
 - **Sin probar:** el ciclo de corrección con agentes reales (solo con tests simulados); la entrevista interactiva en la interfaz; VS Code, JetBrains, nube y GitHub Actions.
 
 ## Créditos

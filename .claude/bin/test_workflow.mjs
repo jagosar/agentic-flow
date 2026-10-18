@@ -11,7 +11,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const script = new AsyncFunction('agent', 'parallel', 'phase', 'log', 'args', source)
 
 const PLAN = {
-  waves: [1, 2], acceptance: true, type: 'feature', verify: ['tests'], max_fix_cycles: 2,
+  waves: [1, 2], acceptance: true, type: 'feature', verify: ['tests'], max_fix_cycles: 2, baseline: true,
   work_packages: { 1: ['WP-01', 'WP-02'], 2: ['WP-03'] },
   agents: { 'WP-01': 'implementer', 'WP-02': 'implementer', 'WP-03': 'implementer' },
   wave_of: { 'WP-01': 1, 'WP-02': 1, 'WP-03': 2 },
@@ -29,7 +29,8 @@ async function simulate(scenario = {}, args = {}) {
         const cmd = prompt.split('agentic.py ')[1].trim()
         if (scenario.gate && scenario.gate(cmd)) return scenario.gate(cmd)
         if (cmd === 'pipeline-plan') return { exit_code: 0, output: JSON.stringify({ ...PLAN, ...(scenario.plan || {}) }) }
-        if (cmd === 'verify') return { exit_code: 0, output: JSON.stringify({ ok: true, phases: [{ name: 'tests', passed: true }] }) }
+        if (cmd === 'verify') return { exit_code: 0, output: JSON.stringify({ ok: true, blocking: [], preexisting_failures: [], phases: [{ name: 'tests', passed: true }] }) }
+        if (cmd === 'baseline') return { exit_code: 0, output: JSON.stringify({ phases: [{ name: 'tests', passed: true }], preexisting_failures: [] }) }
         return { exit_code: 0, output: 'RESULTADO: OK' }
       }
       case 'test-author':
@@ -141,11 +142,33 @@ test('defecto de diseño: no se corrige en bucle, se devuelve como pendiente', a
 test('refactor: sin test-author, la suite existente es la línea base', async () => {
   const { calls, gates } = await simulate({ plan: { type: 'refactor' } })
   assert.ok(!calls.some(c => c.type === 'test-author'))
-  assert.equal(gates[1], 'acceptance --expect green')
+  assert.equal(gates[1], 'baseline')
+  assert.equal(gates[2], 'acceptance --expect green')
 })
 
-test('start_wave: se salta la ola 0 y las olas anteriores', async () => {
-  const { calls } = await simulate({}, { start_wave: 2 })
+test('línea base: va antes de la ola 0 y su resultado se guarda', async () => {
+  const { result, gates } = await simulate()
+  assert.equal(gates[1], 'baseline')
+  assert.ok(gates.indexOf('baseline') < gates.indexOf('open-stage acceptance'))
+  assert.deepEqual(result.baseline.preexisting_failures, [])
+})
+
+test('línea base con fallo previo: no bloquea; un comando que no se puede ejecutar, sí', async () => {
+  const pre = await simulate({ gate: c => (c === 'baseline' ? { exit_code: 0, output: JSON.stringify({ phases: [], preexisting_failures: ['lint'] }) } : null) })
+  assert.equal(pre.result.result, 'OK')
+  assert.deepEqual(pre.result.baseline.preexisting_failures, ['lint'])
+  const broken = await simulate({ gate: c => (c === 'baseline' ? { exit_code: 1, output: '{}' } : null) })
+  assert.equal(broken.result.failed_stage, 'línea base')
+})
+
+test('sin comandos de verify no hay línea base', async () => {
+  const { gates } = await simulate({ plan: { baseline: false } })
+  assert.ok(!gates.includes('baseline'))
+})
+
+test('start_wave: se salta la línea base, la ola 0 y las olas anteriores', async () => {
+  const { calls, gates } = await simulate({}, { start_wave: 2 })
+  assert.ok(!gates.includes('baseline'))
   assert.ok(!calls.some(c => c.type === 'test-author'))
   assert.deepEqual(calls.filter(c => c.type === 'implementer').map(c => c.label), ['WP-03'])
 })

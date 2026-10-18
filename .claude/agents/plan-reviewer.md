@@ -23,6 +23,8 @@ No has visto la conversación en la que se diseñó `architecture.md`, y eso es 
 6. **Comandos:** ¿los comandos de build y test de las secciones 3 y 9 funcionan tal cual? Por ejemplo, rutas de discovery o paquetes que no son importables.
 7. **Riesgos (sección 11):** ¿alguno bloquea un WP sin decirlo?
 8. **Reutilización:** ¿se reinventa algo que la librería estándar o una dependencia ya presente resuelve?
+9. **Contexto del código existente (si lo hay):** abre las referencias de la sección 4b y de "Patrones a imitar". ¿Dicen lo que el plan afirma? ¿Falta algún patrón que un WP necesitará? ¿Hay algún *gotcha* evidente en ese código que el plan no recoge?
+10. **Línea base:** ¿los comandos de `verify` cubren la suite existente, para que una regresión se detecte?
 
 # Informe (respuesta final, en menos de 400 palabras)
 
