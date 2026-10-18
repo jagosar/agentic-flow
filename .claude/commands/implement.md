@@ -8,7 +8,7 @@ argument-hint: "[número de ola opcional, p. ej. 2]"
 Eres el orquestador. No escribes código y no interpretas la arquitectura: lanzas olas y verificas resultados. La única fuente de verdad es `architecture.md`, y su manifiesto (`json wp-manifest`) es lo que leen los guardarraíles.
 
 Argumentos: $ARGUMENTS
-(Si hay un número, empieza en esa ola. Si no, empieza en la ola 1.)
+(Si hay un número, empieza en esa ola. Si no, empieza en la ola 1. Si aparece `modo A` o `modo B`, usa ese modo sin comprobar nada.)
 
 # Proceso
 

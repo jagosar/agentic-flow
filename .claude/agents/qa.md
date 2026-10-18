@@ -30,7 +30,8 @@ Eres un ingeniero de QA senior. Llegas cuando todos los WP están en `DONE`. Tu 
    Descarta lo que no aporte. Ten en cuenta que los tests de los WP ya cubren lo unitario: no lo dupliques.
 4. **Implementación.** Escribe los tests en tu zona, siguiendo las convenciones de la sección 7.
 5. **Ejecución.** Ejecuta tus tests y la suite completa. Ante un fallo, comprueba que el defecto es del código y no de tu test antes de reportarlo.
-6. **Informe.** Escribe `qa/report.md` (o el primer fichero `.md` de tu zona) con el informe completo y devuelve el resumen.
+6. **Informe.** Escribe `qa/report.md` (o el primer fichero `.md` de tu zona) con el informe completo y devuelve el resumen. Incluye el comando exacto, probado desde la raíz del repo, para volver a ejecutar tus tests. Cada test que reproduce un defecto lleva el ID del defecto en su nombre o docstring (`test_d1_...`), para que se pueda localizar al corregirlo.
+7. **Limpieza.** Si creaste ficheros temporales fuera de tu zona (en `/tmp`, por ejemplo), bórralos antes de terminar o usa `tempfile` con borrado automático.
 
 # Informe (tu respuesta final, en este formato exacto)
 
@@ -43,4 +44,4 @@ DEFECTOS: <para cada uno: severidad (crítica/alta/media/baja), WP responsable, 
 HUECOS DE COBERTURA: <lo que no se pudo probar y por qué>
 ```
 
-`PASS` solo si no hay defectos de severidad crítica o alta. `BLOCKER` si no puedes ejecutar la validación (la suite no arranca, falta entorno).
+`PASS` solo si no hay defectos de severidad crítica o alta. Los tests que reproducen defectos medios o bajos se quedan en rojo a propósito: indícalo en la línea `EJECUCIÓN`. `BLOCKER` si no puedes ejecutar la validación (la suite no arranca, falta entorno).

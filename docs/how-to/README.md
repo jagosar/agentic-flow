@@ -47,6 +47,8 @@ Guía común. Lee esta primero y luego la de tu entorno.
 - `git` y `python3` (3.9 o posterior).
 - Claude Code **2.1.280 o posterior** para Opus 5.5. Con versiones anteriores, el lanzador falla con `does not support this model`. Actualiza con `claude update`.
 - El repo con `.claude/` y `.gitignore` de esta plantilla, commiteados.
+- La carpeta del proyecto marcada como de confianza: abre `claude` una vez en ella y acepta el aviso.
+- macOS o Linux. En Windows usa WSL, porque el script depende de `fcntl` y del comando `python3`.
 - **Para el modo paralelo A**: el CLI `claude` en el `PATH` y con sesión iniciada. Compruébalo con `claude --version` en una terminal normal. Si no está, `/implement` usa el modo B (subagentes dentro de la sesión).
 
 ## Ciclo de trabajo
@@ -72,13 +74,49 @@ python3 .claude/bin/agentic.py check-wave 1      # verificación de propiedad
 
 Informes de cada agente: `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>.log`.
 
-Variables para cambiar de modelo sin editar ficheros: `AGENTIC_IMPLEMENTER_MODEL` y `AGENTIC_QA_MODEL`.
+## Modelos, límites y coste
+
+`.claude/agentic.json` fija lo que usa el lanzador (modos A y QA):
+
+```json
+{
+  "models": {"implementer": "claude-sonnet-5-5", "qa": "claude-opus-5-5"},
+  "max_budget_usd": {"implementer": 3, "qa": 5},
+  "timeout_s": 1800
+}
+```
+
+- `max_budget_usd`: límite de gasto **por agente**. Si un agente lo supera, Claude Code lo corta y la etapa queda en `REVISAR`.
+- `timeout_s`: tiempo máximo de cada etapa. Al cumplirse, los agentes que sigan vivos se terminan y quedan como `TIMEOUT`.
+- Cada etapa termina con el coste de cada agente y el total.
+- Para cambiar algo puntualmente sin tocar el fichero: `AGENTIC_IMPLEMENTER_MODEL`, `AGENTIC_QA_MODEL` y `AGENTIC_TIMEOUT_S`.
+- Los modelos de `/architect` y del modo B salen del frontmatter de `.claude/commands/architect.md` y de `.claude/agents/*.md`. Si cambias de modelo, cámbialo también allí.
+
+Coste orientativo de la pasada de prueba completa, de principio a fin (CLI de tareas en Python, 3 WP):
+
+| Fase | Modo A | Modo B |
+|---|---|---|
+| `/architect` (Opus 5.5) | 0,85 $ · 3,5 min | (el mismo) |
+| `/implement`: 3 WP (Sonnet 5.5), integración y QA (Opus 5.5) | 1,41 $ | 2,14 $ |
+| Total | **2,26 $** | 2,99 $ |
+
+El modo B sale más caro porque los informes de los subagentes pasan por el contexto del orquestador (Opus).
+
+## Tests del propio flow
+
+```bash
+python3 -m unittest discover -s .claude/bin -p "test_*.py"
+```
+
+Son 34 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no gastan nada. En el repo plantilla corren en CI.
 
 ## Problemas frecuentes
 
 | Síntoma | Causa | Solución |
 |---|---|---|
-| `does not support this model; version 2.1.280 or newer is required` | CLI antiguo | `claude update` |
+| `does not support this model; version 2.1.280 or newer is required` | CLI antiguo | `claude update`. Si da un error de permisos y usas nvm, puede que la shell esté usando el npm del sistema: `$(dirname $(which node))/npm install -g @anthropic-ai/claude-code@latest` |
+| `Ignoring 1 permissions.allow entry ... this workspace has not been trusted` | La carpeta del proyecto aún no es de confianza para Claude Code | Abre `claude` una vez en esa carpeta y acepta el aviso. Los hooks y los `deny` se aplican igual; lo que se pierde es el `allow` que evita las preguntas |
+| Todas las olas tienen un solo WP | El arquitecto eligió "capas reales" | Pídele "contratos primero" en la entrevista, o explícale que quieres más paralelismo |
 | Aviso `isn't described by this version's model catalog` | CLI sin el modelo en su catálogo | Funciona igual; actualiza para quitar el aviso |
 | `RESULTADO: REVISAR` sin `STATUS` | El proceso hijo falló | Lee `.claude/state/runs/<ID>.log` |
 | `FUERA DE PROPIEDAD` | Un agente escribió fuera de su zona, normalmente por Bash | Revisa `git diff` de ese fichero y deshazlo o asígnalo en el manifiesto |

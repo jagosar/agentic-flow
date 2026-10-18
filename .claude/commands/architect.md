@@ -27,6 +27,16 @@ Usa la herramienta AskUserQuestion. Reglas:
 - No preguntes lo que puedes deducir del código o de un valor por defecto razonable. Decídelo tú y anótalo en la sección 10 (Decisiones).
 - Cubre, por orden de impacto: alcance y no-objetivos, usuarios y casos de uso, stack y versiones, modelo de datos, interfaces externas (API, CLI, UI), persistencia, autenticación y seguridad, errores, rendimiento, tests, despliegue.
 - Para tras la ronda en la que ya no quede ninguna decisión que cambie el diseño. Normalmente bastan de 2 a 4 rondas.
+- Si la partición en WP admite más de una forma, pregunta por la estrategia de olas (ver "Paralelismo" más abajo). Recomienda "contratos primero" salvo que los contratos sean inestables o muy difíciles de simular.
+
+## Paralelismo
+
+El objetivo del flow es que varios implementadores trabajen a la vez. Una cadena de olas de un WP cada una (1 → 2 → 3) anula ese objetivo, así que solo la elijas si tienes un motivo y lo dejas en la sección 10.
+
+- **Contratos primero (recomendado):** un WP que solo necesita la *firma* de otro va en la misma ola. Programa contra la sección 6 y, en sus tests unitarios, usa dobles de prueba (fakes o stubs) que respeten esa firma, dentro de sus propios ficheros. La integración real la validan la fase de integración de `/implement` y QA. Esto exige que la sección 6 sea exacta al carácter.
+- **Capas reales:** un WP va en una ola posterior solo si necesita *ejecutar* el código real de otro: generadores de código, migraciones de las que dependen sus tests, o contratos que no se pueden simular con fiabilidad.
+- **Reparto:** prefiere cortes verticales (por funcionalidad) o módulos de tamaño parecido. Una ola tarda lo que tarda su WP más largo.
+- En la sección 8, cada WP indica qué contratos consume **por firma** (misma ola, con dobles) y cuáles **por implementación** (olas anteriores, en `depends_on`).
 
 ## 3. Redacción de architecture.md
 
