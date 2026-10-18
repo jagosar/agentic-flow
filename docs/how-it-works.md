@@ -197,6 +197,17 @@ flowchart LR
 | Coste de contexto | Bajo: el orquestador solo lee resúmenes | Mayor: los informes pasan por su contexto |
 | Estado probado | Pasada completa v1 y v2 con agentes reales | Pasada completa v1; v2 solo con tests |
 
+### Experimental: workflow nativo
+
+`.claude/workflows/agentic-wave.js` ejecuta una ola como [workflow dinámico](https://code.claude.com/docs/en/workflows) de Claude Code. Funciona así:
+- **Paralelismo:** el script lanza los implementers con `parallel()`.
+- **Informes:** valida cada informe contra un JSON Schema.
+- **Pasos deterministas:** los delega en el agente `gatekeeper` (`open-wave` y `close-wave`), porque un workflow no tiene acceso a la shell.
+
+Ya está probado con agentes reales: dos olas con paralelismo efectivo, hook activo dentro del workflow (bloqueo de una escritura ajena) y ledger cerrado al terminar. Todavía no está conectado a `/implement`.
+
+En Pro hay que activar **Dynamic workflows** en `/config`, o poner `"enableWorkflows": true` en la configuración.
+
 ## 7. Ficheros y estado
 
 ```

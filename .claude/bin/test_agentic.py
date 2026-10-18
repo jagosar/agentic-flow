@@ -304,6 +304,36 @@ class ContentGuardTests(Base):
         self.assertEqual(self.w("src/a.py", "TOKEN = os.environ['API_TOKEN']\n"), 0)
 
 
+class WorkflowCommandTests(Base):
+    """Comandos deterministas que usa el workflow nativo a través del agente gatekeeper."""
+
+    def test_open_wave_snapshot_y_json(self):
+        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="viejo"))
+        r = self.repo.run("open-wave", "1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout), {"wave": 1, "work_packages": ["WP-01", "WP-02"]}, "solo JSON en stdout")
+        self.assertTrue((self.repo.dir / ".claude/state/snapshot-1.json").exists())
+        self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="nuevo")), 0,
+                         "open-wave reinicia los claims de la etapa anterior")
+        self.assertEqual(self.repo.run("open-wave", "9").returncode, 3)
+
+    def test_close_wave(self):
+        self.repo.run("open-wave", "1")
+        self.repo.write("src/a.py")
+        r = self.repo.run("close-wave", "1", "WP-01=done", "WP-02=done")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        st = self.repo.run("status").stdout
+        self.assertIn("ola 1: OK", st)
+        self.assertIn("[done]", st)
+        self.repo.run("open-wave", "1")
+        self.assertEqual(self.repo.run("close-wave", "1", "WP-01=done", "WP-02=blocker").returncode, 3)
+        self.assertIn("ola 1: REVISAR", self.repo.run("status").stdout)
+        self.repo.run("open-wave", "1")
+        self.repo.write("README.md")
+        self.assertEqual(self.repo.run("close-wave", "1", "WP-01=done", "WP-02=done").returncode, 3, "escritura ajena")
+        self.assertEqual(self.repo.run("close-wave", "1", "WP-77=done").returncode, 1)
+
+
 class HookFailClosedTests(unittest.TestCase):
     def setUp(self):
         self.repo = Repo(raw_manifest='{"work_packages": [ roto')

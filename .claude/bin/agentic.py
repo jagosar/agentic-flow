@@ -8,6 +8,10 @@ Subcomandos:
   run-wave N [WP...] [--fix]
                       Lanza en paralelo un `claude -p --agent implementer` por WP de la ola N (o solo
                       los WP indicados). Con --fix, les pide corregir sus defectos del último informe de QA.
+  wave-plan N         Imprime en JSON los WP de la ola N.
+  open-wave N         Valida, toma el snapshot de la ola N e imprime sus WP en JSON (workflow nativo).
+  close-wave N ID=estado...
+                      check-wave N + estados finales en el ledger, en una sola llamada (workflow nativo).
   run-acceptance      Ola 0: lanza el agente test-author, que escribe los tests de aceptación antes del código.
   acceptance --expect red|green
                       Ejecuta el comando de aceptación del manifiesto. En la ola 0 deben fallar (red);
@@ -836,6 +840,38 @@ def main():
         print("Manifiesto válido.")
     elif cmd == "run-qa":
         run_qa(require_valid())
+    elif cmd in ("wave-plan", "open-wave"):
+        if not args or not args[0].isdigit():
+            die(f"Uso: {cmd} N")
+        manifest = require_valid()
+        ids = sorted(wp["id"] for wp in stage_owners(manifest, args[0]))
+        if cmd == "open-wave" and ids:
+            with open(os.devnull, "w") as quiet:  # el snapshot no debe ensuciar la salida JSON
+                old, sys.stdout = sys.stdout, quiet
+                try:
+                    snapshot(args[0])
+                finally:
+                    sys.stdout = old
+        print(json.dumps({"wave": int(args[0]), "work_packages": ids}))
+        sys.exit(0 if ids else 3)
+    elif cmd == "close-wave":
+        # close-wave N WP-01=done WP-02=blocker ...: check-wave + estados en el ledger, en una sola llamada.
+        if not args or not args[0].isdigit():
+            die("Uso: close-wave N ID=estado [ID=estado...]")
+        manifest = require_valid()
+        known = entities(manifest)
+        marks = []
+        for item in args[1:]:
+            jid, _, state = item.partition("=")
+            if jid not in known or state not in LEDGER_STATES:
+                die(f"close-wave: entrada inválida '{item}' (ID del manifiesto y estado en {', '.join(LEDGER_STATES)})")
+            marks.append((jid, state))
+        for jid, state in marks:
+            ledger_update(jid, state=state, stage=stage_of(jid), pid=None, note=state.upper())
+        ok = check_stage(manifest, args[0]) and all(state == "done" for _, state in marks)
+        ledger_stage(args[0], "OK" if ok else "REVISAR")
+        print("RESULTADO:", "OK" if ok else "REVISAR")
+        sys.exit(0 if ok else 3)
     elif cmd == "run-acceptance":
         run_acceptance(require_valid())
     elif cmd == "run-review":

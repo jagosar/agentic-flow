@@ -47,6 +47,8 @@ Un hook bloquea cualquier escritura fuera de los ficheros de tu WP y los comando
 
 El orquestador lee muchos informes a la vez: sé breve, pon el resultado primero y deja el detalle en el código y en los tests.
 
+Si quien te lanza exige una respuesta estructurada (JSON con un esquema), usa ese formato con los mismos datos: estado, WP, ficheros, comprobaciones ejecutadas, decisiones internas y bloqueo.
+
 ```
 STATUS: DONE | BLOCKER
 WP: <WP-ID>
