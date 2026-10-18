@@ -1,7 +1,7 @@
 # How-to: Claude Code en terminal
 
 **Objetivo:** ejecutar el flow completo desde una terminal, de forma interactiva o por scripts.
-**Estado:** probado con Claude Code 2.1.302. `/implement` completo con el workflow nativo, con agentes reales: ola 0, dos olas en paralelo, verificación, revisión y QA, y ledger cerrado. También sobre un repo con código: línea base, 13 AC nuevos, sin regresiones y con compatibilidad de datos verificada. El modo A, también de principio a fin.
+**Estado:** probado con Claude Code 2.1.302. `/implement` completo con el workflow nativo, con agentes reales: ola 0, dos olas en paralelo, verificación, revisión y QA, y ledger cerrado. También sobre un repo con código: línea base, 13 AC nuevos, sin regresiones y con compatibilidad de datos verificada. También el ciclo de corrección con un defecto inyectado (lo encontraron el revisor y QA, y su WP lo corrigió en un ciclo) y la documentación viva. El modo A, también de principio a fin.
 
 Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
 

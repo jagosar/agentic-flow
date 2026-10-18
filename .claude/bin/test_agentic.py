@@ -550,6 +550,19 @@ class RulesTests(Base):
                          [".claude/rules/agentic/common.md", ".claude/rules/agentic/python.md"])
 
 
+class CustomAgentTests(Base):
+    """Un agente propio declarado en "agent" de un WP también debe reclamar antes de escribir."""
+    manifest = dict(MANIFEST, work_packages=[dict(MANIFEST["work_packages"][0], agent="implementer-rapido")]
+                    + MANIFEST["work_packages"][1:])
+
+    def test_agente_propio_sin_claim_bloqueado(self):
+        payload = dict(write_payload("src/a.py", agent_id="x1"), agent_type="implementer-rapido")
+        self.assertEqual(self.repo.hook(payload), 2)
+        self.repo.hook(dict(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="x1"),
+                            agent_type="implementer-rapido"))
+        self.assertEqual(self.repo.hook(payload), 0)
+
+
 class LivingDocsTests(Base):
     """Documentación viva: zona DOCS, codemap determinista y docs-check."""
     manifest = dict(MANIFEST, docs={"files": ["README.md", "CHANGELOG.md", "docs/"]})

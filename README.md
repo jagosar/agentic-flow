@@ -115,9 +115,11 @@ El detalle, con el diagrama de decisión, está en [Cómo funciona § 4](docs/ho
   - el modo A de respaldo, de principio a fin;
   - el plugin: `/agentic-flow:init` en una sesión real (cargado con `--plugin-dir`) instaló el flow en un repo TypeScript y dejó activas sus reglas. `claude plugin validate --strict` pasa en el CI;
   - la actualización de un flow copiado a mano: conservó los ficheros sin registro, los sustituyó con `--force` e instaló las reglas de Python;
-  - el doc-updater (modo A) sobre el acortador con expiración: en 21 segundos escribió un CHANGELOG fiel al código, sin salir de su zona, y `docs-check` quedó en verde.
-- **Tests del propio flow:** 129 tests en Python (guardarraíles, comandos del pipeline, reglas, documentación viva, instalador, definiciones de agentes, plugin y deriva de la documentación) y 19 escenarios del workflow con agentes simulados. Corren en un CI endurecido: actions fijadas por SHA, permisos mínimos, npm sin scripts de instalación y Python 3.9, 3.12 y 3.14.
-- **Sin probar con agentes reales:** el ciclo de corrección, y la etapa de documentación dentro del workflow nativo (los dos solo con escenarios simulados); la entrevista interactiva en la interfaz; la instalación del plugin desde el marketplace; VS Code, JetBrains, nube y GitHub Actions.
+  - el doc-updater (modo A) sobre el acortador con expiración: en 21 segundos escribió un CHANGELOG fiel al código, sin salir de su zona, y `docs-check` quedó en verde;
+  - **el ciclo de corrección y la documentación viva dentro del workflow nativo** (feature `stats` y `list --limit` sobre el acortador). Un agente de prueba inyectó un defecto en WP-02: `stats` se tragaba los errores de almacenamiento. El revisor (`alta`, contrato 6.2) y QA (con un test que lo reproduce) lo encontraron por separado. El verificador no lo refutó, WP-02 lo corrigió en un ciclo y la segunda ronda salió limpia. Después, el doc-updater actualizó README y CHANGELOG, fieles a la CLI real. Unos 4 minutos;
+  - **un test de aceptación mal escrito** (parcheaba el reloj con un float que el almacenamiento rechaza): el implementer no podía tocarlo, no hizo trampa y devolvió `BLOCKER` con el diagnóstico exacto. El flow se paró en la ola 1 y se retomó con `/implement 1` tras corregir el test.
+- **Tests del propio flow:** 130 tests en Python (guardarraíles, comandos del pipeline, reglas, documentación viva, instalador, definiciones de agentes, plugin y deriva de la documentación) y 21 escenarios del workflow con agentes simulados. Corren en un CI endurecido: actions fijadas por SHA, permisos mínimos, npm sin scripts de instalación y Python 3.9, 3.12 y 3.14.
+- **Sin probar:** la entrevista interactiva en la interfaz; la instalación del plugin desde el marketplace; VS Code, JetBrains, nube y GitHub Actions.
 
 ## Créditos
 

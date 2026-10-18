@@ -8,7 +8,7 @@
 
 | Entorno | Guía | Úsalo para | Estado |
 |---|---|---|---|
-| Terminal (CLI) | [terminal.md](terminal.md) | Control total, scripts, SSH | **Probado**: `/implement` completo con el workflow nativo (ola 0, 2 olas en paralelo, verificación, revisión, QA); el modo A, también de principio a fin |
+| Terminal (CLI) | [terminal.md](terminal.md) | Control total, scripts, SSH | **Probado**: `/implement` completo con el workflow nativo (ola 0, olas en paralelo, verificación, revisión, QA, un ciclo de corrección real y documentación viva); el modo A, también de principio a fin |
 | Claude Code Desktop | [desktop.md](desktop.md) | Uso diario con interfaz gráfica | **Parcial**: scripts y agentes probados desde la app; la entrevista de `/architect` en la interfaz, no |
 | Visual Studio Code / Cursor | [vscode.md](vscode.md) | Trabajar con los diffs en el editor | Sin probar |
 | JetBrains | [jetbrains.md](jetbrains.md) | IntelliJ, PyCharm, WebStorm… | Sin probar |
@@ -269,7 +269,7 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 129 tests en Python y 19 escenarios del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Además de los guardarraíles y los comandos, comprueban las propias definiciones: modelo y herramientas de cada agente, secciones obligatorias (defensa ante inyección, `claim`, formato de informe), que el workflow solo use agentes y comandos que existen, que la documentación no cite comandos inexistentes ni tenga enlaces rotos, que no haya rutas personales versionadas, que el CI tenga las actions fijadas por SHA y npm sin scripts de instalación, que cada lenguaje detectable tenga sus reglas con el mismo esqueleto y que el plugin no exponga agentes ni hooks por su cuenta. Si cambias un prompt y rompes una de esas reglas, el test falla.
+Son 130 tests en Python y 21 escenarios del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Además de los guardarraíles y los comandos, comprueban las propias definiciones: modelo y herramientas de cada agente, secciones obligatorias (defensa ante inyección, `claim`, formato de informe), que el workflow solo use agentes y comandos que existen, que la documentación no cite comandos inexistentes ni tenga enlaces rotos, que no haya rutas personales versionadas, que el CI tenga las actions fijadas por SHA y npm sin scripts de instalación, que cada lenguaje detectable tenga sus reglas con el mismo esqueleto y que el plugin no exponga agentes ni hooks por su cuenta. Si cambias un prompt y rompes una de esas reglas, el test falla.
 
 ## Problemas frecuentes
 

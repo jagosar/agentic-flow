@@ -108,6 +108,19 @@ const lastJson = out => {
   try { return lines.length ? JSON.parse(lines[lines.length - 1]) : null } catch (e) { return null }
 }
 const BLOCKING = new Set(['critica', 'alta'])
+// Ficheros que close-stage vio cambiar para un ID ("WP-01: 2 fichero(s) cambiado(s): a, b"). Sirve para contrastar
+// lo que un agente dice que hizo con lo que hay en disco.
+const changedBy = (out, id) => {
+  const m = String(out || '').match(new RegExp(`^${id}: \\d+ fichero\\(s\\) cambiado\\(s\\)(?:: (.*))?$`, 'm'))
+  return m ? (m[1] ? m[1].split(', ') : []) : null
+}
+// Los agentes a veces dan rutas absolutas: cuenta como vista si termina en la ruta relativa que vio close-stage.
+const unchangedClaims = (report, out, id) => {
+  const seen = changedBy(out, id)
+  return report && Array.isArray(report.files) && seen
+    ? report.files.filter(f => !seen.some(s => f === s || f.endsWith('/' + s)))
+    : []
+}
 const run = { result: 'REVISAR', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, docs: null, fix_cycles: 0, pending: [] }
 const stop = (stage, detail, extra) => ({ ...run, failed_stage: stage, detail, ...(extra || {}) })
 
@@ -133,6 +146,10 @@ async function documentStage() {
   run.docs.ownership_ok = !!close && close.exit_code === 0
   run.docs.check = check ? lastJson(check.output) : null
   run.stages.push({ stage: 'documentación', ok: run.docs.ownership_ok && !!check && check.exit_code === 0, check: close && close.output })
+  const ghost = unchangedClaims(doc, close && close.output, 'DOCS')
+  if (doc && doc.status === 'DONE' && ghost.length) {
+    run.pending.push({ type: 'documentación', severity: 'media', problem: 'el doc-updater declara cambios que no están en disco', files: ghost })
+  }
   if (!doc || doc.status !== 'DONE') {
     run.pending.push({ type: 'documentación', severity: 'media', problem: doc ? `doc-updater bloqueado: ${doc.blocker}` : 'el doc-updater no devolvió informe' })
   } else if (!run.docs.ownership_ok) {

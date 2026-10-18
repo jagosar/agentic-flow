@@ -1318,6 +1318,16 @@ def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
                   "Los saltos condicionales de plataforma (skipIf/skipUnless) sí están permitidos.")
 
 
+def claim_required_types():
+    """Los agentes del flow con zona propia, incluidos los que un WP declara en "agent": sin claim, no escriben."""
+    types = {"implementer", "qa", "test-author", "reviewer", "doc-updater"}
+    try:
+        types |= {wp["agent"] for wp in wps(load_manifest()).values() if isinstance(wp.get("agent"), str)}
+    except ManifestError:
+        pass
+    return types
+
+
 def guard(data):
     tool = data.get("tool_name", "")
     tinput = data.get("tool_input", {}) or {}
@@ -1337,7 +1347,7 @@ def guard(data):
 
     if not owner_id and agent_id:
         owner_id = with_claims(lambda c: None).get(agent_id)
-        if not owner_id and data.get("agent_type") in ("implementer", "qa", "test-author", "reviewer", "doc-updater"):
+        if not owner_id and data.get("agent_type") in claim_required_types():
             block("Antes de nada, ejecuta `python3 .claude/bin/agentic.py claim <ID>` con tu WP-ID (o QA, AT, REVIEW, DOCS).")
     if not owner_id:
         return  # hilo principal u otro subagente: sin restricciones

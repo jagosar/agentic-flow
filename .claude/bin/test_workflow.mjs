@@ -225,6 +225,31 @@ test('doc-updater fuera de su zona: REVISAR', async () => {
   assert.ok(result.pending.some(p => p.type === 'documentación' && p.severity === 'alta'))
 })
 
+test('el doc-updater declara cambios que no hizo: pendiente medio con los ficheros', async () => {
+  const { result } = await simulate({
+    plan: DOCS_PLAN,
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 0 fichero(s) cambiado(s)\nRESULTADO: OK' } : null),
+  })
+  assert.equal(result.result, 'OK')
+  const p = result.pending.find(x => x.problem.includes('no están en disco'))
+  assert.ok(p, 'debe quedar pendiente')
+  assert.deepEqual(p.files, ['README.md', 'CHANGELOG.md'])
+  const honest = await simulate({
+    plan: DOCS_PLAN,
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 2 fichero(s) cambiado(s): README.md, CHANGELOG.md' } : null),
+  })
+  assert.ok(!honest.result.pending.some(x => (x.problem || '').includes('no están en disco')))
+})
+
+test('rutas absolutas en el informe del doc-updater: cuentan como cambiadas', async () => {
+  const { result } = await simulate({
+    plan: DOCS_PLAN,
+    docs: { status: 'DONE', files: ['/repo/README.md', 'CHANGELOG.md'], changes: [], unverified: [], blocker: null },
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 2 fichero(s) cambiado(s): CHANGELOG.md, README.md' } : null),
+  })
+  assert.ok(!result.pending.some(x => (x.problem || '').includes('no están en disco')))
+})
+
 test('reglas del lenguaje: llegan a los agentes que escriben o juzgan código', async () => {
   const rules = ['.claude/rules/agentic/common.md', '.claude/rules/agentic/python.md']
   const { calls } = await simulate({ plan: { ...DOCS_PLAN, rules } })
