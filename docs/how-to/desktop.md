@@ -44,7 +44,7 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 - Puedes seguir hablando con la sesión mientras corre. La app te avisa al acabar.
 - Para ver los logs en bruto, abre el terminal integrado con **Ctrl+\`** y ejecuta `tail -f .claude/state/runs/*.log`.
 
-**Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las seis fases de verificación (con la aceptación en verde), el estado del revisor y de QA y los commits propuestos, a la espera de tu aprobación.
+**Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las seis fases de verificación (con la aceptación en verde), el estado del revisor y de QA, la documentación actualizada (si el manifiesto tiene sección `docs`) y los commits propuestos, a la espera de tu aprobación.
 
 ## 4. Revisar y entregar
 

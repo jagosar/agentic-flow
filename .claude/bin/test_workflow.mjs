@@ -31,6 +31,8 @@ async function simulate(scenario = {}, args = {}) {
         if (cmd === 'pipeline-plan') return { exit_code: 0, output: JSON.stringify({ ...PLAN, ...(scenario.plan || {}) }) }
         if (cmd === 'verify') return { exit_code: 0, output: JSON.stringify({ ok: true, blocking: [], preexisting_failures: [], phases: [{ name: 'tests', passed: true }] }) }
         if (cmd === 'baseline') return { exit_code: 0, output: JSON.stringify({ phases: [{ name: 'tests', passed: true }], preexisting_failures: [] }) }
+        if (cmd === 'codemap') return { exit_code: 0, output: JSON.stringify({ path: 'docs/CODEMAP.md', files: 3, changed: true }) }
+        if (cmd === 'docs-check') return { exit_code: 0, output: JSON.stringify({ ok: true, checked: 2, broken: [] }) }
         return { exit_code: 0, output: 'RESULTADO: OK' }
       }
       case 'test-author':
@@ -47,6 +49,8 @@ async function simulate(scenario = {}, args = {}) {
       case 'qa':
         qaRound += 1
         return scenario.qa ? scenario.qa(qaRound) : { status: 'PASS', plan: ['contratos'], defects: [], gaps: [] }
+      case 'doc-updater':
+        return scenario.docs || { status: 'DONE', files: ['README.md', 'CHANGELOG.md'], changes: ['uso del comando nuevo'], unverified: [], blocker: null }
       default:
         throw new Error(`agentType inesperado: ${opts.agentType}`)
     }
@@ -178,6 +182,59 @@ test('un agente que falla queda como error y la ola sale en REVISAR', async () =
   const { result, gates } = await simulate(failing)
   assert.equal(result.failed_stage, 'ola 1')
   assert.ok(gates.some(g => g.startsWith('close-stage 1 ')))
+})
+
+const DOCS_PLAN = { docs: true, codemap: 'docs/CODEMAP.md' }
+
+test('documentación viva: tras QA en verde, codemap, doc-updater con su zona y docs-check', async () => {
+  const { result, calls, gates } = await simulate({ plan: DOCS_PLAN })
+  assert.equal(result.result, 'OK')
+  const order = ['codemap', 'open-stage docs', 'close-stage docs DOCS=done', 'docs-check'].map(g => gates.indexOf(g))
+  assert.ok(order.every(i => i > gates.indexOf('close-stage qa QA=pass')), 'la documentación va después de QA')
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'codemap, etapa con propiedad y comprobación, en ese orden')
+  assert.equal(calls.filter(c => c.type === 'doc-updater').length, 1)
+  assert.equal(result.docs.codemap.path, 'docs/CODEMAP.md')
+})
+
+test('sin sección docs, o con el código en REVISAR, no se documenta', async () => {
+  const off = await simulate()
+  assert.ok(!off.calls.some(c => c.type === 'doc-updater'))
+  assert.ok(!off.gates.includes('codemap'))
+  const defect = { id: 'D9', severity: 'alta', wp: 'WP-01', kind: 'design', section: '6', repro: 'z' }
+  const revisar = await simulate({ plan: DOCS_PLAN, qa: () => ({ status: 'FAIL', plan: [], defects: [defect], gaps: [] }) })
+  assert.equal(revisar.result.result, 'REVISAR')
+  assert.ok(!revisar.calls.some(c => c.type === 'doc-updater'), 'no se documenta código que no está aceptado')
+})
+
+test('documentación con enlaces rotos: el código sigue OK y queda un pendiente medio', async () => {
+  const broken = [{ file: 'README.md', line: 4, target: 'docs/x.md', kind: 'enlace' }]
+  const { result } = await simulate({
+    plan: DOCS_PLAN,
+    gate: cmd => (cmd === 'docs-check' ? { exit_code: 3, output: JSON.stringify({ ok: false, checked: 2, broken }) } : null),
+  })
+  assert.equal(result.result, 'OK')
+  assert.ok(result.pending.some(p => p.type === 'documentación' && p.severity === 'media' && p.broken.length === 1))
+})
+
+test('doc-updater fuera de su zona: REVISAR', async () => {
+  const { result } = await simulate({
+    plan: DOCS_PLAN,
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 3, output: 'FUERA DE PROPIEDAD' } : null),
+  })
+  assert.equal(result.result, 'REVISAR')
+  assert.ok(result.pending.some(p => p.type === 'documentación' && p.severity === 'alta'))
+})
+
+test('reglas del lenguaje: llegan a los agentes que escriben o juzgan código', async () => {
+  const rules = ['.claude/rules/agentic/common.md', '.claude/rules/agentic/python.md']
+  const { calls } = await simulate({ plan: { ...DOCS_PLAN, rules } })
+  for (const type of ['test-author', 'implementer', 'reviewer', 'qa', 'doc-updater']) {
+    const call = calls.find(c => c.type === type)
+    assert.ok(call.prompt.includes(rules.join(', ')), `${type} no recibe las reglas`)
+  }
+  assert.ok(!calls.find(c => c.type === 'gatekeeper').prompt.includes('Reglas'), 'el gatekeeper no las necesita')
+  const none = await simulate({ plan: { rules: [] } })
+  assert.ok(!none.calls.find(c => c.type === 'implementer').prompt.includes('Reglas'))
 })
 
 let failed = 0

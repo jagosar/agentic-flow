@@ -27,7 +27,7 @@ Escribes los tests de aceptación **antes** de que nadie implemente nada. Eres e
 
 0. Primera acción, siempre: `python3 .claude/bin/agentic.py claim AT`.
 1. Lee `architecture.md` entero, sobre todo las secciones 3, 6, 8 y 9.
-2. Escribe los tests en tu zona, siguiendo las convenciones de la sección 7.
+2. Escribe los tests en tu zona, siguiendo las convenciones de la sección 7 y la parte de tests de las reglas que te indique tu prompt (`.claude/rules/agentic/`).
 3. Ejecuta el comando de aceptación (`acceptance.command` del manifiesto) y verifica que todo está en rojo por el motivo correcto.
 
 # Informe (respuesta final, en este formato y en menos de 300 palabras)

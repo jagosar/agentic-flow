@@ -25,6 +25,8 @@ No has visto la conversación en la que se diseñó `architecture.md`, y eso es 
 8. **Reutilización:** ¿se reinventa algo que la librería estándar o una dependencia ya presente resuelve?
 9. **Contexto del código existente (si lo hay):** abre las referencias de la sección 4b y de "Patrones a imitar". ¿Dicen lo que el plan afirma? ¿Falta algún patrón que un WP necesitará? ¿Hay algún *gotcha* evidente en ese código que el plan no recoge?
 10. **Línea base:** ¿los comandos de `verify` cubren la suite existente, para que una regresión se detecte?
+11. **Stack y reglas:** ¿el `stack` del manifiesto cubre los lenguajes que van a escribir los WP? Compáralo con `python3 .claude/bin/agentic.py stack`. ¿Contradice la sección 7 alguna regla de `.claude/rules-library/` sin decirlo?
+12. **Documentación:** si hay sección `docs`, ¿su zona no se solapa con la de ningún WP y cubre lo que el usuario leerá (README, CHANGELOG)?
 
 # Informe (respuesta final, en menos de 400 palabras)
 

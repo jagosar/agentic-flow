@@ -28,6 +28,13 @@ Subcomandos:
                       tras las olas, pasar (green).
   run-review          Lanza el revisor de código (solo lectura) sobre el resultado integrado.
   run-qa              Lanza el agente QA (`claude -p --agent qa`) sobre el resultado integrado.
+  run-docs            Lanza el doc-updater, que pone al día la documentación del proyecto (zona "docs").
+  stack               Detecta los lenguajes del repo y los compara con el "stack" del manifiesto. JSON.
+  rules-sync          Instala en .claude/rules/agentic/ las reglas comunes y las de cada lenguaje del proyecto.
+  codemap [RUTA]      Genera el mapa del código (ficheros y símbolos públicos) sin pasar por el modelo.
+  docs-check          Comprueba enlaces, anclas y rutas citadas en la documentación. JSON.
+  install [DIR] [--force] [--dry-run]
+                      Instala o actualiza el flow en otro repo (lo usa el plugin). No pisa lo que hayas modificado.
   claim ID            Asocia el subagente actual a un WP o a QA (lo registra el hook).
   status              Muestra el ledger: estado de cada agente y de cada etapa.
   mark ID ESTADO [NOTA]
@@ -65,8 +72,45 @@ CONFIG = ROOT / ".claude" / "agentic.json"
 BASE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"]
 QA_DEFAULT_FILES = ["qa/"]
 AT_DEFAULT_FILES = ["acceptance/"]
-RESERVED_IDS = {"QA", "AT", "REVIEW"}
+DOCS_DEFAULT_FILES = ["README.md", "CHANGELOG.md", "docs/"]
+DEFAULT_CODEMAP = "docs/CODEMAP.md"
+RESERVED_IDS = {"QA", "AT", "REVIEW", "DOCS"}
 ARCHIVE_DIR = "docs/architecture/"  # archivo de decisiones: lo escribe /architect, nunca un WP
+SOURCE_ROOT = Path(__file__).resolve().parents[2]  # de dónde se instala el flow (este repo, o el plugin)
+RULES_LIBRARY = ROOT / ".claude" / "rules-library"
+RULES_DIR = ROOT / ".claude" / "rules" / "agentic"  # Claude Code carga .claude/rules/; agentic/ lo gestiona rules-sync
+# Señales de cada paquete de reglas: ficheros de proyecto (en cualquier carpeta) y extensiones de código.
+STACK_SIGNALS = {
+    "python": (("pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "requirements.txt"), (".py", ".pyi")),
+    "typescript": (("package.json", "tsconfig.json", "deno.json"), (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")),
+    "go": (("go.mod",), (".go",)),
+    "rust": (("Cargo.toml",), (".rs",)),
+    "java": (("pom.xml", "build.gradle"), (".java",)),
+    "kotlin": ((), (".kt",)),
+    "csharp": ((), (".cs", ".csproj", ".sln")),
+    "ruby": (("Gemfile",), (".rb", ".rake")),
+    "php": (("composer.json",), (".php",)),
+    "swift": (("Package.swift",), (".swift",)),
+}
+SKIP_DIRS = {".git", ".claude", "node_modules", "vendor", ".venv", "venv", "env", "dist", "build", "target", "out",
+             "__pycache__", ".tox", ".mypy_cache", ".pytest_cache", ".next", "coverage"}
+# Símbolos públicos de primer nivel, por extensión, para el codemap. Un regex por línea; lo privado se omite.
+SYMBOL_RES = {
+    (".py", ".pyi"): re.compile(r"^(?:async\s+)?(?:def|class)\s+([A-Za-z]\w*)"),
+    (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"): re.compile(
+        r"^export\s+(?:default\s+)?(?:declare\s+)?(?:async\s+)?(?:function\*?|class|const|let|interface|type|enum)\s+([A-Za-z_$][\w$]*)"),
+    (".go",): re.compile(r"^(?:func|type)\s+(?:\([^)]*\)\s*)?([A-Z]\w*)"),
+    (".rs",): re.compile(r"^pub\s+(?:async\s+)?(?:fn|struct|enum|trait|type|mod|const)\s+(\w+)"),
+    (".java", ".kt", ".cs", ".swift", ".php"): re.compile(
+        r"^(?:public\s+|internal\s+|open\s+|final\s+|abstract\s+|sealed\s+|data\s+|static\s+|partial\s+|readonly\s+)*"
+        r"(?:class|interface|record|enum|object|struct|protocol|trait)\s+(\w+)"),
+    (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
+}
+# Lo que instala `install` en otro repo: el flow, sin los tests del propio flow.
+INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/agents/*.md", ".claude/commands/*.md",
+                 ".claude/workflows/*.js", ".claude/rules-library/*.md"]
+INSTALL_RECORD = ".claude/agentic-install.json"
+INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
 VERIFY_PHASES = ("build", "types", "lint", "tests")
 BASELINE = STATE / "baseline.json"
 MIRROR_RE = re.compile(r"^([^:]+?)(?::(\d+)(?:-(\d+))?)?$")  # ruta[:inicio[-fin]]
@@ -93,7 +137,7 @@ DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".r
                   "node_modules/", ".coverage", "coverage/", ".nyc_output/", ".DS_Store", ".tsbuildinfo"]
 
 MANIFEST_RE = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
-CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA|AT|REVIEW)\b")
+CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")
 STATUS_RE = re.compile(r"STATUS:\s*(DONE|BLOCKER|PASS|FAIL)")
 # Un subcomando de escritura en el mismo comando que `git`, aunque haya opciones delante (`git -C . commit`)
 # o vaya dentro de comillas (`sh -c "git commit"`). Exige espacio antes para no confundir `src/add.py`.
@@ -207,12 +251,29 @@ def review_entity(manifest):
     return {"id": "REVIEW", "files": [], "allow_bash": []}  # solo lectura: el hook bloquea cualquier escritura
 
 
+def docs_entity(manifest):
+    """La zona del doc-updater. Solo existe si el manifiesto tiene sección "docs" (documentación viva)."""
+    docs = manifest.get("docs")
+    if not isinstance(docs, dict):
+        return None
+    return {"id": "DOCS", "files": docs.get("files", DOCS_DEFAULT_FILES), "allow_bash": [],
+            "codemap": docs.get("codemap", DEFAULT_CODEMAP)}
+
+
+def codemap_path(manifest):
+    docs = docs_entity(manifest) if manifest else None
+    return docs["codemap"] if docs else None
+
+
 def entities(manifest):
-    """Todo lo que puede reclamar propiedad de ficheros: los WP, QA, los tests de aceptación y el revisor."""
+    """Todo lo que puede reclamar propiedad de ficheros: WP, QA, aceptación, revisor y documentación."""
     table = wps(manifest)
     table["QA"] = qa_entity(manifest)
     table["AT"] = at_entity(manifest)
     table["REVIEW"] = review_entity(manifest)
+    docs = docs_entity(manifest)
+    if docs:
+        table["DOCS"] = docs
     return table
 
 
@@ -299,8 +360,40 @@ def validate(manifest):
     if not isinstance(verify_cfg, dict) or any(k not in VERIFY_PHASES or not isinstance(v, str) or not v.strip()
                                                   for k, v in verify_cfg.items()):
         errors.append(f"'verify' debe ser un objeto con comandos (texto) para {', '.join(VERIFY_PHASES)}.")
+    errors += stack_errors(manifest) + docs_errors(manifest)
     errors += agent_model_errors(manifest)
     return errors
+
+
+def known_packs():
+    return sorted(p.stem for p in RULES_LIBRARY.glob("*.md") if p.stem != "common")
+
+
+def stack_errors(manifest):
+    stack = manifest.get("stack", [])
+    if not isinstance(stack, list) or not all(isinstance(s, str) for s in stack):
+        return ["'stack' debe ser una lista de lenguajes, p. ej. [\"python\"]."]
+    packs = known_packs()
+    if not packs:
+        return []  # sin librería de reglas (instalación antigua): no hay contra qué validar
+    return [f"stack: no hay reglas para '{s}'. Disponibles: {', '.join(packs)}. Si el lenguaje no está, "
+            f"quítalo de 'stack' y pon sus convenciones en la sección 7." for s in stack if s not in packs]
+
+
+def docs_errors(manifest):
+    if "docs" not in manifest:
+        return []
+    docs = docs_entity(manifest)
+    if not docs or not isinstance(docs["files"], list) or not all(isinstance(f, str) for f in docs["files"]):
+        return ["'docs' debe ser un objeto con 'files' (lista de rutas) y, opcional, 'codemap'."]
+    cm = docs["codemap"]
+    if cm is None:
+        return []
+    if not isinstance(cm, str) or not cm.endswith(".md") or cm.startswith("/") or ".." in Path(cm).parts \
+            or cm.startswith((".claude/", ARCHIVE_DIR)) or cm == "architecture.md":
+        return [f"docs.codemap debe ser una ruta .md relativa del repo, fuera de .claude/ y de {ARCHIVE_DIR}: {cm}"]
+    owners = [e["id"] for e in entities(manifest).values() if e["id"] != "DOCS" and any(owns(f, cm) for f in e["files"])]
+    return [f"docs.codemap ({cm}) lo genera agentic.py: no puede ser de {', '.join(owners)}."] if owners else []
 
 
 FRONTMATTER_MODEL_RE = re.compile(r"\A---\s*\n(.*?)\n---", re.S)
@@ -318,6 +411,8 @@ def agent_model_errors(manifest):
     """Agentes orquestados en el último Sonnet y arquitecto en el último Opus, declarados con su alias."""
     errors = []
     names = {"implementer", "qa", "test-author", "reviewer", "gatekeeper", "verifier"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
+    if docs_entity(manifest):
+        names.add("doc-updater")
     for name in sorted(names):
         f = ROOT / ".claude" / "agents" / f"{name}.md"
         if not f.exists():
@@ -392,12 +487,12 @@ def digest():
     return result
 
 
-STAGE_LABELS = {"qa": qa_entity, "acceptance": at_entity, "review": review_entity}
+STAGE_LABELS = {"qa": qa_entity, "acceptance": at_entity, "review": review_entity, "docs": docs_entity}
 
 
 def stage_owners(manifest, label):
     if label in STAGE_LABELS:
-        return [STAGE_LABELS[label](manifest)]
+        return [e for e in [STAGE_LABELS[label](manifest)] if e]
     return [wp for wp in wps(manifest).values() if wp["wave"] == int(label)]
 
 
@@ -519,7 +614,7 @@ def run_wave(manifest, wave, only=None, fix=False):
     prompt = "Implementa {id} según architecture.md." + (
         " El código ya existe: corrige los defectos que te asignan "
         + " y ".join(f".claude/state/runs/{r}.json" for r in reports)
-        + ", sin salirte del contrato, y deja en verde sus tests de aceptación." if fix else "")
+        + ", sin salirte del contrato, y deja en verde sus tests de aceptación." if fix else "") + rules_hint(manifest)
     statuses = launch(str(wave), [
         (wp["id"], wp.get("agent", "implementer"), prompt.format(id=wp["id"]),
          allowed)
@@ -534,7 +629,8 @@ def run_acceptance(manifest):
     cfg = load_config()
     allowed = BASE_TOOLS + manifest.get("allow_bash", []) + at["allow_bash"]
     statuses = launch("acceptance", [("AT", "test-author",
-                                      "Escribe los tests de aceptación según architecture.md.", allowed)], cfg)
+                                      "Escribe los tests de aceptación según architecture.md." + rules_hint(manifest),
+                                      allowed)], cfg)
     finish(manifest, "acceptance", statuses, "DONE")
 
 
@@ -542,8 +638,295 @@ def run_review(manifest):
     cfg = load_config()
     allowed = REVIEW_TOOLS + manifest.get("allow_bash", [])
     statuses = launch("review", [("REVIEW", "reviewer",
-                                  "Revisa el código integrado según architecture.md.", allowed)], cfg)
+                                  "Revisa el código integrado según architecture.md." + rules_hint(manifest),
+                                  allowed)], cfg)
     finish(manifest, "review", statuses, "PASS")
+
+
+def run_docs(manifest):
+    if not docs_entity(manifest):
+        die("El manifiesto no tiene sección 'docs': no hay documentación viva que actualizar.")
+    cfg = load_config()
+    allowed = BASE_TOOLS + ["Bash(git diff:*)", "Bash(git status:*)", "Bash(git log:*)"]
+    statuses = launch("docs", [("DOCS", "doc-updater",
+                                "Actualiza la documentación según architecture.md y el código integrado.", allowed)], cfg)
+    finish(manifest, "docs", statuses, "DONE")
+
+
+# ---------- reglas por lenguaje ----------
+
+def source_files(root=None):
+    """Ficheros del repo para detectar el stack y hacer el codemap: los de git si lo hay, sin dependencias ni builds."""
+    root = root or ROOT
+    try:
+        out = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root,
+                             capture_output=True, check=True).stdout.decode()
+        files = [p for p in out.split("\0") if p]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        files = [p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()]
+    return sorted(f for f in files if not set(f.split("/")[:-1]) & SKIP_DIRS and (root / f).is_file())
+
+
+def detect_stack():
+    """Lenguajes con señales en el repo: {lenguaje: {"markers": [...], "files": N}}."""
+    found = {}
+    for rel in source_files():
+        name = rel.rsplit("/", 1)[-1]
+        for pack, (markers, exts) in STACK_SIGNALS.items():
+            is_marker = name in markers or (pack == "python" and name.startswith("requirements") and name.endswith(".txt"))
+            if is_marker or name.endswith(exts):
+                entry = found.setdefault(pack, {"markers": [], "files": 0})
+                if is_marker:
+                    entry["markers"].append(rel)
+                else:
+                    entry["files"] += 1
+    return found
+
+
+def declared_stack():
+    try:
+        stack = load_manifest().get("stack", [])
+    except ManifestError:
+        return []
+    return [s for s in stack if isinstance(s, str)] if isinstance(stack, list) else []
+
+
+def rule_files(manifest):
+    """Reglas que deben seguir los agentes: las comunes y las de cada lenguaje del stack (o, si no se declaró, del
+    detectado), siempre que estén instaladas."""
+    packs = manifest.get("stack") or sorted(detect_stack())
+    names = ["common"] + [p for p in packs if isinstance(p, str)]
+    return [f".claude/rules/agentic/{n}.md" for n in names if (RULES_DIR / f"{n}.md").exists()]
+
+
+def rules_hint(manifest):
+    files = rule_files(manifest)
+    return f" Reglas que debes seguir (lenguaje y comunes): {', '.join(files)}." if files else ""
+
+
+def rules_sync():
+    """Copia la librería al directorio que carga Claude Code: comunes + lenguajes declarados o detectados."""
+    if not (RULES_LIBRARY / "common.md").exists():
+        die(f"No existe {RULES_LIBRARY.relative_to(ROOT)}/common.md: instala el flow completo (plugin o plantilla).")
+    declared, detected = declared_stack(), sorted(detect_stack())
+    wanted = {"common"} | {p for p in set(declared) | set(detected) if (RULES_LIBRARY / f"{p}.md").exists()}
+    RULES_DIR.mkdir(parents=True, exist_ok=True)
+    installed, removed = [], []
+    for name in sorted(wanted):
+        src = (RULES_LIBRARY / f"{name}.md").read_text(encoding="utf-8")
+        dst = RULES_DIR / f"{name}.md"
+        if not dst.exists() or dst.read_text(encoding="utf-8") != src:
+            dst.write_text(src, encoding="utf-8")
+            installed.append(name)
+    for old in sorted(RULES_DIR.glob("*.md")):
+        if old.stem not in wanted:
+            old.unlink()
+            removed.append(old.stem)
+    print(json.dumps({"rules": sorted(wanted), "updated": installed, "removed": removed, "declared": declared,
+                      "detected": detected, "missing": sorted(set(declared) - wanted)}, ensure_ascii=False))
+
+
+# ---------- documentación viva ----------
+
+def symbol_re(name):
+    return next((rx for exts, rx in SYMBOL_RES.items() if name.endswith(exts)), None)
+
+
+def codemap(manifest, target=None):
+    """Mapa del código determinista: ficheros de código por carpeta, con líneas y símbolos públicos. Sin fecha, para
+    que solo cambie cuando cambia el código."""
+    rel_out = target or codemap_path(manifest) or DEFAULT_CODEMAP
+    out = ROOT / rel_out
+    rows, langs = {}, set()
+    for rel in source_files():
+        rx = symbol_re(rel)
+        if rx is None or rel == rel_out:
+            continue
+        text = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        symbols = [m.group(1) for line in text.splitlines() if (m := rx.match(line))]
+        langs |= {p for p, (_, exts) in STACK_SIGNALS.items() if rel.endswith(exts)}
+        folder = rel.rsplit("/", 1)[0] if "/" in rel else "."
+        rows.setdefault(folder, []).append((rel, len(text.splitlines()), symbols))
+    total = sum(len(v) for v in rows.values())
+    lines = ["# Mapa del código", "",
+             "> Generado por `python3 .claude/bin/agentic.py codemap`. No lo edites a mano: el flow lo regenera al "
+             "cerrar cada ciclo.", "",
+             f"{total} ficheros de código en {len(rows)} carpetas. Lenguajes: {', '.join(sorted(langs)) or 'ninguno'}.", ""]
+    for folder in sorted(rows):
+        lines += [f"## `{folder}/`" if folder != "." else "## Raíz", "", "| Fichero | Líneas | Símbolos públicos |",
+                  "|---|---|---|"]
+        for rel, n, symbols in rows[folder]:
+            shown = ", ".join(f"`{s}`" for s in symbols[:12]) + (f" y {len(symbols) - 12} más" if len(symbols) > 12 else "")
+            lines.append(f"| `{rel.rsplit('/', 1)[-1]}` | {n} | {shown or '—'} |")
+        lines.append("")
+    content = "\n".join(lines)
+    changed = not out.exists() or out.read_text(encoding="utf-8") != content
+    if changed:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(content, encoding="utf-8")
+    print(json.dumps({"path": rel_out, "files": total, "folders": len(rows), "changed": changed}, ensure_ascii=False))
+
+
+def heading_anchors(text):
+    return {re.sub(r"[^\w\s-]", "", h.strip().lower(), flags=re.U).replace(" ", "-")
+            for h in re.findall(r"^#+ (.+)$", text, re.M)}
+
+
+def docs_files(manifest):
+    docs = docs_entity(manifest) if manifest else None
+    scope = docs["files"] if docs else ["README.md", "docs/"]
+    return [rel for rel in source_files() if rel.endswith(".md") and any(owns(f, rel) for f in scope)
+            and not rel.startswith(ARCHIVE_DIR)]
+
+
+LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+PATH_RE = re.compile(r"`([\w.-]+/[\w./-]*)`")
+
+
+def docs_check(manifest):
+    """Enlaces relativos, anclas y rutas del repo citadas entre comillas invertidas: todo debe existir."""
+    top_dirs = {p.name for p in ROOT.iterdir() if p.is_dir()}
+    broken, files = [], docs_files(manifest)
+    for rel in files:
+        path = ROOT / rel
+        fenced = False
+        for n, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if line.lstrip().startswith("```"):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            for link in LINK_RE.findall(line):
+                if link.startswith(("http://", "https://", "mailto:")):
+                    continue
+                target_rel, _, frag = link.partition("#")
+                target = (path.parent / target_rel) if target_rel else path
+                if not target.exists():
+                    broken.append({"file": rel, "line": n, "target": link, "kind": "enlace"})
+                elif frag and target.suffix == ".md" and frag not in heading_anchors(target.read_text(encoding="utf-8")):
+                    broken.append({"file": rel, "line": n, "target": link, "kind": "ancla"})
+            for cited in PATH_RE.findall(line):
+                first = cited.split("/", 1)[0]
+                if first in top_dirs and first not in SKIP_DIRS and not (ROOT / cited).exists():
+                    broken.append({"file": rel, "line": n, "target": cited, "kind": "ruta"})
+    ok = not broken
+    ledger_stage("docs-check", "OK" if ok else f"REVISAR: {len(broken)} referencia(s) rota(s)")
+    print(json.dumps({"ok": ok, "checked": len(files), "broken": broken}, ensure_ascii=False))
+    sys.exit(0 if ok else 3)
+
+
+# ---------- instalación en otro repo (plugin) ----------
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def flow_version():
+    manifest = SOURCE_ROOT / ".claude-plugin" / "plugin.json"
+    try:
+        return json.loads(manifest.read_text(encoding="utf-8")).get("version", "dev")
+    except (OSError, json.JSONDecodeError):
+        return "dev"
+
+
+def merge_settings(dst, src):
+    """Añade al settings.json del proyecto los permisos, el hook y los workflows del flow, sin quitar nada suyo."""
+    data = json.loads(dst.read_text(encoding="utf-8")) if dst.exists() else {}
+    added = []
+    perms = data.setdefault("permissions", {})
+    for key in ("allow", "deny"):
+        current = perms.setdefault(key, [])
+        for rule in src.get("permissions", {}).get(key, []):
+            if rule not in current:
+                current.append(rule)
+                added.append(f"{key} {rule}")
+    pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    if not any("agentic.py" in h.get("command", "") and h.get("command", "").rstrip().endswith("hook")
+               for e in pre for h in e.get("hooks", [])):
+        pre.extend(src["hooks"]["PreToolUse"])
+        added.append("hook PreToolUse")
+    if data.get("enableWorkflows") is not True:
+        data["enableWorkflows"] = True
+        added.append("enableWorkflows")
+    return data, added
+
+
+def install(target, force=False, dry_run=False):
+    """Copia el flow a TARGET. En una actualización solo sustituye los ficheros que no has modificado (lo sabe por
+    el registro de la instalación anterior); los demás los deja y los lista, salvo con --force."""
+    target = target.resolve()
+    if target == SOURCE_ROOT:
+        die("install: el destino es el propio flow. Ejecútalo desde el repo donde quieres instalarlo.")
+    if not target.is_dir():
+        die(f"install: no existe la carpeta {target}")
+    record_path = target / INSTALL_RECORD
+    record = json.loads(record_path.read_text(encoding="utf-8")) if record_path.exists() else {}
+    previous = record.get("files", {})
+    sources = sorted({p.relative_to(SOURCE_ROOT).as_posix() for g in INSTALL_GLOBS for p in SOURCE_ROOT.glob(g)
+                      if p.is_file()})
+    report = {"nuevo": [], "actualizado": [], "igual": [], "modificado por ti (no se toca)": [], "retirado": []}
+    new_record = {}
+    for rel in sources:
+        src, dst = SOURCE_ROOT / rel, target / rel
+        new_hash = sha256(src)
+        if not dst.exists():
+            kind = "nuevo"
+        elif sha256(dst) == new_hash:
+            kind = "igual"
+        elif force or previous.get(rel) == sha256(dst):
+            kind = "actualizado"
+        else:
+            report["modificado por ti (no se toca)"].append(rel)
+            new_record[rel] = previous.get(rel, "")
+            continue
+        report[kind].append(rel)
+        new_record[rel] = new_hash
+        if kind != "igual" and not dry_run:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(src.read_bytes())
+    for rel, old_hash in previous.items():
+        dst = target / rel
+        if rel not in new_record and dst.exists() and sha256(dst) == old_hash:
+            report["retirado"].append(rel)
+            if not dry_run:
+                dst.unlink()
+    settings, added = merge_settings(target / ".claude" / "settings.json",
+                                     json.loads((SOURCE_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8")))
+    gitignore = target / ".gitignore"
+    present = gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
+    missing_ignore = [line for line in INSTALL_GITIGNORE if line not in present]
+    config_missing = not (target / ".claude" / "agentic.json").exists()
+    if not dry_run:
+        (target / ".claude" / "settings.json").write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
+                                                         encoding="utf-8")
+        if missing_ignore:
+            prefix = "" if not present or present[-1] == "" else "\n"
+            with gitignore.open("a", encoding="utf-8") as fh:
+                fh.write(prefix + "\n".join(missing_ignore) + "\n")
+        if config_missing:
+            (target / ".claude" / "agentic.json").write_text(json.dumps(DEFAULT_CONFIG, indent=2) + "\n", encoding="utf-8")
+        record_path.write_text(json.dumps({"version": flow_version(), "files": new_record}, indent=2) + "\n",
+                               encoding="utf-8")
+    print(f"agentic-flow {flow_version()} -> {target}" + (" (simulación: no se escribe nada)" if dry_run else ""))
+    for kind, files in report.items():
+        if files:
+            print(f"  {kind}: {len(files)}" + ("".join(f"\n    {f}" for f in files) if kind != "igual" else ""))
+    print(f"  settings.json: {', '.join(added) if added else 'sin cambios'}")
+    if missing_ignore:
+        print(f"  .gitignore: {', '.join(missing_ignore)}")
+    if config_missing:
+        print("  .claude/agentic.json: creado con los valores por defecto")
+    if not dry_run:
+        # Con el agentic.py de esta versión, apuntando al destino: el del repo puede ser uno antiguo que se conservó.
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "rules-sync"], cwd=target,
+                           capture_output=True, text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+        if r.returncode == 0:
+            print(f"  reglas: {', '.join(json.loads(r.stdout)['rules'])}")
+        else:
+            print(f"  reglas: no se pudieron instalar ({(r.stderr.strip().splitlines() or ['sin detalle'])[-1]})")
+    if report["modificado por ti (no se toca)"]:
+        print("Hay ficheros del flow que has modificado: se conservan. Compáralos con la versión nueva o repite con --force.")
+    print("RESULTADO: OK")
 
 
 def run_command(cmd, timeout=900):
@@ -600,6 +983,7 @@ def pipeline_plan(manifest):
             "verify": sorted(manifest.get("verify", {})), "max_fix_cycles": int(load_config().get("max_fix_cycles", 2)),
             "agents": {wp["id"]: wp.get("agent", "implementer") for wp in wps(manifest).values()},
             "baseline": bool(manifest.get("verify")),
+            "docs": bool(docs_entity(manifest)), "codemap": codemap_path(manifest), "rules": rule_files(manifest),
             "wave_of": {wp["id"]: wp["wave"] for wp in wps(manifest).values()},
             "work_packages": {str(w): sorted(wp["id"] for wp in stage_owners(manifest, str(w))) for w in waves}}
     print(json.dumps(plan))
@@ -730,7 +1114,7 @@ def run_qa(manifest):
     qa = qa_entity(manifest)
     allowed = BASE_TOOLS + manifest.get("allow_bash", []) + qa["allow_bash"]
     statuses = launch("qa", [("QA", "qa",
-                              "Ejecuta la validación QA del sistema según architecture.md.",
+                              "Ejecuta la validación QA del sistema según architecture.md." + rules_hint(manifest),
                               allowed)], cfg)
     finish(manifest, "qa", statuses, "PASS")
 
@@ -812,8 +1196,8 @@ def status_to_state(status):
 
 
 def stage_of(jid):
-    if jid in ("QA", "AT", "REVIEW"):
-        return {"QA": "qa", "AT": "acceptance", "REVIEW": "review"}[jid]
+    if jid in ("QA", "AT", "REVIEW", "DOCS"):
+        return {"QA": "qa", "AT": "acceptance", "REVIEW": "review", "DOCS": "docs"}[jid]
     try:
         return str(wps(load_manifest()).get(jid, {}).get("wave", "?"))
     except ManifestError:
@@ -824,11 +1208,11 @@ def ledger_render():
     d = ledger_read()
     stages = d.get("_stages", {})
     agents = {k: v for k, v in d.items() if not k.startswith("_")}
-    order = lambda kv: (kv[1].get("stage") == "qa", str(kv[1].get("stage")), kv[0])
+    order = lambda kv: (kv[1].get("stage") in ("qa", "docs"), str(kv[1].get("stage")), kv[0])
     lines = ["# Ledger del flow", "", f"Actualizado: {now_hm()}", "", "## Etapas", ""]
     pipeline = {"línea base": -1, "acceptance": 0, "aceptación (red)": 1, "aceptación (green)": 3, "verificación": 3.5,
-                "review": 4, "qa": 5}
-    order_st = lambda k: (2, k.zfill(4)) if k.isdigit() else (pipeline.get(k, 6), k)  # orden del pipeline
+                "review": 4, "qa": 5, "docs": 6, "docs-check": 6.5}
+    order_st = lambda k: (2, k.zfill(4)) if k.isdigit() else (pipeline.get(k, 7), k)  # orden del pipeline
     lines += [f"- {'ola ' + k if k.isdigit() else k}: {stages[k]}" for k in sorted(stages, key=order_st)] or ["- (ninguna)"]
     lines += ["", "## Agentes", ""]
     for jid, e in sorted(agents.items(), key=order):
@@ -953,8 +1337,8 @@ def guard(data):
 
     if not owner_id and agent_id:
         owner_id = with_claims(lambda c: None).get(agent_id)
-        if not owner_id and data.get("agent_type") in ("implementer", "qa", "test-author", "reviewer"):
-            block("Antes de nada, ejecuta `python3 .claude/bin/agentic.py claim <ID>` con tu WP-ID (o QA).")
+        if not owner_id and data.get("agent_type") in ("implementer", "qa", "test-author", "reviewer", "doc-updater"):
+            block("Antes de nada, ejecuta `python3 .claude/bin/agentic.py claim <ID>` con tu WP-ID (o QA, AT, REVIEW, DOCS).")
     if not owner_id:
         return  # hilo principal u otro subagente: sin restricciones
 
@@ -973,9 +1357,15 @@ def guard(data):
         rel = abs_path.resolve().relative_to(ROOT.resolve()).as_posix()
     except ValueError:
         block(f"{owner_id}: no puedes escribir fuera del repo: {path}")
-    ent = entities(load_manifest()).get(owner_id)
+    manifest = load_manifest()
+    ent = entities(manifest).get(owner_id)
     if not ent:
         block(f"{owner_id} no existe en el manifiesto de architecture.md.")
+    # Nadie del flow escribe el plan, la configuración del flow, el archivo de decisiones ni el codemap generado,
+    # aunque su zona los incluya por prefijo (por ejemplo, "docs/").
+    if rel == "architecture.md" or rel.startswith((".claude/", ARCHIVE_DIR)) or rel == codemap_path(manifest):
+        block(f"{owner_id}: {rel} no lo escribe ningún agente del flow (plan, configuración, archivo de decisiones "
+              "o mapa generado). Si hay que cambiarlo, devuelve STATUS: BLOCKER.")
     if not any(owns(f, rel) for f in ent["files"]):
         block(f"{owner_id} no posee {rel}. Ficheros permitidos: {', '.join(ent['files'])}. "
               "Si necesitas tocarlo, devuelve STATUS: BLOCKER (o, si eres QA, repórtalo como defecto).")
@@ -1066,6 +1456,32 @@ def main():
         print(f"Guardado en {out.relative_to(ROOT)} (result: {data.get('result', '?')})")
     elif cmd == "sync-permissions":
         sync_permissions(require_valid())
+    elif cmd == "run-docs":
+        run_docs(require_valid())
+    elif cmd == "stack":
+        declared, detected = declared_stack(), detect_stack()
+        print(json.dumps({"declared": declared, "detected": detected, "packs": known_packs(),
+                          "undeclared": sorted(set(detected) - set(declared)) if declared else []}, ensure_ascii=False))
+    elif cmd == "rules-sync":
+        rules_sync()
+    elif cmd == "codemap":
+        try:
+            manifest = load_manifest()
+        except ManifestError:
+            manifest = None  # el arquitecto puede generarlo antes de que exista el plan
+        codemap(manifest, args[0] if args else None)
+    elif cmd == "docs-check":
+        try:
+            manifest = load_manifest()
+        except ManifestError:
+            manifest = None
+        docs_check(manifest)
+    elif cmd == "install":
+        flags = {a for a in args if a.startswith("--")}
+        if flags - {"--force", "--dry-run"}:
+            die("Uso: install [DIR] [--force] [--dry-run]")
+        dirs = [a for a in args if not a.startswith("--")]
+        install(Path(dirs[0] if dirs else os.getcwd()), force="--force" in flags, dry_run="--dry-run" in flags)
     elif cmd in ("wave-plan", "open-wave"):
         if not args or not args[0].isdigit():
             die(f"Uso: {cmd} N")

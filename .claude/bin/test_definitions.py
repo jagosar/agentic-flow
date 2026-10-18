@@ -28,11 +28,14 @@ AGENTS = {
     "verifier": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
     "plan-reviewer": {"model": "opus", "tools": {"Read", "Glob", "Grep"}},
     "gatekeeper": {"model": "sonnet", "tools": {"Bash"}},
+    "doc-updater": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "DOCS", "status": "STATUS: DONE | BLOCKER"},
 }
 COMMANDS = {"architect": "opus", "implement": "sonnet"}
 # Campos del manifiesto que entiende agentic.py: todos deben estar documentados en /architect.
 MANIFEST_FIELDS = ["work_packages", "id", "wave", "depends_on", "files", "allow_bash", "acceptance", "verify",
-                   "qa", "ignore", "agent", "mirror", "config_edit"]
+                   "qa", "ignore", "agent", "mirror", "config_edit", "stack", "docs", "codemap"]
+RULES_LIBRARY = CLAUDE / "rules-library"
+RULE_SECTIONS = ["## Estilo", "## Errores", "## Tests", "## Seguridad", "## Comandos habituales"]
 PERSONAL_PATH_RE = re.compile(r"/home/[a-z][\w.-]*/|/tmp/claude-\d+|C:\\Users\\|/Users/[a-z][\w.-]+/")
 
 
@@ -161,6 +164,38 @@ class CommandAndWorkflowTests(unittest.TestCase):
             self.assertNotIn(forbidden, src, f"{forbidden} rompe la reanudación del workflow")
 
 
+class RulesLibraryTests(unittest.TestCase):
+    """Cada lenguaje que detecta agentic.py tiene sus reglas, con el mismo esqueleto y su atribución."""
+
+    def packs(self):
+        return {p.stem for p in RULES_LIBRARY.glob("*.md")} - {"common"}
+
+    def test_deteccion_y_libreria_coinciden(self):
+        src = AGENTIC.read_text(encoding="utf-8")
+        block = re.search(r"STACK_SIGNALS = \{(.*?)\n\}", src, re.S).group(1)
+        detected = set(re.findall(r'^\s+"([a-z]+)": \(', block, re.M))
+        self.assertEqual(detected, self.packs(), "un lenguaje detectable sin reglas, o reglas que nunca se instalan")
+
+    def test_paquetes_de_lenguaje(self):
+        for name in sorted(self.packs()):
+            with self.subTest(lenguaje=name):
+                text = (RULES_LIBRARY / f"{name}.md").read_text(encoding="utf-8")
+                self.assertRegex(text, r'\A---\npaths:\n(  - "[^"]+"\n)+---\n', "paths: al principio, para que solo "
+                                 "se carguen con ficheros de ese lenguaje")
+                self.assertIn("](common.md)", text, "debe remitir a las reglas comunes")
+                self.assertIn("MIT License", text, "atribución a ECC")
+                positions = [text.find(h) for h in RULE_SECTIONS]
+                self.assertNotIn(-1, positions, "faltan secciones")
+                self.assertEqual(positions, sorted(positions), "las secciones van en el orden común")
+                self.assertRegex(text, r"\| build \|.*\n\| types \|.*\n\| lint \|.*\n\| tests \|", "fases de verify")
+
+    def test_comunes_siempre_cargadas_y_con_precedencia(self):
+        text = (RULES_LIBRARY / "common.md").read_text(encoding="utf-8")
+        self.assertFalse(text.startswith("---"), "sin paths: se cargan siempre")
+        self.assertIn("## Precedencia", text)
+        self.assertIn("`architecture.md`", text.split("## Precedencia")[1].split("##")[0])
+
+
 class SettingsTests(unittest.TestCase):
     def setUp(self):
         self.settings = json.loads((CLAUDE / "settings.json").read_text(encoding="utf-8"))
@@ -205,6 +240,57 @@ class CIHardeningTests(unittest.TestCase):
                 self.assertRegex(text, r"permissions:\s*\n\s+contents: read")
                 self.assertIn("persist-credentials: false", text)
                 self.assertNotRegex(text, r"curl[^\n|]*\|\s*(ba)?sh", "nada de curl | sh")
+
+    def test_npm_sin_scripts_y_con_version_exacta(self):
+        for name, text in self.sources():
+            installs = re.findall(r"npm (?:install|i|ci)\b[^\n]*", text)
+            for line in installs:
+                with self.subTest(fichero=name, linea=line):
+                    self.assertIn("--ignore-scripts", line, "ningún paquete ejecuta código al instalarse")
+                    self.assertRegex(line, r"@\d+\.\d+\.\d+(\s|$)", "versión exacta")
+
+
+class PluginTests(unittest.TestCase):
+    """El plugin solo instala y actualiza: no expone agentes, hooks ni workflows con prefijo."""
+
+    def setUp(self):
+        self.plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+
+    def test_manifiesto(self):
+        self.assertEqual(self.plugin["name"], "agentic-flow")
+        self.assertRegex(self.plugin["version"], r"^\d+\.\d+\.\d+$")
+        self.assertTrue(self.plugin.get("description") and self.plugin.get("author", {}).get("name"))
+        for rel in self.plugin["commands"]:
+            with self.subTest(comando=rel):
+                self.assertTrue(rel.startswith("./") and ".." not in rel)
+                self.assertTrue((ROOT / rel).is_file())
+        for key in ("agents", "hooks", "workflows", "skills", "mcpServers"):
+            self.assertNotIn(key, self.plugin, f"{key}: el flow vive en el repo, no en el plugin")
+
+    def test_sin_carpetas_que_el_plugin_cargaria_solas(self):
+        for folder in ("agents", "commands", "skills", "hooks", "workflows", "bin", "output-styles"):
+            with self.subTest(carpeta=folder):
+                self.assertFalse((ROOT / folder).exists(), "Claude Code la cargaría como componente del plugin")
+
+    def test_marketplace_apunta_al_plugin(self):
+        entry = self.market["plugins"][0]
+        self.assertEqual(entry["name"], self.plugin["name"])
+        self.assertEqual(entry["source"], "./")
+        self.assertNotIn("version", entry, "la versión manda en plugin.json; dos copias acaban desincronizadas")
+
+    def test_init_usa_el_instalador(self):
+        fm, body = frontmatter(ROOT / "plugin" / "commands" / "init.md")
+        self.assertEqual(fm.get("model"), "sonnet")
+        self.assertIn('python3 "${CLAUDE_PLUGIN_ROOT}/.claude/bin/agentic.py" install', body)
+        self.assertIn("No hagas commit ni push", body)
+
+    def test_lo_que_se_instala_existe(self):
+        src = AGENTIC.read_text(encoding="utf-8")
+        globs = re.findall(r'"(\.claude/[^"]+)"', re.search(r"INSTALL_GLOBS = \[(.*?)\]", src, re.S).group(1))
+        for pattern in globs:
+            with self.subTest(patron=pattern):
+                self.assertTrue(list(ROOT.glob(pattern)), "el instalador copiaría nada")
 
 
 class DocumentationDriftTests(unittest.TestCase):

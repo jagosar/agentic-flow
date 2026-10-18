@@ -325,8 +325,28 @@ def sc_fix(f, t):
         f.rect(M + 4 + tw("> " + cmd) + 2, 76, M + 4 + tw("> " + cmd) + 3, 80, "accent")
 
 
+def sc_docs(f, t):
+    chrome(f, 2, 12, "LA DOCUMENTACION SE PONE AL DIA.")
+    x = f.tag(M, 22, "SONNET", "ink")
+    f.text(x + 4, 24, "DOC-UPDATER · SOLO SU ZONA", "grey")
+    rows = [("CODEMAP", "SIN MODELO"), ("README · CHANGELOG", "LO QUE CAMBIO"),
+            ("ENLACES Y RUTAS", "DOCS-CHECK")]
+    for k, (name, note) in enumerate(rows):
+        a0 = 0.1 + k * 0.22
+        if t < a0:
+            continue
+        y = 38 + k * 12
+        f.text(M + 10, y, name, "ink")
+        f.rect(M, y + 8, W - M - 1, y + 8, "line")
+        if t > a0 + 0.12:
+            f.icon(M, y, CHECK, "ok")
+            f.text(112, y, note, "grey")
+    if t > 0.8:
+        f.text(M, 76, "SOLO CON EL CODIGO YA ACEPTADO", "grey")
+
+
 def sc_result(f, t):
-    chrome(f, 2, 12, "OPUS PLANIFICA. SONNET CONSTRUYE.")
+    chrome(f, 2, 13, "OPUS PLANIFICA. SONNET CONSTRUYE.")
     f.text(M, 24, "PASS", "ok", 3)
     stats = [("12", "AC EN VERDE"), ("4", "WORK PACKAGES"), ("2", "OLAS"), ("0", "ESCRITURAS AJENAS")]
     for k, (n, lab) in enumerate(stats):
@@ -387,9 +407,9 @@ def sc_review(f, t):
 SCENES = [
     (sc_title, 30), (sc_request, 30), (sc_interview, 44), (sc_blueprint, 52), (sc_acceptance, 42),
     (sc_wave1, 28), (sc_guard, 32), (sc_wave2, 38), (sc_integrate, 34), (sc_review, 38),
-    (sc_qa, 36), (sc_fix, 34), (sc_result, 34),
+    (sc_qa, 36), (sc_fix, 34), (sc_docs, 34), (sc_result, 34),
 ]
-TOTAL_STEPS = 12
+TOTAL_STEPS = 13
 
 
 def palette_image():

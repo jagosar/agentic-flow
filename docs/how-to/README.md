@@ -14,6 +14,7 @@
 | JetBrains | [jetbrains.md](jetbrains.md) | IntelliJ, PyCharm, WebStorm… | Sin probar |
 | Web e iOS (nube) | [web-ios.md](web-ios.md) | Lanzar o seguir trabajo sin tu máquina | Sin probar |
 | GitHub Actions | [ci-github-actions.md](ci-github-actions.md) | QA automático en cada pull request | Sin probar |
+| Plugin | [plugin.md](plugin.md) | Instalar o actualizar el flow en un repo que ya existe | **Probado**: `/agentic-flow:init` en una sesión real con `--plugin-dir`; desde el marketplace, sin probar |
 
 ## Cómo funciona
 
@@ -43,6 +44,9 @@ La animación se genera con `python3 docs/assets/make_flow_gif.py` (requiere Pil
                                      │
    defectos ──► run-wave N WP --fix  (máximo 2 ciclos por WP; después decides tú)
                                      │
+   documentación viva (solo con el código aceptado)
+              codemap (determinista) · doc-updater (README, CHANGELOG) · docs-check
+                                     │
    tú apruebas el commit
 ```
 
@@ -55,6 +59,9 @@ La animación se genera con `python3 docs/assets/make_flow_gif.py` (requiere Pil
 | Implementer | `.claude/agents/implementer.md` | Último Sonnet | Implementa un WP con sus tests unitarios | Tocar ficheros ajenos o los tests de aceptación |
 | Revisor | `.claude/agents/reviewer.md` | Último Sonnet | Revisa calidad y seguridad con filtro de confianza | Escribir nada |
 | QA | `.claude/agents/qa.md` | Último Sonnet | Pruebas exploratorias en `qa/`, como etapa de `/implement` | Corregir código de producción |
+| Doc-updater | `.claude/agents/doc-updater.md` | Último Sonnet | Pone al día README, CHANGELOG y guías con el código aceptado | Salir de su zona `docs`, tocar el codemap o el archivo de decisiones |
+
+Todos los agentes que escriben o juzgan código reciben en su prompt las reglas comunes y las de su lenguaje (`.claude/rules/agentic/`, ver [Reglas por lenguaje](#reglas-por-lenguaje)).
 
 ### Por qué este orden
 
@@ -114,15 +121,19 @@ Resultado esperado: una versión de Claude Code, `claude doctor` sin errores, `"
 gh repo create mi-proyecto --template jagosar/agentic-flow --private --clone
 ```
 
-**Proyecto existente:**
+**Proyecto existente, con el plugin (recomendado):** en una sesión de Claude Code dentro del repo, `/plugin install agentic-flow --marketplace jagosar/agentic-flow` y después `/agentic-flow:init`. Lo explica [plugin.md](plugin.md), con la actualización y lo que pasa con tus cambios.
+
+**Proyecto existente, a mano:**
 
 ```bash
 git clone --depth 1 https://github.com/jagosar/agentic-flow /tmp/agentic-flow
 ```
 
 ```bash
-cp -r /tmp/agentic-flow/.claude . && cat /tmp/agentic-flow/.gitignore >> .gitignore
+python3 /tmp/agentic-flow/.claude/bin/agentic.py install .
 ```
+
+Es el mismo instalador que usa el plugin: copia el flow, añade a tu `.claude/settings.json` lo que necesita sin quitar nada tuyo y detecta tu lenguaje.
 
 ```bash
 git add .claude .gitignore && git commit -m "Add agentic flow"
@@ -167,6 +178,8 @@ Resultado esperado: `No existe .../architecture.md. Lanza /architect primero.`, 
 - **Una feature por sesión**, cada una en su rama o worktree, con su propio `architecture.md`.
 - **No edites a mano los ficheros de un WP mientras corre su ola:** `check-wave` lo marcaría como violación.
 - **Commit después de cada ola en OK** si el trabajo es largo, para tener un punto al que volver.
+- **Declara el `stack`.** Con `"stack": ["python"]` en el manifiesto, los agentes reciben las reglas de ese lenguaje aunque el repo aún esté vacío.
+- **Activa la documentación viva** con una sección `docs` en el manifiesto. Si un WP debe escribir documentación de verdad (un manual de API, por ejemplo), sácala de la zona `docs`: no puede tener dos dueños.
 - **En Pro, vigila `/usage`.** Varios agentes en paralelo gastan deprisa los límites del plan. Si llegas al límite a mitad de una ola, relanza solo los WP que fallaron (`run-wave N WP-…`) cuando se renueve.
 
 ## Referencia del script
@@ -177,6 +190,11 @@ python3 .claude/bin/agentic.py sync-permissions        # permisos de los agentes
 python3 .claude/bin/agentic.py pipeline-plan           # el plan que sigue el workflow (JSON)
 python3 .claude/bin/agentic.py baseline                # estado de la suite antes de tocar nada
 python3 .claude/bin/agentic.py verify                  # fases frente a la línea base + aceptación (JSON)
+python3 .claude/bin/agentic.py stack                   # lenguajes detectados frente al stack del manifiesto
+python3 .claude/bin/agentic.py rules-sync              # instala las reglas del stack en .claude/rules/agentic/
+python3 .claude/bin/agentic.py codemap                 # mapa del código (determinista) en docs/CODEMAP.md
+python3 .claude/bin/agentic.py docs-check              # enlaces, anclas y rutas de la documentación
+python3 .claude/bin/agentic.py install ../otro-repo    # instala o actualiza el flow en otro repo
 # Modo A (respaldo), etapa por etapa:
 python3 .claude/bin/agentic.py run-acceptance         # ola 0: test-author escribe la aceptación
 python3 .claude/bin/agentic.py acceptance --expect red # debe fallar antes del código
@@ -186,6 +204,7 @@ python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # corregir sus defectos d
 python3 .claude/bin/agentic.py acceptance --expect green  # debe pasar después
 python3 .claude/bin/agentic.py run-review              # revisor de código (solo lectura)
 python3 .claude/bin/agentic.py run-qa                  # agente QA (modo A)
+python3 .claude/bin/agentic.py run-docs                # doc-updater (modo A), tras codemap
 python3 .claude/bin/agentic.py check-wave 1            # verificación de propiedad
 python3 .claude/bin/agentic.py status                  # ledger: estado de cada agente y etapa
 python3 .claude/bin/agentic.py stop                    # parar todos los agentes en marcha
@@ -195,6 +214,20 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano
 
 - **Códigos de salida:** `0` si todo está bien, `1` si hay un error de uso o el manifiesto no es válido, `3` si hay que revisar y `4` si se agotó el tope de ciclos `--fix`.
 - **Informes de cada agente:** `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>.log`.
+
+## Reglas por lenguaje
+
+`.claude/rules-library/` trae las reglas comunes (`common.md`) y las de diez lenguajes: Python, TypeScript/JavaScript, Go, Rust, Java, Kotlin, C#, Ruby, PHP y Swift. Están adaptadas de ECC. Cada una tiene las mismas secciones: estilo, errores, tests, seguridad y los comandos habituales para `verify`.
+
+- **Quién las instala:** `rules-sync`, al cerrar `/architect` y al empezar `/implement`. Copia a `.claude/rules/agentic/` las comunes, las de los lenguajes del `stack` del manifiesto y las de los que detecta en el repo.
+- **Cómo llegan a los agentes:** las cargan dos vías:
+  - Claude Code carga `.claude/rules/` por su cuenta, y las de lenguaje solo cuando se trabaja con ficheros de ese lenguaje, gracias a su `paths:`.
+  - El workflow también pasa la lista en el prompt de cada agente, para no depender de esa carga.
+- **Quién gana si chocan:** el orden es `architecture.md`, después el código existente, después tus reglas y, al final, estas.
+- **Para adaptarlas:**
+  - Tus reglas van en `.claude/rules/`, fuera de `agentic/`, que `rules-sync` reescribe.
+  - Si editas un fichero de la librería, el instalador del plugin lo respeta en las actualizaciones.
+- **Un lenguaje sin reglas:** quítalo del `stack` y pon sus convenciones en la sección 7.
 
 ## Seguir y parar el trabajo
 
@@ -236,7 +269,7 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 101 tests en Python y 14 escenarios del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Además de los guardarraíles y los comandos, comprueban las propias definiciones: modelo y herramientas de cada agente, secciones obligatorias (defensa ante inyección, `claim`, formato de informe), que el workflow solo use agentes y comandos que existen, que la documentación no cite comandos inexistentes ni tenga enlaces rotos, que no haya rutas personales versionadas y que el CI tenga las actions fijadas por SHA. Si cambias un prompt y rompes una de esas reglas, el test falla.
+Son 129 tests en Python y 19 escenarios del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Además de los guardarraíles y los comandos, comprueban las propias definiciones: modelo y herramientas de cada agente, secciones obligatorias (defensa ante inyección, `claim`, formato de informe), que el workflow solo use agentes y comandos que existen, que la documentación no cite comandos inexistentes ni tenga enlaces rotos, que no haya rutas personales versionadas, que el CI tenga las actions fijadas por SHA y npm sin scripts de instalación, que cada lenguaje detectable tenga sus reglas con el mismo esqueleto y que el plugin no exponga agentes ni hooks por su cuenta. Si cambias un prompt y rompes una de esas reglas, el test falla.
 
 ## Problemas frecuentes
 

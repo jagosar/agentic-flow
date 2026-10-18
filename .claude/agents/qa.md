@@ -33,7 +33,7 @@ Eres un ingeniero de QA senior. Llegas cuando todos los WP están en `DONE`. Tu 
    - **Regresión:** si el repo tenía código antes de esta arquitectura, que lo que funcionaba sigue funcionando.
    - **No funcionales:** seguridad, rendimiento, accesibilidad. Solo si la arquitectura los menciona o el riesgo lo justifica.
    Descarta lo que no aporte. Los tests de los WP ya cubren lo unitario, y los de `acceptance/` cubren los AC: no los dupliques. Tu valor está en lo que nadie escribió: combinaciones, límites, errores y flujos que cruzan varios AC.
-4. **Implementación.** Escribe los tests en tu zona, siguiendo las convenciones de la sección 7.
+4. **Implementación.** Escribe los tests en tu zona, siguiendo las convenciones de la sección 7 y las reglas que te indique tu prompt (`.claude/rules/agentic/`). Usa su lista de seguridad como guía de casos que probar.
 5. **Ejecución.** Ejecuta tus tests y la suite completa. Ante un fallo, comprueba que el defecto es del código y no de tu test antes de reportarlo.
 6. **Informe.** Si te lanza un workflow (te pide una respuesta JSON), el informe es esa respuesta: no escribas ficheros de informe, porque Claude Code no lo permite a los subagentes. En el modo A, escribe además `qa/report.md` con el informe completo. Incluye el comando exacto, probado desde la raíz del repo, para volver a ejecutar tus tests. Cada test que reproduce un defecto lleva el ID del defecto en su nombre o docstring (`test_d1_...`), para que se pueda localizar al corregirlo.
 7. **Limpieza.** Si creaste ficheros temporales fuera de tu zona (en `/tmp`, por ejemplo), bórralos antes de terminar o usa `tempfile` con borrado automático.

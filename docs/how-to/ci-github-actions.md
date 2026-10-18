@@ -58,8 +58,10 @@ jobs:
         with:
           node-version: "22"
       # Aquí, la instalación de las dependencias de tu proyecto (sección 3 de architecture.md).
-      - name: Instalar Claude Code (versión exacta desde npm)
-        run: npm install -g @anthropic-ai/claude-code@2.1.302
+      - name: Instalar Claude Code (versión exacta desde npm, sin scripts)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/cc" --no-save --ignore-scripts --no-audit --no-fund @anthropic-ai/claude-code@2.1.302
+          echo "$RUNNER_TEMP/cc/node_modules/@anthropic-ai/claude-code-linux-x64" >> "$GITHUB_PATH"
       - run: python3 .claude/bin/agentic.py validate
       # Determinista, sin secretos y sin coste: los tests de aceptación de la ola 0 deben pasar.
       - run: python3 .claude/bin/agentic.py acceptance --expect green
@@ -86,7 +88,7 @@ Qué hace cada parte que no es estándar:
 - **`permissions: contents: read` y `persist-credentials: false`:** el job no puede escribir en el repo, y el token de GitHub no queda guardado en el checkout, al alcance del código que se ejecute.
 - **Solo ramas del propio repo:** el agente QA ejecuta los tests del PR con tu token de suscripción en el entorno. Un PR malicioso de un fork podría intentar leerlo. GitHub no pasa secretos a los forks, y esta condición lo deja explícito.
 - **El token solo en el paso de QA:** `validate` y la aceptación ejecutan el código del PR sin ningún secreto en el entorno.
-- **Claude Code en versión exacta:** instalado desde npm con la versión fijada, en lugar de `curl | bash` con la última. Actualiza la versión a propósito, no por sorpresa.
+- **Claude Code en versión exacta y sin scripts de instalación:** se instala desde npm con la versión fijada, en lugar de `curl | bash` con la última, y con `--ignore-scripts`, para que ningún paquete ejecute código al instalarse. El binario nativo viene en su propio paquete (`claude-code-linux-x64`) y se usa directamente. Actualiza la versión a propósito, no por sorpresa.
 - **`concurrency`:** si haces push varias veces seguidas, solo corre la última ejecución, lo que ahorra límites de uso.
 - **`timeout-minutes`:** es el freno del job. El flow tiene además su propio `timeout_s`.
 

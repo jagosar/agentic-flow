@@ -3,6 +3,7 @@
 Ejecutar: python3 -m unittest discover -s .claude/bin -p "test_*.py"
 Cada test trabaja en un repo git temporal; el lanzador usa un `claude` falso, sin llamadas reales.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -495,6 +496,234 @@ class BrownfieldTests(Base):
     def test_pipeline_plan_indica_linea_base(self):
         self.scripts(0, 0)
         self.assertTrue(json.loads(self.repo.run("pipeline-plan").stdout)["baseline"])
+
+
+class RulesTests(Base):
+    """Detección del stack y reglas por lenguaje (rules-sync)."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.copytree(SCRIPT.parents[1] / "rules-library", self.repo.dir / ".claude" / "rules-library")
+
+    def set_manifest(self, m):
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+
+    def installed(self):
+        return sorted(p.stem for p in (self.repo.dir / ".claude/rules/agentic").glob("*.md"))
+
+    def test_detecta_por_ficheros_y_extensiones_sin_contar_dependencias(self):
+        self.repo.write("api/go.mod", "module x")
+        self.repo.write("web/src/app.tsx", "export const A = 1")
+        self.repo.write("node_modules/dep/index.rb", "puts 1")  # dependencias: no cuentan
+        self.repo.write(".claude/bin/tool.py", "x = 1")  # el propio flow: no cuenta
+        detected = json.loads(self.repo.run("stack").stdout)["detected"]
+        self.assertEqual(sorted(detected), ["go", "typescript"])
+        self.assertEqual(detected["go"]["markers"], ["api/go.mod"])
+
+    def test_rules_sync_instala_comunes_declarados_y_detectados_y_retira_los_demas(self):
+        self.set_manifest(dict(MANIFEST, stack=["rust"]))
+        self.repo.write("src/a.py", "def f(): pass")
+        out = json.loads(self.repo.run("rules-sync").stdout)
+        self.assertEqual(self.installed(), ["common", "python", "rust"])
+        self.assertEqual(out["detected"], ["python"])
+        (self.repo.dir / "src/a.py").unlink()
+        self.set_manifest(dict(MANIFEST, stack=["go"]))
+        out = json.loads(self.repo.run("rules-sync").stdout)
+        self.assertEqual(self.installed(), ["common", "go"])
+        self.assertEqual(sorted(out["removed"]), ["python", "rust"])
+        lib = (self.repo.dir / ".claude/rules-library/go.md").read_text()
+        self.assertEqual((self.repo.dir / ".claude/rules/agentic/go.md").read_text(), lib, "copia exacta: paths: arriba")
+
+    def test_validate_rechaza_un_stack_sin_reglas(self):
+        self.set_manifest(dict(MANIFEST, stack=["cobol"]))
+        r = self.repo.run("validate")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no hay reglas para 'cobol'", r.stderr)
+        self.set_manifest(dict(MANIFEST, stack="python"))
+        self.assertEqual(self.repo.run("validate").returncode, 1)
+
+    def test_pipeline_plan_lista_las_reglas_instaladas(self):
+        self.set_manifest(dict(MANIFEST, stack=["python"]))
+        self.assertEqual(json.loads(self.repo.run("pipeline-plan").stdout)["rules"], [])
+        self.repo.run("rules-sync")
+        self.assertEqual(json.loads(self.repo.run("pipeline-plan").stdout)["rules"],
+                         [".claude/rules/agentic/common.md", ".claude/rules/agentic/python.md"])
+
+
+class LivingDocsTests(Base):
+    """Documentación viva: zona DOCS, codemap determinista y docs-check."""
+    manifest = dict(MANIFEST, docs={"files": ["README.md", "CHANGELOG.md", "docs/"]})
+
+    def set_manifest(self, m):
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+
+    def test_validate_de_la_zona_docs(self):
+        self.assertEqual(self.repo.run("validate").returncode, 0)
+        m = json.loads(json.dumps(self.manifest))
+        m["work_packages"][0]["files"].append("README.md")
+        self.set_manifest(m)
+        r = self.repo.run("validate")
+        self.assertIn("dos propietarios", r.stderr)
+        m = dict(MANIFEST, docs={"files": ["README.md"], "codemap": "src/b/MAP.md"})
+        self.set_manifest(m)
+        self.assertIn("lo genera agentic.py", self.repo.run("validate").stderr)
+        self.set_manifest(dict(MANIFEST, docs={"files": ["README.md"], "codemap": "docs/architecture/MAP.md"}))
+        self.assertEqual(self.repo.run("validate").returncode, 1)
+        self.set_manifest(dict(MANIFEST, docs={"files": ["README.md"], "codemap": None}))
+        self.assertEqual(self.repo.run("validate").returncode, 0)
+
+    def test_hook_zona_docs_y_rutas_que_nadie_escribe(self):
+        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim DOCS", agent_id="d1"))
+        doc = lambda path: dict(write_payload(path, agent_id="d1"), agent_type="doc-updater")
+        self.assertEqual(self.repo.hook(doc("README.md")), 0)
+        self.assertEqual(self.repo.hook(doc("docs/guia.md")), 0)
+        for path in ("src/a.py", "docs/CODEMAP.md", "docs/architecture/0001-x.md", "architecture.md"):
+            with self.subTest(ruta=path):
+                self.assertEqual(self.repo.hook(doc(path)), 2)
+
+    def test_doc_updater_sin_claim_bloqueado(self):
+        payload = dict(write_payload("README.md", agent_id="d2"), agent_type="doc-updater")
+        self.assertEqual(self.repo.hook(payload), 2)
+
+    def test_codemap_determinista_con_simbolos_publicos(self):
+        self.repo.write("src/a.py", "def publica():\n    pass\n\ndef _privada():\n    pass\n\nclass Modelo:\n    pass\n")
+        self.repo.write("web/x.ts", "export function hola(): void {}\nconst interna = 1\nexport interface Opciones {}\n")
+        self.repo.write("srv/main.go", "package main\nfunc Arranca() {}\nfunc interno() {}\nfunc (s *S) Metodo() {}\n")
+        first = json.loads(self.repo.run("codemap").stdout)
+        self.assertEqual(first["path"], "docs/CODEMAP.md")
+        self.assertTrue(first["changed"])
+        text = (self.repo.dir / "docs/CODEMAP.md").read_text()
+        for sym in ("`publica`", "`Modelo`", "`hola`", "`Opciones`", "`Arranca`", "`Metodo`"):
+            self.assertIn(sym, text)
+        for hidden in ("_privada", "interna", "interno"):
+            self.assertNotIn(hidden, text)
+        self.assertFalse(json.loads(self.repo.run("codemap").stdout)["changed"], "sin cambios en el código, sin diff")
+
+    def test_docs_check_enlaces_anclas_y_rutas(self):
+        self.repo.write("src/a.py", "x = 1")
+        self.repo.write("docs/guia.md", "# Guía\n\n## Uso rápido\n")
+        self.repo.write("README.md", "[ok](docs/guia.md#uso-rápido) y `src/a.py`\n```\n`src/no.py` en un bloque\n```\n")
+        r = self.repo.run("docs-check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.repo.write("README.md", "[roto](docs/nada.md) [ancla](docs/guia.md#nada) `src/falta.py` `http/v1/x`\n")
+        r = self.repo.run("docs-check")
+        self.assertEqual(r.returncode, 3)
+        kinds = sorted(b["kind"] for b in json.loads(r.stdout)["broken"])
+        self.assertEqual(kinds, ["ancla", "enlace", "ruta"], "`http/v1/x` no es una carpeta del repo: no cuenta")
+
+    def test_docs_check_ignora_el_archivo_de_decisiones(self):
+        self.repo.write("docs/architecture/0001-x.md", "[viejo](../../src/borrado.py)\n")
+        self.assertEqual(self.repo.run("docs-check").returncode, 0)
+
+    def test_pipeline_plan_y_etapa_docs(self):
+        plan = json.loads(self.repo.run("pipeline-plan").stdout)
+        self.assertTrue(plan["docs"])
+        self.assertEqual(plan["codemap"], "docs/CODEMAP.md")
+        r = self.repo.run("open-stage", "docs")
+        self.assertEqual(json.loads(r.stdout)["owners"], ["DOCS"])
+        self.repo.write("README.md", "# nuevo")
+        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 0)
+        self.repo.run("open-stage", "docs")
+        self.repo.write("src/a.py", "x = 2")
+        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3, "fuera de su zona")
+
+    def test_sin_seccion_docs_no_hay_etapa(self):
+        self.set_manifest(MANIFEST)
+        self.assertFalse(json.loads(self.repo.run("pipeline-plan").stdout)["docs"])
+        self.assertEqual(self.repo.run("open-stage", "docs").returncode, 3)
+
+
+class InstallTests(unittest.TestCase):
+    """install: lo que hace el plugin al instalar o actualizar el flow en otro repo."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="agentic-install-"))
+        subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
+        (self.dir / ".claude").mkdir()
+        (self.dir / ".claude/settings.json").write_text(json.dumps(
+            {"permissions": {"allow": ["Bash(make test)"]}, "hooks": {"PostToolUse": []}, "model": "sonnet"}))
+        (self.dir / ".gitignore").write_text("dist/\n")
+        (self.dir / "main.py").write_text("print(1)\n")
+        self.env = dict(os.environ)
+        self.env.pop("CLAUDE_PROJECT_DIR", None)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def install(self, *flags):
+        return subprocess.run([sys.executable, str(SCRIPT), "install", str(self.dir), *flags], capture_output=True,
+                              text=True, env=self.env)
+
+    def test_instala_el_flow_y_conserva_la_configuracion_del_proyecto(self):
+        r = self.install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for rel in (".claude/bin/agentic.py", ".claude/agents/implementer.md", ".claude/commands/architect.md",
+                    ".claude/workflows/agentic-implement.js", ".claude/rules-library/common.md",
+                    ".claude/rules/agentic/python.md", ".claude/agentic.json", ".claude/agentic-install.json"):
+            self.assertTrue((self.dir / rel).exists(), rel)
+        self.assertFalse((self.dir / ".claude/bin/test_agentic.py").exists(), "los tests del flow no se instalan")
+        settings = json.loads((self.dir / ".claude/settings.json").read_text())
+        self.assertEqual(settings["model"], "sonnet")
+        self.assertIn("Bash(make test)", settings["permissions"]["allow"])
+        self.assertIn("Workflow(agentic-implement)", settings["permissions"]["allow"])
+        self.assertIn("Bash(rm -rf:*)", settings["permissions"]["deny"])
+        self.assertTrue(settings["enableWorkflows"])
+        self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
+        self.assertIn(".claude/state/", (self.dir / ".gitignore").read_text().splitlines())
+        self.assertTrue((self.dir / ".gitignore").read_text().startswith("dist/\n"))
+
+    def test_reinstalar_es_idempotente(self):
+        self.install()
+        before = {p: p.read_bytes() for p in self.dir.rglob("*") if p.is_file() and ".git/" not in p.as_posix()}
+        r = self.install()
+        self.assertIn("settings.json: sin cambios", r.stdout)
+        after = {p: p.read_bytes() for p in self.dir.rglob("*") if p.is_file() and ".git/" not in p.as_posix()}
+        self.assertEqual(before, after)
+
+    def test_actualizar_no_pisa_lo_que_modificaste_salvo_con_force(self):
+        self.install()
+        mine = self.dir / ".claude/agents/reviewer.md"
+        mine.write_text(mine.read_text() + "\nRegla propia del equipo.\n")
+        stale = self.dir / ".claude/agents/implementer.md"
+        stale.write_text("versión vieja sin tocar")
+        record = json.loads((self.dir / ".claude/agentic-install.json").read_text())
+        record["files"][".claude/agents/implementer.md"] = hashlib.sha256(b"versi\xc3\xb3n vieja sin tocar").hexdigest()
+        (self.dir / ".claude/agentic-install.json").write_text(json.dumps(record))
+        r = self.install()
+        self.assertIn("modificado por ti (no se toca): 1", r.stdout)
+        self.assertIn("Regla propia del equipo.", mine.read_text())
+        self.assertNotEqual(stale.read_text(), "versión vieja sin tocar", "lo no modificado se actualiza")
+        self.assertIn("modificado por ti", self.install().stdout, "sigue protegido en la siguiente actualización")
+        self.install("--force")
+        self.assertNotIn("Regla propia del equipo.", mine.read_text())
+
+    def test_copia_antigua_sin_registro_se_conserva_y_las_reglas_se_instalan(self):
+        old = self.dir / ".claude/bin/agentic.py"
+        old.parent.mkdir(parents=True)
+        old.write_text("import sys\nprint('version antigua')\nsys.exit(1)\n")
+        r = self.install()
+        self.assertIn("modificado por ti (no se toca): 1", r.stdout)
+        self.assertIn("version antigua", old.read_text(), "sin registro, distinto: no se pisa")
+        self.assertIn("reglas: common, python", r.stdout)
+        self.assertTrue((self.dir / ".claude/rules/agentic/python.md").exists())
+
+    def test_dry_run_no_escribe(self):
+        r = self.install("--dry-run")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("simulación", r.stdout)
+        self.assertFalse((self.dir / ".claude/bin/agentic.py").exists())
+
+    def test_no_se_instala_sobre_si_mismo(self):
+        r = subprocess.run([sys.executable, str(SCRIPT), "install", str(SCRIPT.parents[2])], capture_output=True,
+                           text=True, env=self.env)
+        self.assertEqual(r.returncode, 1)
+
+    def test_el_flow_instalado_funciona(self):
+        self.install()
+        (self.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(dict(MANIFEST, stack=["python"])) + "\n```")
+        r = subprocess.run([sys.executable, ".claude/bin/agentic.py", "validate"], cwd=self.dir, capture_output=True,
+                           text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
 
 @unittest.skipUnless(shutil.which("node"), "node no está instalado")

@@ -58,6 +58,9 @@ Cualquier cosa que toque seguridad, autenticación, datos persistentes o una API
   5. patrones de arquitectura (repositorio, servicio…).
 
   El resultado va a la sección 4b de `architecture.md`.
+
+  Para orientarte rápido, empieza por el mapa del código: `docs/CODEMAP.md` si existe, o genéralo con `python3 .claude/bin/agentic.py codemap`. Es determinista (ficheros y símbolos públicos), así que sirve de índice, pero no sustituye a leer el código.
+- **Stack:** ejecuta `python3 .claude/bin/agentic.py stack`. Te dice qué lenguajes hay en el repo y qué reglas existen en `.claude/rules-library/`. En un repo vacío, el lenguaje lo decides tú en la entrevista.
 - **Decisiones previas:** lee `docs/architecture/README.md` si existe. Ahí están los diseños y decisiones ya aprobados. No los contradigas sin decirlo explícitamente en la sección 10.
 - **Investigar y reutilizar antes de construir:** comprueba si la librería estándar, una dependencia ya presente o una librería madura resuelven parte del problema. Prefiere adoptar algo probado antes que escribirlo de cero, y anótalo en la sección 10.
 - **Si el repo está vacío,** dilo y pasa a la entrevista.
@@ -109,7 +112,7 @@ Qué se construye y por qué, en 3-5 frases.
 ### Excluido (no-objetivos)
 
 ## 3. Stack
-Lenguaje, runtime, frameworks y librerías con versión exacta. Gestor de paquetes. Comandos de build, tipos, lint y test.
+Lenguaje, runtime, frameworks y librerías con versión exacta. Gestor de paquetes. Comandos de build, tipos, lint y test (la tabla "Comandos habituales" de cada fichero de `.claude/rules-library/` es un buen punto de partida). Los lenguajes van también en `stack` del manifiesto.
 
 ## 4. Estructura del repositorio
 Árbol de directorios y ficheros finales. Cada fichero lleva su propietario (WP, AT o QA).
@@ -125,7 +128,7 @@ Tipos, entidades, esquemas, migraciones. Definidos en código o pseudocódigo de
 Firmas exactas (nombre, parámetros, tipos, retorno, errores que lanza) de toda función, clase, endpoint o evento que cruce la frontera entre dos WP, o que usen los tests de aceptación. Nada que cruce una frontera puede faltar aquí.
 
 ## 7. Convenciones
-Estilo, nombres, manejo de errores, logging, formato de commits, qué está prohibido.
+Estilo, nombres, manejo de errores, logging, formato de commits, qué está prohibido. Las reglas genéricas del lenguaje ya las reciben los agentes (`.claude/rules/agentic/`): aquí van las propias del proyecto y cualquier excepción a esas reglas, explícita.
 
 ## 8. Work packages y criterios de aceptación
 ### Criterios de aceptación
@@ -169,9 +172,11 @@ Al final de la sección 8 va el manifiesto que leen los guardarraíles. Es oblig
 
     ```json wp-manifest
     {
+      "stack": ["python"],
       "allow_bash": ["Bash(python3 -m pytest:*)"],
       "acceptance": {"files": ["acceptance/"], "command": "python3 -m pytest acceptance -q"},
       "verify": {"build": "python3 -m compileall -q src", "lint": "ruff check src", "tests": "python3 -m pytest -q"},
+      "docs": {"files": ["README.md", "CHANGELOG.md"], "codemap": "docs/CODEMAP.md"},
       "work_packages": [
         {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/models.py", "tests/test_models.py"],
          "mirror": ["src/orders/models.py:12-48", "tests/test_orders.py:1-30"]},
@@ -182,6 +187,7 @@ Al final de la sección 8 va el manifiesto que leen los guardarraíles. Es oblig
 
 Campos del manifiesto:
 
+- **`stack` (recomendado):** los lenguajes del proyecto, con el nombre de su fichero en `.claude/rules-library/` (`python`, `typescript`, `go`, `rust`, `java`, `kotlin`, `csharp`, `ruby`, `php`, `swift`). `validate` rechaza uno sin reglas. Con él, cada agente recibe las reglas comunes y las de su lenguaje.
 - **`files`:** rutas relativas al repo. Una ruta que acaba en `/` posee todo el directorio. Debe coincidir con la sección 4.
 - **`acceptance` (obligatorio salvo en refactor):** `files` es la zona del test-author y `command` el comando, sin shell, que ejecuta los tests de aceptación. Elige un comando que funcione aunque los módulos todavía no existan (los imports fallarán, y eso cuenta como rojo). En un refactor, `command` es la suite existente.
 - **`allow_bash`:** los únicos comandos que pueden ejecutar los agentes sin pedir permiso (build, lint y test de la sección 3). Mínimos y concretos: `validate` rechaza las reglas que dan ejecución arbitraria.
@@ -190,6 +196,7 @@ Campos del manifiesto:
 - **`qa` (opcional):** la zona de QA. Por defecto, `qa/`.
 - **`agent` (opcional, por WP):** el subagente que lo implementa. Por defecto, `implementer`. Su definición debe declarar `model: sonnet`.
 - **`mirror` (por WP, obligatorio si el repo tiene código):** las referencias de "Patrones a imitar", como `ruta` o `ruta:inicio-fin`. `validate` comprueba que cada fichero existe y que las líneas están dentro de su rango, así que una referencia inventada no pasa.
+- **`docs` (recomendado):** documentación viva. `files` es la zona del agente doc-updater (por defecto `README.md`, `CHANGELOG.md` y `docs/`), que al final de cada ciclo con el código aceptado pone al día lo que lee el usuario. `codemap` es la ruta del mapa del código que genera `agentic.py` (por defecto `docs/CODEMAP.md`; `null` lo desactiva). Ningún WP puede poseer el codemap, y la zona `docs` no puede solaparse con la de un WP: si un WP debe escribir documentación, sácala de `docs.files`.
 - **`config_edit` (opcional, por WP):** `true` solo si ese WP debe modificar configuración de calidad ya existente (linters, formatters, `pyproject.toml`, `tsconfig.json`…). Sin él, el hook lo bloquea, para que nadie relaje una regla y así pase una comprobación. Crear configuración nueva siempre está permitido.
 - **Restricciones:** ninguna zona puede solaparse con otra, y nadie puede poseer `architecture.md`, `.claude/` ni `docs/architecture/`.
 
@@ -227,6 +234,6 @@ El revisor no ha visto esta conversación, a propósito.
 - **Cuando la tengas, archiva el diseño:**
   1. Copia `architecture.md` a `docs/architecture/NNNN-<tema-en-kebab>.md`. `NNNN` es el siguiente número.
   2. Añade una línea a `docs/architecture/README.md` con el número, la fecha, el título, el tipo y las 2-3 decisiones clave. Crea el índice si no existe.
-  3. Ejecuta `python3 .claude/bin/agentic.py sync-permissions`, para que los agentes puedan ejecutar los comandos del manifiesto sin pedir permiso cada vez.
+  3. Ejecuta `python3 .claude/bin/agentic.py sync-permissions`, para que los agentes puedan ejecutar los comandos del manifiesto sin pedir permiso cada vez, y `python3 .claude/bin/agentic.py rules-sync`, que instala las reglas del `stack` en `.claude/rules/agentic/`.
   4. Indica al usuario que lance `/implement`.
 - No lances la implementación tú.

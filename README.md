@@ -6,15 +6,18 @@ Un equipo de agentes para Claude Code que lleva una idea a código probado:
 2. **Ola 0:** un test-author escribe los tests de aceptación antes del código.
 3. **Implementación:** varios implementers trabajan en paralelo para ponerlos en verde, cada uno en sus propios ficheros.
 4. **Revisión y QA:** un revisor mira la calidad y QA explora lo que nadie previó.
+5. **Documentación viva:** con el código aceptado, el mapa del código se regenera solo y un agente pone al día README y CHANGELOG.
+
+Cada agente recibe las reglas de su lenguaje (Python, TypeScript, Go, Rust, Java, Kotlin, C#, Ruby, PHP o Swift), además de las comunes.
 
 Tú decides en dos puntos: apruebas el diseño y apruebas el commit.
 
 <p align="center">
-  <img src="docs/assets/flow.gif" alt="El flow en tres actos. Arquitectura: describes el objetivo, el arquitecto (Opus) pregunta y escribe architecture.md, otro Opus lo revisa y tú lo apruebas. Construcción: el test-author escribe los tests de aceptación, que fallan porque aún no hay código; la ola 1 corre en paralelo, el hook bloquea una escritura ajena, check-wave verifica, la ola 2 usa ese código y la aceptación pasa a verde. Verificación: el revisor revisa con filtro de confianza, QA encuentra un defecto en WP-02, se corrige con --fix (máximo 2 ciclos) y el resultado es PASS; tú haces el commit." width="768">
+  <img src="docs/assets/flow.gif" alt="El flow en tres actos. Arquitectura: describes el objetivo, el arquitecto (Opus) pregunta y escribe architecture.md, otro Opus lo revisa y tú lo apruebas. Construcción: el test-author escribe los tests de aceptación, que fallan porque aún no hay código; la ola 1 corre en paralelo, el hook bloquea una escritura ajena, check-wave verifica, la ola 2 usa ese código y la aceptación pasa a verde. Verificación: el revisor revisa con filtro de confianza, QA encuentra un defecto en WP-02, se corrige con --fix (máximo 2 ciclos), el doc-updater pone al día el mapa del código, el README y el CHANGELOG, y el resultado es PASS; tú haces el commit." width="768">
 </p>
 
 - **[Cómo funciona](docs/how-it-works.md):** esquemas del flow, secuencia, ciclo de vida, decisión del hook y matriz de permisos.
-- **[Guías por entorno](docs/how-to/README.md):** terminal, Desktop, VS Code, JetBrains, web e iOS, y GitHub Actions.
+- **[Guías por entorno](docs/how-to/README.md):** terminal, Desktop, VS Code, JetBrains, web e iOS, GitHub Actions y el [plugin](docs/how-to/plugin.md).
 
 ## Inicio rápido
 
@@ -26,9 +29,23 @@ Requisitos:
 - El CLI de Claude Code actualizado.
 - Un plan Pro, Max, Team o Enterprise.
 
+**Proyecto nuevo**, desde la plantilla:
+
 ```bash
 gh repo create mi-proyecto --template jagosar/agentic-flow --private --clone
 ```
+
+**Proyecto que ya existe**, con el plugin, desde una sesión de Claude Code en ese repo:
+
+```
+/plugin install agentic-flow --marketplace jagosar/agentic-flow
+```
+
+```
+/agentic-flow:init
+```
+
+`/agentic-flow:init` copia el flow a `.claude/`, combina tu `settings.json` sin quitar nada y detecta tu lenguaje. Si lo repites tras actualizar el plugin, actualiza el flow sin pisar los ficheros que hayas modificado. Los detalles, en [la guía del plugin](docs/how-to/plugin.md).
 
 En la carpeta del proyecto, abre `claude`, acepta el aviso de confianza y ejecuta:
 
@@ -40,7 +57,7 @@ En la carpeta del proyecto, abre `claude`, acepta el aviso de confianza y ejecut
 /implement
 ```
 
-Para un proyecto que ya existe, copia `.claude/` y las líneas del `.gitignore`: lo tienes en [Instalar el flow en un proyecto](docs/how-to/README.md#instalar-el-flow-en-un-proyecto).
+Sin el plugin, también puedes copiar `.claude/` a mano: lo tienes en [Instalar el flow en un proyecto](docs/how-to/README.md#instalar-el-flow-en-un-proyecto).
 
 ## Qué hay dentro
 
@@ -55,8 +72,11 @@ Para un proyecto que ya existe, copia `.claude/` y las líneas del `.gitignore`:
 | reviewer | `.claude/agents/reviewer.md` | último Sonnet | Revisión de calidad y seguridad, de solo lectura y con filtro de confianza |
 | verifier | `.claude/agents/verifier.md` | último Sonnet | Intenta refutar cada hallazgo grave; la incertidumbre nunca rebaja un bloqueo |
 | qa | `.claude/agents/qa.md` | último Sonnet | Pruebas exploratorias más allá de los AC |
+| doc-updater | `.claude/agents/doc-updater.md` | último Sonnet | Pone al día README, CHANGELOG y guías con el código ya aceptado, dentro de su zona |
+| Reglas por lenguaje | `.claude/rules-library/*.md` | n/a | Comunes y por lenguaje. `rules-sync` instala en `.claude/rules/agentic/` las del `stack` y las que detecta |
+| Plugin | `.claude-plugin/`, `plugin/commands/init.md` | último Sonnet | `/agentic-flow:init` instala o actualiza el flow en otro repo |
 | gatekeeper | `.claude/agents/gatekeeper.md` | último Sonnet | Ejecuta los pasos deterministas de `agentic.py` para el workflow, que no tiene shell |
-| `agentic.py` | `.claude/bin/agentic.py` | n/a | Guardarraíles (hook), pasos deterministas (`verify`, `open/close-stage`…), ledger y lanzador del modo A |
+| `agentic.py` | `.claude/bin/agentic.py` | n/a | Guardarraíles (hook), pasos deterministas (`verify`, `open/close-stage`, `stack`, `codemap`, `docs-check`…), ledger, instalador y lanzador del modo A |
 
 Los modelos están fijados por alias (`opus`, `sonnet`), que siempre apuntan a la versión más reciente que conoce tu Claude Code. `validate` falla si alguien fija otro modelo.
 
@@ -76,6 +96,9 @@ Los modelos están fijados por alias (`opus`, `sonnet`), que siempre apuntan a l
 | Romper lo que ya funcionaba | Línea base antes de tocar nada; una fase que pasaba y ahora falla es regresión y bloquea. Los fallos previos se informan sin culpar a ningún WP |
 | Un plan que "sigue el estilo" sin decir cuál | Cada WP trae patrones a imitar con `fichero:líneas`; `validate` comprueba que existen |
 | Bucles de corrección sin fin | Máximo 2 ciclos de corrección por WP. Después decides tú |
+| Documentación que inventa comandos o rutas | El doc-updater solo escribe en su zona `docs` y debe comprobar cada afirmación en el código; `docs-check` valida enlaces, anclas y rutas. El mapa del código lo genera `agentic.py`, nunca el modelo |
+| Un agente reescribe el plan, el archivo de decisiones o el flow | `architecture.md`, `docs/architecture/`, `.claude/` y el codemap están vetados a todos los agentes, aunque su zona los incluya por prefijo |
+| Actualizar el flow pisa tus cambios | `install` recuerda la huella de cada fichero que instaló: solo sustituye los que no has modificado |
 | Instrucciones inyectadas en el repo | Defensa explícita en las instrucciones de cada agente |
 | Un fallo del propio guardarraíl | El hook falla cerrado: dentro de un agente, cualquier error bloquea |
 | Agentes que se quedan colgados | `timeout_s` por etapa y `agentic.py stop` |
@@ -89,13 +112,17 @@ El detalle, con el diagrama de decisión, está en [Cómo funciona § 4](docs/ho
   - `/implement` con el workflow nativo: ola 0 (16 AC en rojo), dos olas en paralelo, verificación, revisión, QA y ledger cerrado, en unos 5 minutos;
   - el hook bloquea escrituras ajenas también dentro del workflow (probado con una sonda adversarial);
   - **sobre un repo con código** (añadir expiración al acortador): el arquitecto generó la sección 4b y referencias `fichero:línea` exactas, con el *gotcha* de compatibilidad. El workflow fijó la línea base, pasó 13 AC nuevos y mantuvo en verde los 16 antiguos. El fichero de datos de la versión anterior sigue funcionando byte a byte, y los implementers siguieron los patrones citados;
-  - el modo A de respaldo, de principio a fin.
-- **Tests del propio flow:** 101 tests en Python (guardarraíles, comandos del pipeline, definiciones de agentes y deriva de la documentación) y 14 escenarios del workflow con agentes simulados. Corren en un CI endurecido: actions fijadas por SHA, permisos mínimos y Python 3.9, 3.12 y 3.14.
-- **Sin probar:** el ciclo de corrección con agentes reales (solo con tests simulados); la entrevista interactiva en la interfaz; VS Code, JetBrains, nube y GitHub Actions.
+  - el modo A de respaldo, de principio a fin;
+  - el plugin: `/agentic-flow:init` en una sesión real (cargado con `--plugin-dir`) instaló el flow en un repo TypeScript y dejó activas sus reglas. `claude plugin validate --strict` pasa en el CI;
+  - la actualización de un flow copiado a mano: conservó los ficheros sin registro, los sustituyó con `--force` e instaló las reglas de Python;
+  - el doc-updater (modo A) sobre el acortador con expiración: en 21 segundos escribió un CHANGELOG fiel al código, sin salir de su zona, y `docs-check` quedó en verde.
+- **Tests del propio flow:** 129 tests en Python (guardarraíles, comandos del pipeline, reglas, documentación viva, instalador, definiciones de agentes, plugin y deriva de la documentación) y 19 escenarios del workflow con agentes simulados. Corren en un CI endurecido: actions fijadas por SHA, permisos mínimos, npm sin scripts de instalación y Python 3.9, 3.12 y 3.14.
+- **Sin probar con agentes reales:** el ciclo de corrección, y la etapa de documentación dentro del workflow nativo (los dos solo con escenarios simulados); la entrevista interactiva en la interfaz; la instalación del plugin desde el marketplace; VS Code, JetBrains, nube y GitHub Actions.
 
 ## Créditos
 
 Varias ideas del flow v2 están adaptadas de [ECC](https://github.com/affaan-m/ECC) (MIT, © 2026 Affaan Mustafa):
 - el juez independiente y la ceremonia según el tamaño;
 - la revisión con filtro de confianza y las fases de verificación;
-- la protección de configuración, el bloqueo de `--no-verify` y la defensa ante instrucciones inyectadas.
+- la protección de configuración, el bloqueo de `--no-verify` y la defensa ante instrucciones inyectadas;
+- las reglas por lenguaje y el agente de documentación con su mapa del código.

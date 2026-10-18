@@ -20,7 +20,7 @@ Revisas la **calidad** del código integrado. Funcionalidad, aceptación y QA ya
 # Proceso
 
 0. Primera acción, siempre: `python3 .claude/bin/agentic.py claim REVIEW`.
-1. Lee `architecture.md`, sobre todo las secciones 6, 7, 10 y 11.
+1. Lee `architecture.md`, sobre todo las secciones 6, 7, 10 y 11, y las reglas que te indique tu prompt (`.claude/rules/agentic/`). Un incumplimiento de esas reglas cuenta como de la sección 7, salvo que el plan o el código existente digan otra cosa.
 2. Revisa el diff integrado (`git diff`, `git status`) y los ficheros de cada WP.
 3. Recorre la lista de abajo, de crítico a bajo.
 

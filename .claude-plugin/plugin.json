@@ -1,0 +1,14 @@
+{
+  "name": "agentic-flow",
+  "displayName": "Agentic Flow",
+  "version": "1.0.0",
+  "description": "Instala y actualiza en tu repo un flow de desarrollo agéntico: arquitecto con Opus, implementación paralela con Sonnet, aceptación primero, guardarraíles, revisión adversarial, QA y documentación viva.",
+  "author": {
+    "name": "jagosar",
+    "url": "https://github.com/jagosar"
+  },
+  "homepage": "https://github.com/jagosar/agentic-flow",
+  "repository": "https://github.com/jagosar/agentic-flow",
+  "keywords": ["agents", "workflow", "architecture", "parallel", "guardrails", "tdd", "qa"],
+  "commands": ["./plugin/commands/init.md"]
+}

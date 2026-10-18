@@ -53,7 +53,7 @@ git add architecture.md && git commit -m "Architecture: pagos gRPC"
 
 - El lanzador cambia solo al último Sonnet, valida, sincroniza permisos y lanza el workflow `agentic-implement` en segundo plano. Síguelo con `/workflows`. Si los workflows no están disponibles, usa el modo A.
 - Cada ola corre en segundo plano y la sesión te avisa cuando termina.
-- **Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las fases de verificación con la aceptación en verde, el estado del revisor y de QA y los commits propuestos, a la espera de tu aprobación.
+- **Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las fases de verificación con la aceptación en verde, el estado del revisor y de QA, la documentación actualizada (si el manifiesto tiene sección `docs`) y los commits propuestos, a la espera de tu aprobación.
 
 Para ver el avance en directo desde otra terminal:
 

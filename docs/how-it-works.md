@@ -15,7 +15,7 @@ Contenido:
 
 ## 1. Vista general
 
-Tres fases y dos puertas humanas. Cada caja es un agente o un paso determinista del script `agentic.py`.
+Cuatro fases y dos puertas humanas. Cada caja es un agente o un paso determinista del script `agentic.py`.
 
 ```mermaid
 flowchart TD
@@ -45,7 +45,7 @@ flowchart TD
         W2 --> CWN{"check-wave"}
     end
 
-    G1 --> BL
+    G1 --> RS["rules-sync<br/>reglas comunes y del stack"] --> BL
 
     subgraph C2["Verificación (último Sonnet)"]
         VF["Fases: build · tipos · lint · tests<br/>regresión frente a la línea base"] --> GREEN{"acceptance<br/>--expect green"}
@@ -60,7 +60,17 @@ flowchart TD
     FIX -->|máx. 2 ciclos por WP| VF
     FIX -->|tope agotado| H(["Decides tú o /architect"])
     QA -->|defecto de diseño| H
-    QA -->|PASS| G2{{"Puerta 2: apruebas el commit"}}
+    QA -->|PASS| DOCQ{"¿Sección docs?"}
+
+    subgraph D2["Documentación viva (último Sonnet)"]
+        CM["codemap<br/>determinista, sin modelo"] --> DU["doc-updater<br/>README · CHANGELOG · guías"]
+        DU --> DC{"docs-check<br/>enlaces, anclas, rutas"}
+    end
+
+    DOCQ -->|sí| CM
+    DOCQ -->|no| G2{{"Puerta 2: apruebas el commit"}}
+    DC -->|"roto: pendiente, no bloquea"| G2
+    DC -->|ok| G2
 ```
 
 ## 2. Secuencia de una ejecución
@@ -85,10 +95,10 @@ sequenceDiagram
     PR-->>AR: LISTO o CORREGIR
     AR-->>U: resumen y petición de aprobación
     U->>AR: apruebo
-    AR->>AR: archiva y sync-permissions
+    AR->>AR: archiva, sync-permissions y rules-sync
 
     U->>O: /implement
-    O->>O: validate
+    O->>O: validate, sync-permissions y rules-sync
     O->>W: Workflow agentic-implement (segundo plano)
     O-->>U: lanzado, síguelo con /workflows
     W->>G: pipeline-plan
@@ -116,6 +126,13 @@ sequenceDiagram
     opt defectos de implementación (máx. 2 ciclos)
         W->>AG: Corrige WP-NN con sus defectos
         W->>G: verify, y de nuevo revisión y QA
+    end
+    opt sección docs y código aceptado
+        W->>G: codemap (determinista)
+        W->>G: open-stage docs
+        W->>AG: doc-updater
+        AG-->>W: ficheros, cambios, afirmaciones sin comprobar
+        W->>G: close-stage docs y docs-check
     end
     W-->>O: resultado JSON
     O-->>U: informe y commits propuestos
@@ -156,7 +173,9 @@ flowchart TD
     T -->|Bash| GB{"git que escribe, instalar<br/>dependencias o claude -p?"}
     GB -->|sí| BLK
     GB -->|no| OK
-    T -->|escritura| OWN{"¿El fichero es de su zona<br/>según el manifiesto?"}
+    T -->|escritura| PROT{"¿architecture.md, .claude/,<br/>docs/architecture/ o codemap?"}
+    PROT -->|sí| BLK
+    PROT -->|no| OWN{"¿El fichero es de su zona<br/>según el manifiesto?"}
     OWN -->|no| BLK
     OWN -->|sí| SEC{"¿Contiene un secreto?"}
     SEC -->|sí| BLK
@@ -173,7 +192,7 @@ Además, al cerrar cada etapa, `check-wave` compara todos los ficheros antes y d
 
 | Agente | Modelo | Escribe en | Ejecuta | No puede |
 |---|---|---|---|---|
-| Arquitecto (`/architect`) | último Opus | `architecture.md`, `docs/architecture/` | `agentic.py validate` | código, tests |
+| Arquitecto (`/architect`) | último Opus | `architecture.md`, `docs/architecture/` | `agentic.py validate`, `stack`, `codemap`, `sync-permissions`, `rules-sync` | código, tests |
 | plan-reviewer | último Opus | nada | nada | escribir |
 | Lanzador (`/implement`) | último Sonnet | nada (solo el ledger, vía script) | `agentic.py`, la herramienta Workflow | código, tests, commit sin tu aprobación |
 | Workflow `agentic-implement` | n/a (script) | nada: no tiene shell ni disco | solo agentes | saltarse el orden o los topes del script |
@@ -183,8 +202,9 @@ Además, al cerrar cada etapa, `check-wave` compara todos los ficheros antes y d
 | implementer (`WP-NN`) | último Sonnet | los `files` de su WP | `allow_bash` + comando de aceptación | ficheros ajenos, `acceptance/`, git, dependencias |
 | reviewer (`REVIEW`) | último Sonnet | nada | `git diff/status/log` + `allow_bash` | escribir |
 | qa (`QA`) | último Sonnet | `qa.files` (por defecto `qa/`) | `allow_bash` | código de producción |
+| doc-updater (`DOCS`) | último Sonnet | `docs.files` (por defecto `README.md`, `CHANGELOG.md`, `docs/`) | `git diff/status/log` | código, tests, el codemap, `docs/architecture/` |
 
-Para todos los agentes del flow: nada de secretos, de `--no-verify`, de relajar configuración existente ni de desactivar tests. Nadie puede poseer `architecture.md`, `.claude/` ni `docs/architecture/`.
+Para todos los agentes del flow: nada de secretos, de `--no-verify`, de relajar configuración existente ni de desactivar tests. Nadie puede poseer `architecture.md`, `.claude/` ni `docs/architecture/`, y el hook impide escribirlos (y el codemap) aunque una zona los incluya por prefijo, como `docs/`.
 
 ## 6. Workflow nativo y modo A
 
@@ -225,22 +245,30 @@ flowchart LR
 │   ├── test-author.md      ola 0
 │   ├── implementer.md      un WP
 │   ├── reviewer.md         solo lectura
-│   └── qa.md               exploratorio
+│   ├── qa.md               exploratorio
+│   └── doc-updater.md      documentación viva, zona docs
 ├── workflows/
 │   └── agentic-implement.js   el pipeline completo como workflow nativo
+├── rules-library/          reglas comunes y de 10 lenguajes (fuente)
+├── rules/agentic/          las que instala rules-sync; Claude Code carga .claude/rules/
 ├── bin/
-│   ├── agentic.py          validate · pipeline-plan · open/close-stage · verify · run-* · status · stop · hook
-│   ├── test_agentic.py     tests de agentic.py y del hook
+│   ├── agentic.py          validate · pipeline-plan · open/close-stage · verify · stack · rules-sync · codemap ·
+│   │                       docs-check · install · run-* · status · stop · hook
+│   ├── test_agentic.py     tests de agentic.py, del hook y del instalador
+│   ├── test_definitions.py tests de las definiciones: agentes, reglas, plugin, CI y documentación
 │   └── test_workflow.mjs   tests de la lógica del workflow con agentes simulados
 ├── settings.json           hook PreToolUse + permisos
 ├── agentic.json            timeout_s · auth · max_fix_cycles
+├── agentic-install.json    versión y huellas, si se instaló con el plugin
 └── state/                  (ignorado por git)
     ├── ledger.md           estado legible
     ├── runs/<ID>.json      informe de cada agente
     └── snapshot-*.json     huellas para check-wave
 architecture.md             el contrato vigente
 docs/architecture/          diseños aprobados + índice de decisiones
+docs/CODEMAP.md             mapa del código, generado (si hay sección docs)
 acceptance/  qa/            tests de aceptación y de QA
+.claude-plugin/  plugin/    solo en la plantilla: el plugin que instala todo lo anterior
 ```
 
 ## 8. Glosario
@@ -257,3 +285,6 @@ acceptance/  qa/            tests de aceptación y de QA
 - **Puertas humanas:** aprobar el diseño y aprobar el commit. Nada pasa de una fase a otra sin ti.
 - **Workflow nativo:** script de Claude Code (`.claude/workflows/`) que orquesta subagentes de forma determinista y en segundo plano. Aquí, `agentic-implement`.
 - **gatekeeper:** agente que ejecuta los pasos deterministas de `agentic.py` en nombre del workflow, que no tiene shell.
+- **Stack y reglas:** `stack` del manifiesto (los lenguajes del proyecto). `rules-sync` instala en `.claude/rules/agentic/` las reglas comunes y las de esos lenguajes, y el workflow pasa la lista a cada agente. Mandan, por este orden: `architecture.md`, el código existente, las reglas del proyecto y estas.
+- **Documentación viva:** etapa final, solo con el código aceptado. El **codemap** (ficheros y símbolos públicos) lo genera `agentic.py`, sin modelo y sin fecha, así que solo cambia cuando cambia el código. El doc-updater actualiza lo que lee el usuario y `docs-check` comprueba enlaces, anclas y rutas.
+- **Plugin:** `agentic-flow`, con un solo comando, `/agentic-flow:init`, que instala o actualiza el flow en el repo sin pisar lo que hayas modificado.

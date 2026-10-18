@@ -1,6 +1,6 @@
 ---
 model: sonnet
-description: Lleva architecture.md a código verificado con el workflow nativo agentic-implement (ola 0, olas en paralelo, verificación, revisión adversarial, QA y correcciones con tope). Si los workflows no están disponibles, usa el modo A.
+description: Lleva architecture.md a código verificado con el workflow nativo agentic-implement (ola 0, olas en paralelo, verificación, revisión adversarial, QA, correcciones con tope y documentación viva). Si los workflows no están disponibles, usa el modo A.
 argument-hint: "[ola inicial] [modo A]"
 ---
 
@@ -18,6 +18,7 @@ Argumentos: $ARGUMENTS
 2. Si la sección 11 de `architecture.md` bloquea algún WP, para.
 3. Si el diseño no está commiteado, recomienda hacer el commit antes de empezar.
 4. Ejecuta `python3 .claude/bin/agentic.py sync-permissions`. Añade a `.claude/settings.local.json` los permisos que necesitan los agentes (tests, verificación), para que el workflow no se detenga a preguntar.
+5. Ejecuta `python3 .claude/bin/agentic.py rules-sync`. Deja en `.claude/rules/agentic/` las reglas comunes y las del `stack`, que los agentes reciben en su prompt.
 
 # 2. Lanzar el workflow (vía principal)
 
@@ -54,6 +55,7 @@ Después preséntalo así:
   - avisos medios y bajos.
 - **QA:** estado, plan, defectos y huecos de cobertura.
 - **Correcciones:** `fix_cycles` y qué WP se corrigieron.
+- **Documentación (`docs`, si la hubo):** ficheros que actualizó el doc-updater, si cambió el mapa del código y el resultado de `docs-check`.
 - **Pendiente (`pending`):** cada elemento con su tipo.
   - **Diseño:** se lleva a `/architect`.
   - **Tope agotado o sin WP:** decide el usuario.
@@ -73,7 +75,8 @@ Requiere el CLI `claude` en el `PATH`. Cada paso es un comando de `python3 .clau
 5. **Correcciones:**
    - Un defecto de implementación crítico o alto se corrige con `run-wave <ola> <WP> --fix`, con un máximo de 2 ciclos por WP (el script se niega al tercero, con salida 4). Después se repiten la verificación y la etapa que lo encontró.
    - Un defecto de diseño se lleva a `/architect`.
-6. **Cierre:** el mismo informe y la misma puerta humana que en el paso 3.
+6. **Documentación** (solo si el manifiesto tiene `docs` y todo lo anterior está en OK): `codemap`, `run-docs` y `docs-check`.
+7. **Cierre:** el mismo informe y la misma puerta humana que en el paso 3.
 
 # Reglas
 

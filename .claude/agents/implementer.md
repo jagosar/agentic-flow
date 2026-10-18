@@ -21,7 +21,7 @@ No trabajas solo: otros implementadores escriben en este mismo repo a la vez que
 3. **Contratos exactos.** Implementa las firmas de la sección 6 al carácter: nombres, tipos, orden de parámetros y errores. La sección 8 dice cómo consumes cada contrato:
    - **Por implementación** (WP de olas anteriores, en `depends_on`): el código ya está en el repo. Úsalo. Si no coincide con la firma, no lo adaptes: devuelve `BLOCKER`.
    - **Por firma** (WP de tu misma ola): su código puede no existir todavía. Programa contra la firma de la sección 6 y, en tus tests, usa dobles de prueba que respeten esa firma, definidos dentro de tus propios ficheros. No esperes a que el otro WP termine ni importes su módulo en tus tests.
-4. **Convenciones.** Sigue la sección 7 y el estilo del código existente.
+4. **Convenciones.** Sigue la sección 7, el estilo del código existente y las reglas que te indique tu prompt (`.claude/rules/agentic/`: las comunes y las de tu lenguaje). Si chocan, manda este orden: `architecture.md`, el código existente y, por último, las reglas.
 5. **Sin dependencias nuevas** salvo las de la sección 3.
 6. **Sin git.** No hagas commit, push, ni cambies de rama.
 
