@@ -1,7 +1,7 @@
 # How-to: Claude Code en terminal
 
 **Objetivo:** ejecutar el flow completo desde una terminal, de forma interactiva o por scripts.
-**Estado:** probado. Pasada completa (`/architect`, `/implement` y QA) en modo A y en modo B con Claude Code 2.1.302.
+**Estado:** probado con Claude Code 2.1.302. Pasada completa del flow v2 en modo A (arquitecto, revisión del plan, ola 0, olas, verificación, revisor y QA), y del v1 también en modo B.
 
 Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala el flow en tu proyecto](README.md#instalar-el-flow-en-un-proyecto).
 
@@ -53,7 +53,7 @@ git add architecture.md && git commit -m "Architecture: pagos gRPC"
 
 - El orquestador cambia solo al último Sonnet, comprueba que `claude` existe y usa el modo A.
 - Cada ola corre en segundo plano y la sesión te avisa cuando termina.
-- **Resultado esperado:** una tabla de WP en `DONE`, la integración en verde y el estado de QA.
+- **Resultado esperado:** la aceptación en rojo tras la ola 0, los WP en `DONE`, las fases de verificación con la aceptación en verde, el estado del revisor y de QA y los commits propuestos, a la espera de tu aprobación.
 
 Para ver el avance en directo desde otra terminal:
 
@@ -97,12 +97,12 @@ Todas las olas seguidas, y QA al final:
 set -e; A=.claude/bin/agentic.py; python3 $A run-acceptance; python3 $A acceptance --expect red; for n in $(python3 -c "import json,re;m=json.loads(re.search(r'\`\`\`json\s+wp-manifest\s*\n(.*?)\n\`\`\`',open('architecture.md').read(),re.S).group(1));print(' '.join(map(str,sorted({w['wave'] for w in m['work_packages']}))))"); do python3 .claude/bin/agentic.py run-wave $n; done; python3 $A acceptance --expect green; python3 $A run-review; python3 $A run-qa
 ```
 
-## 5. Corregir defectos de QA
+## 5. Corregir defectos (revisor o QA)
 
 Lee el informe:
 
 ```bash
-python3 -c "import json;print(json.load(open('.claude/state/runs/QA.json'))['result'])"
+python3 -c "import json;[print(r, json.load(open(f'.claude/state/runs/{r}.json'))['result'][:2000]) for r in ('REVIEW','QA')]"
 ```
 
 Relanza el WP afectado en modo corrección:
@@ -111,13 +111,15 @@ Relanza el WP afectado en modo corrección:
 python3 .claude/bin/agentic.py run-wave 1 WP-01 --fix
 ```
 
-Vuelve a pasar QA:
+Vuelve a verificar: aceptación, revisor y QA.
 
 ```bash
-python3 .claude/bin/agentic.py run-qa
+python3 .claude/bin/agentic.py acceptance --expect green && python3 .claude/bin/agentic.py run-review && python3 .claude/bin/agentic.py run-qa
 ```
 
-Sin `--fix`, el WP se implementa como si fuera nuevo y no lee el informe de QA.
+Hay un máximo de 2 ciclos `--fix` por WP. Al tercero, el script sale con código 4: el defecto no se arregla insistiendo y te toca decidir, o revisar el contrato con `/architect`.
+
+Con `--fix`, el implementer recibe la instrucción de corregir los defectos que le asignan los informes del revisor y de QA, y de dejar en verde sus tests de aceptación. Sin `--fix`, el WP se implementa como si fuera nuevo y no lee ningún informe.
 
 ## 6. Servidor remoto por SSH
 

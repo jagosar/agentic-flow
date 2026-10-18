@@ -58,7 +58,7 @@ REVIEW_TOOLS = ["Read", "Glob", "Grep", "Bash(git diff:*)", "Bash(git status:*)"
 # que Claude Code resuelve al Sonnet más reciente que conoce; no se puede cambiar por config ni por entorno.
 WORKER_MODEL = "sonnet"
 # El arquitecto usa siempre el último Opus (alias `opus`, en el frontmatter de /architect).
-# Los orquestadores (/implement y /qa) también van en el último Sonnet, desde su frontmatter.
+# El orquestador (/implement) también va en el último Sonnet, desde su frontmatter.
 ARCHITECT_MODEL = "opus"
 DEFAULT_CONFIG = {
     "timeout_s": 1800,
@@ -91,6 +91,35 @@ FORBIDDEN_BASH = [
     (re.compile(r"\bclaude\b(?=.*(\s-p\b|\s--print\b))", re.S),
      "no se pueden lanzar otras sesiones de Claude"),
 ]
+# ---- Guardarraíles de contenido (adaptados de ECC: config-protection, block-no-verify, governance-capture) ----
+# Saltarse los hooks de git: prohibido para todos, también para la sesión principal.
+GIT_HOOK_BYPASS_RE = re.compile(r"\bgit\b[^;&|\n]*?(\s--no-verify\b|\s-c\s*core\.hookspath=)", re.I)
+GIT_COMMIT_N_RE = re.compile(r"\bgit\b[^;&|\n]*?\scommit\b[^;&|\n]*?\s-n\b")  # se aplica sin el texto entre comillas
+QUOTED_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
+# Configuración de calidad: crearla está permitido; modificar la existente, no (salvo "config_edit": true en el WP).
+PROTECTED_CONFIG_RE = re.compile(
+    r"^(\.eslintrc(\.(js|cjs|json|ya?ml))?|eslint\.config\.[cm]?[jt]s|\.prettierrc(\.(js|cjs|json|ya?ml))?|"
+    r"prettier\.config\.[cm]?js|\.?biome\.jsonc?|\.?ruff\.toml|\.flake8|\.pylintrc|pylintrc|\.?mypy\.ini|"
+    r"pytest\.ini|tox\.ini|setup\.cfg|\.coveragerc|pyproject\.toml|tsconfig(\.[\w-]+)?\.json|"
+    r"(jest|vitest|playwright)\.config\.[cm]?[jt]s|\.stylelintrc(\.\w+)?|\.golangci\.ya?ml|\.?rustfmt\.toml|"
+    r"clippy\.toml|\.editorconfig|\.shellcheckrc|\.(eslint|prettier|stylelint)ignore)$", re.I)
+# Desactivar tests sin condición para ponerlos en verde (skipIf/skipUnless condicionales sí se permiten).
+SKIP_MARKER_RE = re.compile(
+    r"@unittest\.skip\b(?!If|Unless)|\bunittest\.skip\(|@skip\(|\bexpectedFailure\b|"
+    r"pytest\.mark\.(skip|xfail)\b(?!if)|\bpytest\.(skip|xfail)\(|"
+    r"\b(it|test|describe|context)\.(skip|only|todo)\(|\bx(it|describe|test)\(|\bf(it|describe)\(|"
+    r"\bt\.Skip(Now)?\(|#\[ignore\]")
+TEST_PATH_RE = re.compile(r"(^|/)(tests?|spec|__tests__|acceptance|qa)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
+SECRET_RES = [
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "clave de acceso de AWS"),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}"), "token de GitHub"),
+    (re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"), "clave de Anthropic"),
+    (re.compile(r"\bsk-(proj-)?[A-Za-z0-9]{32,}"), "clave de API tipo sk-"),
+    (re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"), "token de Slack"),
+    (re.compile(r"AIza[0-9A-Za-z_\-]{35}"), "clave de Google"),
+    (re.compile(r"-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY"), "clave privada"),
+]
+
 # Primer token de una regla allow_bash que daría ejecución arbitraria si va solo.
 OPEN_ENDED = {"bash", "sh", "zsh", "fish", "dash", "python", "python3", "node", "deno", "bun", "ruby", "perl",
               "php", "env", "xargs", "sudo", "eval", "exec", "npx", "npm", "pnpm", "yarn", "uv", "poetry",
@@ -218,6 +247,8 @@ def validate(manifest):
         for key in ("wave", "files"):
             if key not in wp:
                 errors.append(f"{wp['id']}: falta el campo '{key}'.")
+        if "config_edit" in wp and not isinstance(wp["config_edit"], bool):
+            errors.append(f"{wp['id']}: 'config_edit' debe ser true o false.")
         if not isinstance(wp.get("wave", 0), int):
             errors.append(f"{wp['id']}: 'wave' debe ser un entero.")
         for dep in wp.get("depends_on", []):
@@ -277,8 +308,7 @@ def agent_model_errors(manifest):
         errors.append(f"Agente 'plan-reviewer': su frontmatter debe decir 'model: {ARCHITECT_MODEL}' (el último Opus), "
                       f"no '{frontmatter_model(plan_reviewer)}'.")
     for command, expected, label in (("architect", ARCHITECT_MODEL, "el último Opus"),
-                                     ("implement", WORKER_MODEL, "el último Sonnet"),
-                                     ("qa", WORKER_MODEL, "el último Sonnet")):
+                                     ("implement", WORKER_MODEL, "el último Sonnet")):
         f = ROOT / ".claude" / "commands" / f"{command}.md"
         if f.exists() and frontmatter_model(f) != expected:
             errors.append(f"/{command}: su frontmatter debe decir 'model: {expected}' ({label}), "
@@ -670,11 +700,52 @@ def claim(agent_id, wanted):
         pass
 
 
+def written_text(tool, tinput):
+    """Lo que la herramienta va a escribir, y lo que sustituye (para comparar)."""
+    if tool == "Write":
+        return tinput.get("content") or "", None
+    if tool == "Edit":
+        return tinput.get("new_string") or "", tinput.get("old_string") or ""
+    if tool == "MultiEdit":
+        edits = tinput.get("edits") or []
+        return ("\n".join(e.get("new_string", "") for e in edits),
+                "\n".join(e.get("old_string", "") for e in edits))
+    if tool == "NotebookEdit":
+        return tinput.get("new_source") or "", None
+    return "", None
+
+
+def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
+    new, old = written_text(tool, tinput)
+    for rx, what in SECRET_RES:
+        if rx.search(new):
+            block(f"{owner_id}: lo que vas a escribir en {rel} contiene lo que parece una {what}. "
+                  "Usa un valor sintético o una variable de entorno; nunca un secreto real.")
+    if PROTECTED_CONFIG_RE.match(Path(rel).name) and abs_path.exists() and not ent.get("config_edit"):
+        block(f"{owner_id}: {rel} es configuración de calidad ya existente. No se relaja una regla para pasar "
+              "una comprobación: arregla el código. Si de verdad hay que cambiarla, devuelve STATUS: BLOCKER.")
+    if TEST_PATH_RE.search(rel):
+        if old is None:
+            try:
+                old = abs_path.read_text(encoding="utf-8", errors="replace") if tool == "Write" and abs_path.exists() else ""
+            except OSError:
+                old = ""
+        if len(SKIP_MARKER_RE.findall(new)) > len(SKIP_MARKER_RE.findall(old)):
+            block(f"{owner_id}: no se desactivan tests para ponerlos en verde (skip, xfail, only…) en {rel}. "
+                  "Un test que falla se arregla o se reporta: devuelve STATUS: BLOCKER. "
+                  "Los saltos condicionales de plataforma (skipIf/skipUnless) sí están permitidos.")
+
+
 def guard(data):
     tool = data.get("tool_name", "")
     tinput = data.get("tool_input", {}) or {}
     agent_id = data.get("agent_id")
     owner_id = os.environ.get("AGENTIC_WP")
+
+    bash_cmd = tinput.get("command", "") if tool == "Bash" else ""
+    if bash_cmd and (GIT_HOOK_BYPASS_RE.search(bash_cmd) or GIT_COMMIT_N_RE.search(QUOTED_RE.sub("''", bash_cmd))):
+        block("saltarse los hooks de git (--no-verify, commit -n, core.hooksPath) no está permitido a ningún agente. "
+              "Si un hook falla, arregla la causa o pídele al usuario que decida.")
 
     if tool == "Bash" and agent_id and not owner_id:
         m = CLAIM_RE.search(tinput.get("command", ""))
@@ -684,7 +755,7 @@ def guard(data):
 
     if not owner_id and agent_id:
         owner_id = with_claims(lambda c: None).get(agent_id)
-        if not owner_id and data.get("agent_type") in ("implementer", "qa"):
+        if not owner_id and data.get("agent_type") in ("implementer", "qa", "test-author", "reviewer"):
             block("Antes de nada, ejecuta `python3 .claude/bin/agentic.py claim <ID>` con tu WP-ID (o QA).")
     if not owner_id:
         return  # hilo principal u otro subagente: sin restricciones
@@ -710,6 +781,7 @@ def guard(data):
     if not any(owns(f, rel) for f in ent["files"]):
         block(f"{owner_id} no posee {rel}. Ficheros permitidos: {', '.join(ent['files'])}. "
               "Si necesitas tocarlo, devuelve STATUS: BLOCKER (o, si eres QA, repórtalo como defecto).")
+    content_checks(owner_id, ent, rel, abs_path, tool, tinput)
 
 
 def hook():

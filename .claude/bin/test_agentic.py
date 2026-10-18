@@ -256,6 +256,54 @@ class V2EntityTests(Base):
         self.assertIn("ERROR", r.stdout)
 
 
+class ContentGuardTests(Base):
+    """Guardarraíles de contenido adaptados de ECC: bypass de hooks, config, tests desactivados y secretos."""
+    manifest = dict(MANIFEST, work_packages=[
+        {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/a.py", "tests/test_a.py", "pyproject.toml", "setup.cfg"]},
+        {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["ruff.toml"], "config_edit": True},
+    ])
+
+    def w(self, rel, content, wp="WP-01", tool="Write", old=None):
+        tinput = {"file_path": str(self.repo.dir / rel)}
+        if tool == "Write":
+            tinput["content"] = content
+        else:
+            tinput.update(new_string=content, old_string=old or "")
+        return self.repo.hook({"tool_name": tool, "tool_input": tinput}, wp=wp)
+
+    def test_no_verify_bloqueado_para_todos(self):
+        for cmd in ["git commit --no-verify -m x", "git commit -n -m x", "git -c core.hooksPath=/dev/null commit -m x", "sh -c 'git commit --no-verify'",
+                    "git push --no-verify"]:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.repo.hook(bash_payload(cmd)), 2, "también en la sesión principal")
+        for cmd in ["git commit -m 'arregla -n'", "git log -n 5", "git commit -m x"]:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.repo.hook(bash_payload(cmd)), 0)
+
+    def test_config_existente_protegida(self):
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 88\n")
+        self.assertEqual(self.w("pyproject.toml", "[tool.ruff]\nline-length = 300\n"), 2)
+        self.assertEqual(self.w("setup.cfg", "x"), 0, "crear configuración nueva está permitido")
+        self.repo.write("ruff.toml", "a")
+        self.assertEqual(self.w("ruff.toml", "b", wp="WP-02"), 0, "config_edit: true lo permite")
+
+    def test_no_se_desactivan_tests(self):
+        self.assertEqual(self.w("tests/test_a.py", "import unittest\n@unittest.skip('x')\ndef test(): pass\n"), 2)
+        self.assertEqual(self.w("tests/test_a.py", "import pytest\n@pytest.mark.xfail\ndef test(): pass\n"), 2)
+        self.assertEqual(self.w("tests/test_a.py", "it.only('x', () => {})", tool="Edit"), 2)
+        self.assertEqual(self.w("tests/test_a.py", "@unittest.skipIf(os.geteuid() == 0, 'root')\ndef test(): pass\n"), 0)
+        self.assertEqual(self.w("src/a.py", "# pytest.mark.skip en un comentario de código\n"), 0, "solo en ficheros de test")
+        self.assertEqual(self.w("tests/test_a.py", "@unittest.skip('ya estaba')\nX", tool="Edit",
+                                old="@unittest.skip('ya estaba')\n"), 0, "no cuenta lo que ya existía")
+
+    def test_secretos(self):
+        for secret in ["AKIA" + "A" * 16, "ghp_" + "a" * 36, "sk-ant-" + "a" * 30,
+                       "-----BEGIN RSA PRIVATE KEY-----", "xoxb-" + "1" * 12]:
+            with self.subTest(secret=secret[:8]):
+                self.assertEqual(self.w("src/a.py", f"TOKEN = '{secret}'\n"), 2)
+        self.assertEqual(self.w("src/a.py", "TOKEN = os.environ['API_TOKEN']\n"), 0)
+
+
 class HookFailClosedTests(unittest.TestCase):
     def setUp(self):
         self.repo = Repo(raw_manifest='{"work_packages": [ roto')
@@ -410,7 +458,7 @@ class LauncherTests(Base):
         self.assertEqual(agentic.frontmatter_model(root / ".claude/commands/architect.md"), "opus")
         for name in ("implementer", "qa"):
             self.assertEqual(agentic.frontmatter_model(root / f".claude/agents/{name}.md"), "sonnet")
-        for name in ("implement", "qa"):
+        for name in ("implement",):
             self.assertEqual(agentic.frontmatter_model(root / f".claude/commands/{name}.md"), "sonnet")
 
     def test_orquestador_debe_ser_sonnet(self):

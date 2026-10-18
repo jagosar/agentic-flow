@@ -42,7 +42,7 @@ Elige una de estas opciones:
 /implement modo B
 ```
 
-- **Usa el modo B en la nube.** No está comprobado que dentro de la VM haya un CLI que pueda lanzar sesiones `claude -p`. El modo B reparte el trabajo en subagentes de la propia sesión, con los mismos guardarraíles.
+- **Usa el modo B en la nube.** El test-author, los implementers, el revisor y QA se lanzan como subagentes de la propia sesión, con los mismos guardarraíles. No está comprobado que dentro de la VM haya un CLI que pueda lanzar sesiones `claude -p`. El modo B reparte el trabajo en subagentes de la propia sesión, con los mismos guardarraíles.
 - Los cambios aparecen con el indicador `+N -M`. Ábrelo para ver el diff y comentar líneas.
 - Cuando termine, crea el PR desde la interfaz de la sesión.
 

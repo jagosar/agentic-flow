@@ -153,6 +153,7 @@ Campos del manifiesto:
 - **`ignore` (opcional):** artefactos del build o de los tests que no son de nadie, por ejemplo `["dist/", "*.log"]`.
 - **`qa` (opcional):** la zona de QA. Por defecto, `qa/`.
 - **`agent` (opcional, por WP):** el subagente que lo implementa. Por defecto, `implementer`. Su definición debe declarar `model: sonnet`.
+- **`config_edit` (opcional, por WP):** `true` solo si ese WP debe modificar configuración de calidad ya existente (linters, formatters, `pyproject.toml`, `tsconfig.json`…). Sin él, el hook lo bloquea, para que nadie relaje una regla y así pase una comprobación. Crear configuración nueva siempre está permitido.
 - **Restricciones:** ninguna zona puede solaparse con otra, y nadie puede poseer `architecture.md`, `.claude/` ni `docs/architecture/`.
 
 ## 4. Autovalidación

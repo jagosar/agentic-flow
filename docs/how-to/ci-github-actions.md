@@ -53,6 +53,8 @@ jobs:
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: python3 .claude/bin/agentic.py validate
+      # Determinista y gratis: los tests de aceptación de la ola 0 deben pasar.
+      - run: python3 .claude/bin/agentic.py acceptance --expect green
       - name: Agente QA
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -79,13 +81,13 @@ Qué hace cada parte que no es estándar:
 
 ## Resultado
 
-- El job falla si QA devuelve `FAIL` o `BLOCKER`, o si escribe fuera de `qa/`.
+- El job falla si la aceptación no pasa (sin coste: no lanza ningún agente), o si QA devuelve `FAIL` o `BLOCKER` o escribe fuera de `qa/`.
 - El informe aparece en el resumen del job, y los tests de QA se pueden descargar como artifact.
 - Los tests de QA no se commitean desde CI. Si quieres conservarlos, descarga el artifact y haz tú el commit.
 
 ## Alternativa oficial
 
-La action [`anthropics/claude-code-action@v1`](https://github.com/anthropics/claude-code-action), con la entrada `claude_code_oauth_token`, sirve para responder a menciones `@claude` y para automatizaciones con `prompt`. Ejecutarla con `prompt: "/qa"` debería funcionar, pero aquí se usa el script directamente porque da el código de salida y el informe con el formato del flow. También puedes configurar la action y su secreto con `/install-github-app` desde Claude Code.
+La action [`anthropics/claude-code-action@v1`](https://github.com/anthropics/claude-code-action), con la entrada `claude_code_oauth_token`, sirve para responder a menciones `@claude` y para automatizaciones con `prompt`. Aquí se usa el script directamente, porque aplica los guardarraíles del flow, separa la aceptación (determinista) de QA (agente) y da el código de salida y el informe con el formato del flow. También puedes configurar la action y su secreto con `/install-github-app` desde Claude Code.
 
 ## Puntos a vigilar
 

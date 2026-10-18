@@ -2,6 +2,7 @@
 
 > Revisado el 18-10-2026 con Claude Code 2.1.302 y la documentación oficial en [code.claude.com/docs](https://code.claude.com/docs/en/overview).
 > Lee esta página primero: tiene lo común a todos los entornos. Luego sigue la guía de tu entorno.
+> Para los esquemas técnicos (secuencia, ciclo de vida, decisión del hook y permisos), consulta [Cómo funciona](../how-it-works.md).
 
 ## Elige tu entorno
 
@@ -53,7 +54,7 @@ La animación se genera con `python3 docs/assets/make_flow_gif.py` (requiere Pil
 | Test-author | `.claude/agents/test-author.md` | Último Sonnet | Escribe los tests de aceptación desde los AC, antes del código | Implementar |
 | Implementer | `.claude/agents/implementer.md` | Último Sonnet | Implementa un WP con sus tests unitarios | Tocar ficheros ajenos o los tests de aceptación |
 | Revisor | `.claude/agents/reviewer.md` | Último Sonnet | Revisa calidad y seguridad con filtro de confianza | Escribir nada |
-| QA | `.claude/agents/qa.md` + `/qa` | Último Sonnet | Pruebas exploratorias en `qa/` | Corregir código de producción |
+| QA | `.claude/agents/qa.md` | Último Sonnet | Pruebas exploratorias en `qa/`, como etapa de `/implement` | Corregir código de producción |
 
 ### Por qué este orden
 
@@ -230,7 +231,7 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano (modo B)
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 58 tests de los guardarraíles, el lanzador, el ledger y las etapas del flow v2. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
+Son 62 tests de los guardarraíles (incluidos los de contenido), el lanzador, el ledger y las etapas del flow v2. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
 
 ## Problemas frecuentes
 
@@ -238,13 +239,17 @@ Son 58 tests de los guardarraíles, el lanzador, el ledger y las etapas del flow
 |---|---|---|
 | `does not support this model; version X or newer is required` | CLI antiguo para un modelo nuevo | `claude update`. Con npm: `npm install -g @anthropic-ai/claude-code@latest`. Con nvm, usa el npm de nvm, no el del sistema |
 | `Ignoring 1 permissions.allow entry ... not been trusted` | La carpeta no es de confianza | Abre `claude` una vez en ella y acepta el aviso |
-| `Manifiesto inválido: ... model: sonnet` u `opus` | Alguien fijó otro modelo en un agente o comando | Restaura `model: sonnet` (agentes, `/implement`, `/qa`) o `model: opus` (`/architect`) |
+| `Manifiesto inválido: ... model: sonnet` u `opus` | Alguien fijó otro modelo en un agente o comando | Restaura `model: sonnet` (agentes de ejecución y `/implement`) o `model: opus` (`/architect` y `plan-reviewer`) |
 | `RESULTADO: REVISAR` sin `STATUS` | El proceso hijo falló (límite de uso, red, autenticación) | Lee `.claude/state/runs/<ID>.log` |
 | `TIMEOUT` | La etapa superó `timeout_s` | Sube `timeout_s` o divide el WP |
 | `FUERA DE PROPIEDAD` | Un agente escribió fuera de su zona, o un artefacto de build no está ignorado | Revisa `git diff`. Si es un artefacto (`dist/`…), añádelo a `ignore` en el manifiesto |
 | `[agentic guard] ... no posee ...` | El hook hizo su trabajo | Si ese fichero debía ser del WP, corrige el manifiesto con `/architect` |
 | `YA PASAN SIN CÓDIGO` en la ola 0 | Los tests de aceptación no prueban nada | Revisa los AC con `/architect`: les falta un resultado observable concreto |
 | `agotó sus 2 ciclos --fix` | El defecto no se arregla insistiendo | Decide tú, o cambia el contrato o el AC con `/architect` |
+| `... es configuración de calidad ya existente` | Un agente intentó relajar un linter o formatter | Es lo correcto. Si el diseño de verdad exige cambiarla, añade `"config_edit": true` a ese WP con `/architect` |
+| `no se desactivan tests para ponerlos en verde` | Un agente intentó añadir `skip`, `xfail` u `only` | El test se arregla o se reporta como `BLOCKER`. Los saltos condicionales (`skipIf`) sí se permiten |
+| `... parece una clave ...` | Un agente iba a escribir algo con forma de credencial | Usa variables de entorno o valores sintéticos. Si es un falso positivo en un fixture, cambia el valor de ejemplo |
+| `saltarse los hooks de git ... no está permitido` | `--no-verify`, `commit -n` o `core.hooksPath` | Arregla lo que hace fallar el hook de git, o hazlo tú a mano si de verdad hace falta |
 | Todas las olas tienen un solo WP | El arquitecto eligió capas reales | Pídele "contratos primero" |
 | Un WP relanzado devuelve `BLOCKER` hablando de defectos que no son suyos | Usaste `--fix` con un informe de QA viejo | Relánzalo sin `--fix`, o ejecuta `run-qa` antes |
 | Las olas van en serie en el modo B | El orquestador no agrupó las llamadas a Agent | Usa el modo A, o pídeselo de nuevo explícitamente |

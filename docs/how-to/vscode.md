@@ -21,7 +21,7 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 
 ## 2. Abrir el proyecto
 
-Usa `File → Open Folder` sobre la raíz del repo, donde está `.claude/`. Al escribir `/` en el panel, deberían aparecer `/architect`, `/implement` y `/qa`.
+Usa `File → Open Folder` sobre la raíz del repo, donde está `.claude/`. Al escribir `/` en el panel, deberían aparecer `/architect` y `/implement`.
 
 ## 3. Usar el flow
 
@@ -42,7 +42,7 @@ Usa `File → Open Folder` sobre la raíz del repo, donde está `.claude/`. Al e
 
 ## 4. Revisar y commit
 
-- **Source Control** muestra cada fichero tocado. Abre `qa/report.md` para ver el resultado de QA.
+- **Source Control** muestra cada fichero tocado: código, `acceptance/` (ola 0) y `qa/`. Abre `qa/report.md` para ver el resultado de QA.
 - Haz el commit y el push desde Source Control, o pídeselos a la sesión.
 
 ## Alternativa: el CLI en la terminal integrada
