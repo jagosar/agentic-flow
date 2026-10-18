@@ -1,23 +1,45 @@
-# Tests de los guardarraíles. Solo corre en el repo plantilla, no en los proyectos creados a partir de él.
+# Tests del propio flow: guardarraíles, comandos del pipeline, lógica del workflow (agentes simulados),
+# definiciones de agentes y deriva de la documentación. Solo corre en el repo plantilla, no en los
+# proyectos creados a partir de él.
+#
+# Endurecido: actions fijadas por SHA (la etiqueta va en el comentario), permisos mínimos, sin credenciales
+# persistidas en el checkout, sin instalar nada de terceros, concurrencia y timeout acotados.
 name: agentic-flow-ci
 on:
   push:
-    paths: [".claude/**", ".github/workflows/agentic-flow-ci.yml"]
+    paths: [".claude/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml"]
   pull_request:
-    paths: [".claude/**", ".github/workflows/agentic-flow-ci.yml"]
+    paths: [".claude/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentic-flow-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     if: github.repository == 'jagosar/agentic-flow'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         python: ["3.9", "3.12", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
           allow-prereleases: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
       - run: git config --global init.defaultBranch main
-      - run: python -m unittest discover -s .claude/bin -p "test_*.py" -v
+      - name: Escenarios del workflow (agentes simulados)
+        run: node .claude/bin/test_workflow.mjs
+      - name: Guardarraíles, comandos y definiciones
+        run: python -m unittest discover -s .claude/bin -p "test_*.py" -v

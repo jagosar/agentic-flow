@@ -31,29 +31,37 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore: ["docs/**"]
 
+permissions:
+  contents: read
+
 concurrency:
   group: agentic-qa-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   qa:
-    if: github.event.pull_request.draft == false && hashFiles('architecture.md') != ''
+    # Solo ramas del propio repo (nunca forks) y nunca borradores; sin architecture.md no hay nada que validar.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false &&
+      hashFiles('architecture.md') != ''
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    permissions:
-      contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
       # Aquí, la instalación de las dependencias de tu proyecto (sección 3 de architecture.md).
-      - name: Instalar Claude Code
-        run: |
-          curl -fsSL https://claude.ai/install.sh | bash
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Instalar Claude Code (versión exacta desde npm)
+        run: npm install -g @anthropic-ai/claude-code@2.1.302
       - run: python3 .claude/bin/agentic.py validate
-      # Determinista y gratis: los tests de aceptación de la ola 0 deben pasar.
+      # Determinista, sin secretos y sin coste: los tests de aceptación de la ola 0 deben pasar.
       - run: python3 .claude/bin/agentic.py acceptance --expect green
       - name: Agente QA
         env:
@@ -63,7 +71,7 @@ jobs:
         if: always()
         run: |
           python3 -c "import json;print(json.load(open('.claude/state/runs/QA.json'))['result'])" >> "$GITHUB_STEP_SUMMARY" || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: qa-report
@@ -74,10 +82,13 @@ jobs:
 
 Qué hace cada parte que no es estándar:
 
+- **Actions fijadas por SHA:** una etiqueta como `@v7` se puede mover y apuntar a otro código; un SHA, no. La versión va en el comentario. Para actualizarlas, resuelve el SHA de la nueva versión con `gh api repos/<owner>/<action>/git/ref/tags/<versión>`.
+- **`permissions: contents: read` y `persist-credentials: false`:** el job no puede escribir en el repo, y el token de GitHub no queda guardado en el checkout, al alcance del código que se ejecute.
+- **Solo ramas del propio repo:** el agente QA ejecuta los tests del PR con tu token de suscripción en el entorno. Un PR malicioso de un fork podría intentar leerlo. GitHub no pasa secretos a los forks, y esta condición lo deja explícito.
+- **El token solo en el paso de QA:** `validate` y la aceptación ejecutan el código del PR sin ningún secreto en el entorno.
+- **Claude Code en versión exacta:** instalado desde npm con la versión fijada, en lugar de `curl | bash` con la última. Actualiza la versión a propósito, no por sorpresa.
 - **`concurrency`:** si haces push varias veces seguidas, solo corre la última ejecución, lo que ahorra límites de uso.
-- **`if`:** no corre en borradores ni en ramas sin arquitectura.
 - **`timeout-minutes`:** es el freno del job. El flow tiene además su propio `timeout_s`.
-- **`CLAUDE_CODE_OAUTH_TOKEN`:** autentica con tu suscripción. El lanzador lo deja pasar a QA, porque solo quita `ANTHROPIC_API_KEY` y `ANTHROPIC_AUTH_TOKEN`.
 
 ## Resultado
 

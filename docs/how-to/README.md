@@ -236,7 +236,7 @@ python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 78 tests de los guardarraíles, los comandos del pipeline, el lanzador y el ledger, más 14 escenarios de la lógica del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
+Son 101 tests en Python y 14 escenarios del workflow con agentes simulados (`node .claude/bin/test_workflow.mjs`). Además de los guardarraíles y los comandos, comprueban las propias definiciones: modelo y herramientas de cada agente, secciones obligatorias (defensa ante inyección, `claim`, formato de informe), que el workflow solo use agentes y comandos que existen, que la documentación no cite comandos inexistentes ni tenga enlaces rotos, que no haya rutas personales versionadas y que el CI tenga las actions fijadas por SHA. Si cambias un prompt y rompes una de esas reglas, el test falla.
 
 ## Problemas frecuentes
 
