@@ -61,6 +61,16 @@ Para ver el avance en directo desde otra terminal:
 tail -f .claude/state/runs/*.log
 ```
 
+Mientras corre, puedes seguir usando la sesión. Para ver el estado o parar:
+
+```bash
+python3 .claude/bin/agentic.py status
+```
+
+```bash
+python3 .claude/bin/agentic.py stop
+```
+
 ## 4. Flujo manual, sin orquestador
 
 Con `architecture.md` aprobado puedes lanzar cada etapa desde la shell. Cada comando devuelve `0` si todo va bien y `3` si hay que revisar.

@@ -160,10 +160,31 @@ python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # corregir sus defectos d
 python3 .claude/bin/agentic.py run-qa                  # agente QA (modo A)
 python3 .claude/bin/agentic.py snapshot 1              # antes de una ola en modo B
 python3 .claude/bin/agentic.py check-wave 1            # verificación de propiedad
+python3 .claude/bin/agentic.py status                  # ledger: estado de cada agente y etapa
+python3 .claude/bin/agentic.py stop                    # parar todos los agentes en marcha
+python3 .claude/bin/agentic.py stop WP-02              # parar uno
+python3 .claude/bin/agentic.py mark WP-02 blocker nota # anotar a mano (modo B)
 ```
 
 - **Códigos de salida:** `0` si todo está bien, `1` si hay un error de uso o el manifiesto no es válido, `3` si hay que revisar.
 - **Informes de cada agente:** `.claude/state/runs/<ID>.json` (campo `result`) y `<ID>.log`.
+
+## Seguir y parar el trabajo
+
+- **La sesión no se bloquea.** Las olas y QA corren en segundo plano, así que puedes seguir hablando con la sesión mientras trabajan.
+- **"¿Cómo va?"** El orquestador responde desde el **ledger**, `.claude/state/ledger.md`. Lo escribe `agentic.py`, no el modelo, así que no se pierde aunque la conversación se compacte. Ejemplo:
+
+  ```
+  ## Etapas
+  - ola 1: OK (20:48)
+
+  ## Agentes
+  - [done]    WP-01 (sonnet) — etapa 1 — modo A — inicio 20:48 — DONE
+  - [blocker] WP-03 (sonnet) — etapa 2 — modo B — inicio 20:48 — falta firma 6.2
+  ```
+
+- **"Para" o "para WP-02".** El orquestador ejecuta `stop`. En el modo A mata los procesos y la etapa queda en `REVISAR` con `STOPPED`. En el modo B también para el subagente con `TaskStop`.
+- **Informes cortos.** Implementers y QA responden en menos de 300 palabras, con el resultado primero. El detalle de QA va en `qa/report.md`.
 
 ## Configuración
 
@@ -186,7 +207,7 @@ python3 .claude/bin/agentic.py check-wave 1            # verificación de propie
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
 ```
 
-Son 43 tests de los guardarraíles y del lanzador. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
+Son 47 tests de los guardarraíles, el lanzador y el ledger. Usan un `claude` falso, así que no hacen llamadas reales. En el repo plantilla corren en CI con Python 3.9, 3.12 y 3.14.
 
 ## Problemas frecuentes
 

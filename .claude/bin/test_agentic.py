@@ -390,6 +390,60 @@ class LauncherTests(Base):
         self.assertEqual(r.returncode, 1)
         self.assertIn("run-qa", r.stderr)
 
+    # ---------- ledger, mark y stop ----------
+
+    def status(self):
+        return self.repo.run("status").stdout
+
+    def test_ledger_tras_una_ola(self):
+        self.assertEqual(self.repo.run("run-wave", "1").returncode, 0)
+        st = self.status()
+        self.assertIn("[done]", st)
+        self.assertIn("WP-01 (sonnet)", st)
+        self.assertIn("modo A", st)
+        self.assertIn("ola 1: OK", st)
+        self.assertNotIn("WP-03", st, "WP-03 es de la ola 2 y no se ha lanzado")
+
+    def test_mark(self):
+        r = self.repo.run("mark", "WP-02", "blocker", "falta", "el", "contrato")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        st = self.status()
+        self.assertIn("[blocker]", st)
+        self.assertIn("falta el contrato", st)
+        self.assertEqual(self.repo.run("mark", "WP-02", "raro").returncode, 1)
+        self.assertEqual(self.repo.run("mark", "WP-99", "done").returncode, 1)
+
+    def test_claim_registra_modo_b(self):
+        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="ag1"))
+        st = self.status()
+        self.assertIn("[running]", st)
+        self.assertIn("WP-01 (sonnet)", st)
+        self.assertIn("modo B", st)
+
+    def test_stop_para_la_ola(self):
+        proc = subprocess.Popen([sys.executable, str(SCRIPT), "run-wave", "1"], cwd=self.repo.dir,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                env=dict(self.repo.env, FAKE_SLEEP="30"))
+        ledger = self.repo.dir / ".claude/state/ledger.json"
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            try:
+                d = json.loads(ledger.read_text())
+                if all(d.get(w, {}).get("pid") for w in ("WP-01", "WP-02")):
+                    break
+            except (OSError, json.JSONDecodeError):
+                pass
+            time.sleep(0.1)
+        start = time.time()
+        r = self.repo.run("stop")
+        self.assertIn("parado", r.stdout)
+        out, _ = proc.communicate(timeout=15)
+        self.assertLess(time.time() - start, 10, "stop debe cortar la ola sin esperar a los agentes")
+        self.assertEqual(proc.returncode, 3)
+        self.assertIn("STOPPED", out)
+        self.assertIn("[stopped]", self.status())
+        self.assertIn("No hay agentes en marcha", self.repo.run("stop").stdout)
+
     def test_timeout(self):
         start = time.time()
         r = self.repo.run("run-wave", "1", env={"FAKE_SLEEP": "30", "AGENTIC_TIMEOUT_S": "1"})

@@ -10,7 +10,14 @@ Subcomandos:
                       los WP indicados). Con --fix, les pide corregir sus defectos del último informe de QA.
   run-qa              Lanza el agente QA (`claude -p --agent qa`) sobre el resultado integrado.
   claim ID            Asocia el subagente actual a un WP o a QA (lo registra el hook).
+  status              Muestra el ledger: estado de cada agente y de cada etapa.
+  mark ID ESTADO [NOTA]
+                      Actualiza el ledger a mano (modo B): running, done, blocker, pass, fail, stopped.
+  stop [ID...]        Para los agentes en marcha (todos si no se indica ninguno) y lo anota en el ledger.
   hook                Hook PreToolUse (lee JSON por stdin).
+
+El ledger (.claude/state/ledger.md) lo escribe este script, no el modelo: sobrevive a la compactación
+del contexto y es la fuente para responder "¿cómo va?".
 
 El manifiesto es un bloque ```json wp-manifest``` dentro de architecture.md.
 Timeout y autenticación del lanzador: .claude/agentic.json (opcional) y variables AGENTIC_*.
@@ -21,7 +28,7 @@ import hashlib
 import json
 import os
 import re
-import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -31,6 +38,9 @@ ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().par
 ARCH = ROOT / "architecture.md"
 STATE = ROOT / ".claude" / "state"
 CLAIMS = STATE / "claims.json"
+LEDGER_JSON = STATE / "ledger.json"
+LEDGER_MD = STATE / "ledger.md"
+LEDGER_STATES = ("running", "done", "blocker", "pass", "fail", "timeout", "stopped", "error")
 CONFIG = ROOT / ".claude" / "agentic.json"
 BASE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"]
 QA_DEFAULT_FILES = ["qa/"]
@@ -284,6 +294,7 @@ def snapshot(label):
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / f"snapshot-{label}.json").write_text(json.dumps(digest()))
     CLAIMS.unlink(missing_ok=True)  # cada etapa empieza sin reclamaciones
+    ledger_stage(label, "en curso")
     print(f"Snapshot de la etapa {label} guardado.")
 
 
@@ -337,8 +348,10 @@ def launch(label, jobs, cfg):
         env = child_env(cfg, AGENTIC_WP=jid, CLAUDE_PROJECT_DIR=str(ROOT))
         out = open(runs / f"{jid}.json", "w")
         err = open(runs / f"{jid}.log", "w")
-        proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                                start_new_session=True)  # su propio grupo: stop y timeout lo matan entero
         procs[jid] = (proc, out, err)
+        ledger_update(jid, state="running", stage=label, mode="A", pid=proc.pid, started=now_hm(), note="")
         print(f"Lanzado {jid} [{agent}, {WORKER_MODEL}] (pid {proc.pid})", flush=True)
 
     start = time.time()
@@ -349,13 +362,18 @@ def launch(label, jobs, cfg):
             proc.wait(timeout=max(0, deadline - time.time()))
             timed_out = False
         except subprocess.TimeoutExpired:
-            proc.kill()
+            kill_group(proc.pid)
             proc.wait()
             timed_out = True
         out.close()
         err.close()
-        statuses[jid] = (f"TIMEOUT ({cfg['timeout_s']}s)" if timed_out
-                         else parse_status(runs / f"{jid}.json", proc.returncode))
+        if timed_out:
+            statuses[jid] = f"TIMEOUT ({cfg['timeout_s']}s)"
+        elif ledger_read().get(jid, {}).get("state") == "stopped":
+            statuses[jid] = "STOPPED"
+        else:
+            statuses[jid] = parse_status(runs / f"{jid}.json", proc.returncode)
+        ledger_update(jid, state=status_to_state(statuses[jid]), pid=None, note=statuses[jid])
         print(f"{jid}: {statuses[jid]} ({int(time.time() - start)}s)", flush=True)
     return statuses
 
@@ -399,6 +417,7 @@ def finish(manifest, label, statuses, expected):
     for jid, st in statuses.items():
         print(f"  {jid}: {st}   informe: .claude/state/runs/{jid}.json")
     ok = ownership_ok and all(s == expected for s in statuses.values())
+    ledger_stage(label, "OK" if ok else "REVISAR")
     print("RESULTADO:", "OK" if ok else "REVISAR")
     sys.exit(0 if ok else 3)
 
@@ -416,20 +435,110 @@ def parse_status(path, returncode):
 
 # ---------- hook PreToolUse ----------
 
-def with_claims(fn):
-    """Ejecuta fn(claims) con el fichero de reclamaciones bloqueado; si devuelve un dict, lo guarda."""
+def locked_json(path, fn):
+    """Ejecuta fn(datos) con el fichero JSON bloqueado; si devuelve un dict, lo guarda. Devuelve los datos previos."""
     STATE.mkdir(parents=True, exist_ok=True)
-    with open(CLAIMS, "a+") as fh:
+    with open(path, "a+") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
         raw = fh.read()
-        claims = json.loads(raw) if raw.strip() else {}
-        new = fn(claims)
+        data = json.loads(raw) if raw.strip() else {}
+        new = fn(data)
         if new is not None:
             fh.seek(0)
             fh.truncate()
             fh.write(json.dumps(new, indent=2))
-        return claims
+        return data
+
+
+def with_claims(fn):
+    return locked_json(CLAIMS, fn)
+
+
+# ---------- ledger ----------
+
+def now_hm():
+    return time.strftime("%H:%M")
+
+
+def ledger_read():
+    return locked_json(LEDGER_JSON, lambda d: None)
+
+
+def ledger_update(jid, **fields):
+    def upd(d):
+        entry = dict(d.get(jid, {}), **fields, updated=now_hm())
+        return dict(d, **{jid: entry})
+    locked_json(LEDGER_JSON, upd)
+    ledger_render()
+
+
+def ledger_stage(label, result):
+    def upd(d):
+        stages = dict(d.get("_stages", {}), **{str(label): f"{result} ({now_hm()})"})
+        return dict(d, _stages=stages)
+    locked_json(LEDGER_JSON, upd)
+    ledger_render()
+
+
+def status_to_state(status):
+    head = status.split()[0] if status else ""
+    return {"DONE": "done", "BLOCKER": "blocker", "PASS": "pass", "FAIL": "fail",
+            "TIMEOUT": "timeout", "STOPPED": "stopped"}.get(head, "error")
+
+
+def stage_of(jid):
+    if jid == "QA":
+        return "qa"
+    try:
+        return str(wps(load_manifest()).get(jid, {}).get("wave", "?"))
+    except ManifestError:
+        return "?"
+
+
+def ledger_render():
+    d = ledger_read()
+    stages = d.get("_stages", {})
+    agents = {k: v for k, v in d.items() if not k.startswith("_")}
+    order = lambda kv: (kv[1].get("stage") == "qa", str(kv[1].get("stage")), kv[0])
+    lines = ["# Ledger del flow", "", f"Actualizado: {now_hm()}", "", "## Etapas", ""]
+    lines += [f"- {'ola ' + k if k != 'qa' else 'qa'}: {v}" for k, v in sorted(stages.items())] or ["- (ninguna)"]
+    lines += ["", "## Agentes", ""]
+    for jid, e in sorted(agents.items(), key=order):
+        parts = [f"- [{e.get('state', '?')}]".ljust(11) + f" {jid} ({WORKER_MODEL})",
+                 f"etapa {e.get('stage', '?')}", f"modo {e.get('mode', '?')}", f"inicio {e.get('started', '?')}"]
+        if e.get("pid"):
+            parts.append(f"pid {e['pid']}")
+        if e.get("note"):
+            parts.append(e["note"])
+        lines.append(" — ".join(parts))
+    if not agents:
+        lines.append("- (ninguno)")
+    LEDGER_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def kill_group(pid):
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def stop(ids):
+    d = ledger_read()
+    targets = [k for k, v in d.items() if not k.startswith("_") and v.get("state") == "running"
+               and (not ids or k in ids)]
+    if not targets:
+        print("No hay agentes en marcha" + (f" con esos ID: {', '.join(ids)}." if ids else "."))
+        return
+    for jid in targets:
+        e = d[jid]
+        ledger_update(jid, state="stopped", note="parado a petición")
+        if e.get("pid"):
+            kill_group(e["pid"])
+            print(f"{jid}: parado (pid {e['pid']}).")
+        else:
+            print(f"{jid}: marcado como parado. Es un subagente del modo B: páralo también con TaskStop en la sesión.")
 
 
 def block(msg):
@@ -456,6 +565,10 @@ def claim(agent_id, wanted):
     with_claims(update)
     if conflict:
         block(conflict["msg"])
+    try:  # el ledger es informativo: un fallo aquí no debe bloquear la reclamación
+        ledger_update(wanted, state="running", stage=stage_of(wanted), mode="B", pid=None, started=now_hm(), note="")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def guard(data):
@@ -530,6 +643,23 @@ def main():
         registered = os.environ.get("AGENTIC_WP") or args[0] in with_claims(lambda c: None).values()
         print(f"{args[0]} reclamado." if registered
               else f"Aviso: el hook no registró {args[0]}. ¿Están activos los hooks de .claude/settings.json?")
+    elif cmd == "status":
+        ledger_render()
+        print(LEDGER_MD.read_text(encoding="utf-8"), end="")
+    elif cmd == "mark":
+        if len(args) < 2 or args[1] not in LEDGER_STATES:
+            die(f"Uso: mark ID ESTADO [NOTA]  (estados: {', '.join(LEDGER_STATES)})")
+        jid, state = args[0], args[1]
+        if jid not in entities(require_valid()):
+            die(f"{jid} no existe en el manifiesto.")
+        prev = ledger_read().get(jid, {})
+        fields = dict(state=state, stage=stage_of(jid), mode=prev.get("mode", "B"), note=" ".join(args[2:]))
+        if not prev:
+            fields["started"] = now_hm()
+        ledger_update(jid, **fields)
+        print(f"{jid}: {state}")
+    elif cmd == "stop":
+        stop(args)
     elif cmd == "validate":
         require_valid()
         print("Manifiesto válido.")

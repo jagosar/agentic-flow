@@ -44,6 +44,8 @@ Requisitos: macOS, Linux o WSL 2; `python3` ≥ 3.9; `git`; y el CLI de Claude C
 | Sin borrados masivos | `permissions.deny` en `settings.json` (`git reset --hard`, `git clean`, `rm -rf`) |
 | Comandos permitidos mínimos | `allow_bash` del manifiesto (modo A) |
 | Comprobación de propiedad al cerrar cada etapa | `snapshot` + `check-wave`: cualquier fichero cambiado fuera de su propietario hace fallar la etapa |
+| Parar a mitad | `agentic.py stop`: mata los procesos del modo A (grupo completo) y anota `STOPPED` |
+| Estado fiable | Ledger en `.claude/state/ledger.md`, escrito por el script, no por el modelo |
 | Manifiesto coherente | `validate`: propietarios únicos (QA incluido), olas y dependencias |
 
 Limitación: un agente podría escribir con Bash (`echo > fichero`) saltándose el hook de Write. En modo A solo puede ejecutar los comandos de `allow_bash`, y en los dos modos `check-wave` lo detecta al cerrar la etapa.

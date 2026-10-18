@@ -57,6 +57,7 @@ Antes, cumple los [requisitos comunes](README.md#requisitos-comunes) e [instala 
 - **Varias features a la vez:** abre una sesión por feature desde la barra lateral, cada una en su worktree.
 - **Desde el móvil:** activa **Remote Control** en la sesión para responder a la entrevista del arquitecto desde el teléfono. La ejecución sigue en tu máquina, en modo A.
 - **Trabajo largo:** elige **Cloud** al crear la sesión para que siga aunque cierres la app. Consulta [web-ios.md](web-ios.md).
+- **Seguir el avance sin esperar:** mientras una ola trabaja, pregunta "¿cómo va?" y el orquestador responde desde el ledger. Para cortar, di "para" o "para WP-02".
 - **Relanzar un WP:** escribe "relanza WP-03 de la ola 2 para corregir los defectos de QA". La sesión ejecuta `run-wave 2 WP-03 --fix`.
 
 ## Problemas frecuentes
