@@ -1,0 +1,23 @@
+# Tests de los guardarraíles. Solo corre en el repo plantilla, no en los proyectos creados a partir de él.
+name: agentic-flow-ci
+on:
+  push:
+    paths: [".claude/**", ".github/workflows/agentic-flow-ci.yml"]
+  pull_request:
+    paths: [".claude/**", ".github/workflows/agentic-flow-ci.yml"]
+
+jobs:
+  test:
+    if: github.repository == 'jagosar/agentic-flow'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+      - run: git config --global init.defaultBranch main
+      - run: python -m unittest discover -s .claude/bin -p "test_*.py" -v

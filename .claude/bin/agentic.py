@@ -12,12 +12,15 @@ Subcomandos:
   hook                Hook PreToolUse (lee JSON por stdin).
 
 El manifiesto es un bloque ```json wp-manifest``` dentro de architecture.md.
+Límites y modelos del lanzador: .claude/agentic.json (opcional) y variables AGENTIC_*.
 """
 import fcntl
+import fnmatch
 import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -27,24 +30,44 @@ ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().par
 ARCH = ROOT / "architecture.md"
 STATE = ROOT / ".claude" / "state"
 CLAIMS = STATE / "claims.json"
-IMPLEMENTER_MODEL = os.environ.get("AGENTIC_IMPLEMENTER_MODEL", "claude-sonnet-5-5")
-QA_MODEL = os.environ.get("AGENTIC_QA_MODEL", "claude-opus-5-5")
+CONFIG = ROOT / ".claude" / "agentic.json"
 BASE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"]
 QA_DEFAULT_FILES = ["qa/"]
+DEFAULT_CONFIG = {
+    "models": {"implementer": "claude-sonnet-5-5", "qa": "claude-opus-5-5"},
+    "max_budget_usd": {"implementer": 3, "qa": 5},
+    "timeout_s": 1800,
+}
+# Cachés y artefactos que generan las herramientas de test y build: no cuentan como cambios.
+DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/",
+                  "node_modules/", ".coverage", "coverage/", ".nyc_output/", ".DS_Store", ".tsbuildinfo"]
 
 MANIFEST_RE = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
 CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA)\b")
 STATUS_RE = re.compile(r"STATUS:\s*(DONE|BLOCKER|PASS|FAIL)")
+# Un subcomando de escritura en el mismo comando que `git`, aunque haya opciones delante (`git -C . commit`)
+# o vaya dentro de comillas (`sh -c "git commit"`). Exige espacio antes para no confundir `src/add.py`.
+GIT_WRITE_RE = re.compile(
+    r"\bgit\b[^;&|\n]*?\s[\"']?(commit|push|pull|fetch|checkout|switch|reset|rebase|merge|stash|branch|tag|restore|"
+    r"clean|cherry-pick|revert|am|apply|config|remote|worktree|update-ref|update-index|filter-branch|gc|rm|mv|add|"
+    r"submodule)(?=$|[\s\"';&|])")
 FORBIDDEN_BASH = [
-    (re.compile(r"\bgit\s+(commit|push|checkout|switch|reset|rebase|merge|stash|branch|tag|restore|clean|cherry-pick|revert)\b"),
-     "no se pueden ejecutar operaciones de git que cambien historia, ramas o el árbol de trabajo"),
-    (re.compile(r"\b(npm|pnpm|yarn|bun)\s+(install|i|add|remove|uninstall|rm)\b"),
+    (GIT_WRITE_RE, "no se pueden ejecutar operaciones de git que escriban (solo status, diff, log, show)"),
+    (re.compile(r"\b(npm|pnpm|yarn|bun)\s+(install|i|add|remove|uninstall|rm|ci)\b"),
      "no se pueden cambiar dependencias (sección 3)"),
-    (re.compile(r"\b(pip3?|uv\s+pip)\s+install\b|\buv\s+add\b|\bpoetry\s+add\b|\bcargo\s+add\b|\bgo\s+get\b"),
+    (re.compile(r"\b(pip3?|uv\s+pip)\s+install\b|\buv\s+(add|sync)\b|\bpoetry\s+(add|install)\b|\bcargo\s+add\b|\bgo\s+get\b"),
      "no se pueden cambiar dependencias (sección 3)"),
-    (re.compile(r"\bclaude\b.*\s-p\b|\bclaude\s+--print\b"),
+    (re.compile(r"\bclaude\b(?=.*(\s-p\b|\s--print\b))", re.S),
      "no se pueden lanzar otras sesiones de Claude"),
 ]
+# Primer token de una regla allow_bash que daría ejecución arbitraria si va solo.
+OPEN_ENDED = {"bash", "sh", "zsh", "fish", "dash", "python", "python3", "node", "deno", "bun", "ruby", "perl",
+              "php", "env", "xargs", "sudo", "eval", "exec", "npx", "npm", "pnpm", "yarn", "uv", "poetry",
+              "cargo", "go", "make", "git", "claude", "find", "awk", "sed"}
+
+
+class ManifestError(Exception):
+    pass
 
 
 def die(msg, code=1):
@@ -52,22 +75,44 @@ def die(msg, code=1):
     sys.exit(code)
 
 
+# ---------- configuración ----------
+
+def load_config():
+    cfg = json.loads(json.dumps(DEFAULT_CONFIG))
+    if CONFIG.exists():
+        user = json.loads(CONFIG.read_text(encoding="utf-8"))
+        for key, value in user.items():
+            if isinstance(value, dict) and isinstance(cfg.get(key), dict):
+                cfg[key].update(value)
+            else:
+                cfg[key] = value
+    env = os.environ
+    cfg["models"]["implementer"] = env.get("AGENTIC_IMPLEMENTER_MODEL", cfg["models"]["implementer"])
+    cfg["models"]["qa"] = env.get("AGENTIC_QA_MODEL", cfg["models"]["qa"])
+    if "AGENTIC_TIMEOUT_S" in env:
+        cfg["timeout_s"] = int(env["AGENTIC_TIMEOUT_S"])
+    return cfg
+
+
 # ---------- manifiesto ----------
 
 def load_manifest():
     if not ARCH.exists():
-        die(f"No existe {ARCH}. Lanza /architect primero.")
+        raise ManifestError(f"No existe {ARCH}. Lanza /architect primero.")
     m = MANIFEST_RE.search(ARCH.read_text(encoding="utf-8"))
     if not m:
-        die("architecture.md no tiene un bloque ```json wp-manifest```.")
+        raise ManifestError("architecture.md no tiene un bloque ```json wp-manifest```.")
     try:
-        return json.loads(m.group(1))
+        data = json.loads(m.group(1))
     except json.JSONDecodeError as e:
-        die(f"El manifiesto no es JSON válido: {e}")
+        raise ManifestError(f"El manifiesto no es JSON válido: {e}")
+    if not isinstance(data, dict):
+        raise ManifestError("El manifiesto debe ser un objeto JSON.")
+    return data
 
 
 def wps(manifest):
-    return {wp["id"]: wp for wp in manifest.get("work_packages", [])}
+    return {wp["id"]: wp for wp in manifest.get("work_packages", []) if isinstance(wp, dict) and "id" in wp}
 
 
 def qa_entity(manifest):
@@ -91,6 +136,24 @@ def owner_conflict(a, b):
     return a == b or (a.endswith("/") and b.startswith(a)) or (b.endswith("/") and a.startswith(b))
 
 
+def ignored(path, patterns):
+    parts = path.split("/")
+    for pat in patterns:
+        if pat.endswith("/"):
+            if pat[:-1] in parts[:-1] or path.startswith(pat):
+                return True
+        elif fnmatch.fnmatch(path, pat) or fnmatch.fnmatch(parts[-1], pat):
+            return True
+    return False
+
+
+def open_ended_rule(rule):
+    inner = rule[len("Bash("):-1].strip()
+    prefix = inner[:-2] if inner.endswith(":*") else inner
+    tokens = prefix.split()
+    return inner in ("*", ":*", "") or not tokens or "*" in prefix or (len(tokens) == 1 and tokens[0] in OPEN_ENDED)
+
+
 def validate(manifest):
     errors = []
     table = wps(manifest)
@@ -98,21 +161,32 @@ def validate(manifest):
         errors.append("El manifiesto no tiene work_packages.")
     if "QA" in table:
         errors.append("'QA' es un ID reservado.")
-    for wp in table.values():
-        for key in ("id", "wave", "files"):
+    seen = set()
+    for wp in manifest.get("work_packages", []):
+        if not isinstance(wp, dict) or "id" not in wp:
+            errors.append(f"Work package sin id: {wp}")
+            continue
+        if wp["id"] in seen:
+            errors.append(f"{wp['id']}: ID duplicado.")
+        seen.add(wp["id"])
+        if not re.fullmatch(r"WP-\d+", wp["id"]):
+            errors.append(f"{wp['id']}: el ID debe tener la forma WP-<número>.")
+        for key in ("wave", "files"):
             if key not in wp:
-                errors.append(f"{wp.get('id', '?')}: falta el campo '{key}'.")
+                errors.append(f"{wp['id']}: falta el campo '{key}'.")
+        if not isinstance(wp.get("wave", 0), int):
+            errors.append(f"{wp['id']}: 'wave' debe ser un entero.")
         for dep in wp.get("depends_on", []):
             if dep not in table:
                 errors.append(f"{wp['id']}: depende de {dep}, que no existe.")
-            elif table[dep]["wave"] >= wp["wave"]:
-                errors.append(f"{wp['id']} (ola {wp['wave']}) depende de {dep} (ola {table[dep]['wave']}): debe ser de una ola anterior.")
+            elif table[dep].get("wave", 0) >= wp.get("wave", 0):
+                errors.append(f"{wp['id']} (ola {wp.get('wave')}) depende de {dep} (ola {table[dep].get('wave')}): debe ser de una ola anterior.")
     for ent in entities(manifest).values():
         for f in ent.get("files", []):
             if f.startswith("/") or ".." in Path(f).parts:
                 errors.append(f"{ent['id']}: ruta no relativa al repo: {f}")
-            if f == "architecture.md" or f.startswith(".claude/"):
-                errors.append(f"{ent['id']}: no puede poseer {f}.")
+            if f == "architecture.md" or f.startswith(".claude/") or f in ("", "./", "/"):
+                errors.append(f"{ent['id']}: no puede poseer '{f}'.")
     owners = [(f, e["id"]) for e in entities(manifest).values() for f in e.get("files", [])]
     for i, (fa, wa) in enumerate(owners):
         for fb, wb in owners[i + 1:]:
@@ -121,13 +195,23 @@ def validate(manifest):
     for rule in manifest.get("allow_bash", []) + qa_entity(manifest)["allow_bash"]:
         if not re.fullmatch(r"Bash\(.+\)", rule):
             errors.append(f"allow_bash: regla mal formada: {rule}")
+        elif open_ended_rule(rule):
+            errors.append(f"allow_bash: regla demasiado amplia (daría ejecución arbitraria): {rule}. "
+                          "Usa el comando concreto, p. ej. Bash(npm test:*) o Bash(python3 -m pytest:*).")
+    if not isinstance(manifest.get("ignore", []), list):
+        errors.append("'ignore' debe ser una lista de patrones.")
     return errors
 
 
-def require_valid(manifest):
+def require_valid():
+    try:
+        manifest = load_manifest()
+    except ManifestError as e:
+        die(str(e))
     errors = validate(manifest)
     if errors:
         die("Manifiesto inválido:\n  " + "\n  ".join(errors))
+    return manifest
 
 
 # ---------- snapshot y comprobación de etapas ----------
@@ -156,6 +240,7 @@ def stage_owners(manifest, label):
 def snapshot(label):
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / f"snapshot-{label}.json").write_text(json.dumps(digest()))
+    CLAIMS.unlink(missing_ok=True)  # cada etapa empieza sin reclamaciones
     print(f"Snapshot de la etapa {label} guardado.")
 
 
@@ -165,7 +250,9 @@ def check_stage(manifest, label):
         die(f"No hay snapshot de la etapa {label}. Ejecuta `snapshot {label}` antes de lanzarla.")
     before = json.loads(snap_file.read_text())
     after = digest()
-    changed = sorted({p for p in before.keys() | after.keys() if before.get(p) != after.get(p)})
+    patterns = DEFAULT_IGNORE + manifest.get("ignore", [])
+    changed = sorted(p for p in before.keys() | after.keys()
+                     if before.get(p) != after.get(p) and not ignored(p, patterns))
     owners = stage_owners(manifest, label)
     report = {o["id"]: [] for o in owners}
     violations = []
@@ -185,37 +272,46 @@ def check_stage(manifest, label):
 
 # ---------- lanzadores ----------
 
-def launch(label, jobs):
-    """jobs: lista de (id, agent, model, prompt, allowed). Los lanza todos a la vez y espera."""
+def launch(label, jobs, cfg):
+    """jobs: lista de (id, agent, model, prompt, allowed, budget). Los lanza todos a la vez y espera."""
     runs = STATE / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     snapshot(label)
     procs = {}
-    for jid, agent, model, prompt, allowed in jobs:
+    for jid, agent, model, prompt, allowed, budget in jobs:
         cmd = ["claude", "-p", prompt, "--agent", agent, "--model", model,
                "--output-format", "json", "--permission-mode", "acceptEdits",
                "--strict-mcp-config",  # sin conectores MCP: un WP solo necesita el repo
+               "--max-budget-usd", str(budget),
                "--allowedTools", *allowed, "Bash(python3 .claude/bin/agentic.py claim:*)"]
         env = dict(os.environ, AGENTIC_WP=jid, CLAUDE_PROJECT_DIR=str(ROOT))
         out = open(runs / f"{jid}.json", "w")
         err = open(runs / f"{jid}.log", "w")
         proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL)
         procs[jid] = (proc, out, err)
-        print(f"Lanzado {jid} [{agent}, {model}] (pid {proc.pid})", flush=True)
+        print(f"Lanzado {jid} [{agent}, {model}, máx. {budget} USD] (pid {proc.pid})", flush=True)
 
     start = time.time()
+    deadline = start + cfg["timeout_s"]
     statuses = {}
     for jid, (proc, out, err) in procs.items():
-        proc.wait()
+        try:
+            proc.wait(timeout=max(0, deadline - time.time()))
+            timed_out = False
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            timed_out = True
         out.close()
         err.close()
-        statuses[jid] = parse_status(runs / f"{jid}.json", proc.returncode)
+        statuses[jid] = (f"TIMEOUT ({cfg['timeout_s']}s)" if timed_out
+                         else parse_status(runs / f"{jid}.json", proc.returncode))
         print(f"{jid}: {statuses[jid]} ({int(time.time() - start)}s)", flush=True)
     return statuses
 
 
 def run_wave(manifest, wave, only=None):
-    require_valid(manifest)
+    cfg = load_config()
     wave_wps = sorted(stage_owners(manifest, wave), key=lambda w: w["id"])
     if only:
         unknown = set(only) - {wp["id"] for wp in wave_wps}
@@ -229,25 +325,38 @@ def run_wave(manifest, wave, only=None):
         " El código ya existe: corrige los defectos de .claude/state/runs/QA.json que te asignan, sin salirte del contrato."
         if only and (STATE / "runs" / "QA.json").exists() else "")
     statuses = launch(str(wave), [
-        (wp["id"], wp.get("agent", "implementer"), IMPLEMENTER_MODEL, prompt.format(id=wp["id"]), allowed)
-        for wp in wave_wps])
+        (wp["id"], wp.get("agent", "implementer"), cfg["models"]["implementer"], prompt.format(id=wp["id"]),
+         allowed, cfg["max_budget_usd"]["implementer"])
+        for wp in wave_wps], cfg)
     finish(manifest, str(wave), statuses, "DONE")
 
 
 def run_qa(manifest):
-    require_valid(manifest)
+    cfg = load_config()
     qa = qa_entity(manifest)
     allowed = BASE_TOOLS + manifest.get("allow_bash", []) + qa["allow_bash"]
-    statuses = launch("qa", [("QA", "qa", QA_MODEL,
-                              "Ejecuta la validación QA del sistema según architecture.md.", allowed)])
+    statuses = launch("qa", [("QA", "qa", cfg["models"]["qa"],
+                              "Ejecuta la validación QA del sistema según architecture.md.",
+                              allowed, cfg["max_budget_usd"]["qa"])], cfg)
     finish(manifest, "qa", statuses, "PASS")
+
+
+def run_cost(jid):
+    try:
+        return float(json.loads((STATE / "runs" / f"{jid}.json").read_text()).get("total_cost_usd") or 0)
+    except (json.JSONDecodeError, OSError, ValueError):
+        return 0.0
 
 
 def finish(manifest, label, statuses, expected):
     ownership_ok = check_stage(manifest, label)
     print(f"\nRESUMEN ETAPA {label}")
+    total = 0.0
     for jid, st in statuses.items():
-        print(f"  {jid}: {st}   informe: .claude/state/runs/{jid}.json")
+        cost = run_cost(jid)
+        total += cost
+        print(f"  {jid}: {st}   {cost:.2f} USD   informe: .claude/state/runs/{jid}.json")
+    print(f"  Coste de la etapa: {total:.2f} USD")
     ok = ownership_ok and all(s == expected for s in statuses.values())
     print("RESULTADO:", "OK" if ok else "REVISAR")
     sys.exit(0 if ok else 3)
@@ -255,27 +364,30 @@ def finish(manifest, label, statuses, expected):
 
 def parse_status(path, returncode):
     try:
-        result = json.loads(path.read_text()).get("result", "")
+        data = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError):
         return f"ERROR (exit {returncode}, sin salida JSON)"
-    m = STATUS_RE.search(result)
-    return m.group(1) if m else f"SIN INFORME (exit {returncode})"
+    m = STATUS_RE.search(data.get("result") or "")
+    if m:
+        return m.group(1)
+    return f"SIN INFORME ({data.get('subtype') or 'exit ' + str(returncode)})"
 
 
 # ---------- hook PreToolUse ----------
 
-def locked_claims(update=None):
+def with_claims(fn):
+    """Ejecuta fn(claims) con el fichero de reclamaciones bloqueado; si devuelve un dict, lo guarda."""
     STATE.mkdir(parents=True, exist_ok=True)
     with open(CLAIMS, "a+") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         fh.seek(0)
         raw = fh.read()
         claims = json.loads(raw) if raw.strip() else {}
-        if update:
-            claims.update(update)
+        new = fn(claims)
+        if new is not None:
             fh.seek(0)
             fh.truncate()
-            fh.write(json.dumps(claims, indent=2))
+            fh.write(json.dumps(new, indent=2))
         return claims
 
 
@@ -284,36 +396,56 @@ def block(msg):
     sys.exit(2)
 
 
-def hook():
-    data = json.load(sys.stdin)
+def claim(agent_id, wanted):
+    if wanted not in entities(load_manifest()):
+        block(f"{wanted} no existe en el manifiesto.")
+    conflict = {}
+
+    def update(claims):
+        current = claims.get(agent_id)
+        holder = next((a for a, w in claims.items() if w == wanted and a != agent_id), None)
+        if current and current != wanted:
+            conflict["msg"] = f"este agente ya reclamó {current}; no puede reclamar también {wanted}."
+        elif holder:
+            conflict["msg"] = f"{wanted} ya lo reclamó otro agente en esta etapa."
+        else:
+            return dict(claims, **{agent_id: wanted})
+        return None
+
+    with_claims(update)
+    if conflict:
+        block(conflict["msg"])
+
+
+def guard(data):
     tool = data.get("tool_name", "")
     tinput = data.get("tool_input", {}) or {}
     agent_id = data.get("agent_id")
     owner_id = os.environ.get("AGENTIC_WP")
 
-    if tool == "Bash" and agent_id:
+    if tool == "Bash" and agent_id and not owner_id:
         m = CLAIM_RE.search(tinput.get("command", ""))
         if m:
-            locked_claims({agent_id: m.group(1)})
-            sys.exit(0)
+            claim(agent_id, m.group(1))
+            return
 
     if not owner_id and agent_id:
-        owner_id = locked_claims().get(agent_id)
+        owner_id = with_claims(lambda c: None).get(agent_id)
         if not owner_id and data.get("agent_type") in ("implementer", "qa"):
             block("Antes de nada, ejecuta `python3 .claude/bin/agentic.py claim <ID>` con tu WP-ID (o QA).")
     if not owner_id:
-        sys.exit(0)  # hilo principal u otro subagente: sin restricciones
+        return  # hilo principal u otro subagente: sin restricciones
 
     if tool == "Bash":
         cmd = tinput.get("command", "")
         for rx, why in FORBIDDEN_BASH:
             if rx.search(cmd):
                 block(f"{owner_id}: comando bloqueado, {why}: {cmd}")
-        sys.exit(0)
+        return
 
     path = tinput.get("file_path") or tinput.get("notebook_path")
     if not path:
-        sys.exit(0)
+        return
     abs_path = Path(path) if os.path.isabs(path) else Path(data.get("cwd") or ROOT) / path
     try:
         rel = abs_path.resolve().relative_to(ROOT.resolve()).as_posix()
@@ -325,6 +457,21 @@ def hook():
     if not any(owns(f, rel) for f in ent["files"]):
         block(f"{owner_id} no posee {rel}. Ficheros permitidos: {', '.join(ent['files'])}. "
               "Si necesitas tocarlo, devuelve STATUS: BLOCKER (o, si eres QA, repórtalo como defecto).")
+
+
+def hook():
+    """Falla cerrado: cualquier error dentro de un WP o de QA bloquea la herramienta."""
+    restricted = bool(os.environ.get("AGENTIC_WP"))
+    try:
+        data = json.load(sys.stdin)
+        restricted = restricted or bool(data.get("agent_id"))
+        guard(data)
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 - cualquier fallo es motivo de bloqueo
+        if restricted:
+            block(f"error del guardarraíl, bloqueo por seguridad: {type(e).__name__}: {e}")
+        print(f"[agentic guard] aviso: {type(e).__name__}: {e}", file=sys.stderr)
     sys.exit(0)
 
 
@@ -339,13 +486,14 @@ def main():
     elif cmd == "claim":
         if not args:
             die("Uso: claim ID")
-        print(f"{args[0]} reclamado." if os.environ.get("AGENTIC_WP") or args[0] in locked_claims().values()
+        registered = os.environ.get("AGENTIC_WP") or args[0] in with_claims(lambda c: None).values()
+        print(f"{args[0]} reclamado." if registered
               else f"Aviso: el hook no registró {args[0]}. ¿Están activos los hooks de .claude/settings.json?")
     elif cmd == "validate":
-        require_valid(load_manifest())
+        require_valid()
         print("Manifiesto válido.")
     elif cmd == "run-qa":
-        run_qa(load_manifest())
+        run_qa(require_valid())
     elif cmd in ("snapshot", "check-wave", "run-wave"):
         if not args or not (args[0].isdigit() or (args[0] == "qa" and cmd != "run-wave")):
             die(f"Uso: {cmd} N" + ("" if cmd == "run-wave" else " | qa"))
@@ -353,9 +501,9 @@ def main():
         if cmd == "snapshot":
             snapshot(label)
         elif cmd == "check-wave":
-            sys.exit(0 if check_stage(load_manifest(), label) else 3)
+            sys.exit(0 if check_stage(require_valid(), label) else 3)
         else:
-            run_wave(load_manifest(), int(label), only=args[1:])
+            run_wave(require_valid(), int(label), only=args[1:])
     else:
         die(__doc__)
 

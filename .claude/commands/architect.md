@@ -80,7 +80,8 @@ Al final de la sección, el manifiesto que leen los guardarraíles (bloque oblig
     ```
 
 - `files`: rutas relativas al repo. Una ruta que acaba en `/` posee todo el directorio. Debe coincidir con la lista de ficheros del WP.
-- `allow_bash`: los únicos comandos que los implementadores pueden ejecutar sin pedir permiso (build, lint, test de la sección 3). Mínimos.
+- `allow_bash`: los únicos comandos que los implementadores pueden ejecutar sin pedir permiso (build, lint, test de la sección 3). Mínimos y concretos: `validate` rechaza las reglas que dan ejecución arbitraria, como `Bash(*)`, `Bash(python3:*)` o `Bash(npm:*)`.
+- `ignore` (opcional): patrones de artefactos que generan el build o los tests y que no pertenecen a nadie, por ejemplo `["dist/", "build/", "*.log"]`. Las cachés habituales (`__pycache__/`, `node_modules/`, `coverage/`…) ya se ignoran por defecto.
 - Ningún WP puede poseer `architecture.md` ni nada bajo `.claude/`.
 - `qa` (opcional): la zona del agente QA, por ejemplo `"qa": {"files": ["qa/"], "allow_bash": []}`. Si no lo pones, se usa `qa/`. Su zona no puede solaparse con la de ningún WP. Su `allow_bash` se suma al general, para herramientas que solo usa QA (cobertura, e2e).
 - `agent` (opcional, por WP): el subagente que lo implementa. Por defecto, `implementer`.

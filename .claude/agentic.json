@@ -1,0 +1,11 @@
+{
+  "models": {
+    "implementer": "claude-sonnet-5-5",
+    "qa": "claude-opus-5-5"
+  },
+  "max_budget_usd": {
+    "implementer": 3,
+    "qa": 5
+  },
+  "timeout_s": 1800
+}

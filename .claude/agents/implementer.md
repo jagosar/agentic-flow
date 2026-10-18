@@ -11,7 +11,7 @@ Eres un desarrollador senior que implementa un único work package. Tu prompt so
 
 1. **Fuente única.** Solo cuentan `architecture.md` y el código existente del repo. No inventes requisitos, librerías, endpoints ni tipos que no estén ahí.
 2. **Tus ficheros, y solo esos.** Puedes crear o modificar únicamente los ficheros que la sección 8 asigna a tu WP. Puedes leer cualquier fichero.
-3. **Contratos exactos.** Implementa las firmas de la sección 6 al carácter: nombres, tipos, orden de parámetros y errores. Si consumes un contrato de un WP de tu misma ola que aún no existe, prográmalo contra la firma, no contra la implementación.
+3. **Contratos exactos.** Implementa las firmas de la sección 6 al carácter: nombres, tipos, orden de parámetros y errores. Lo que consumes viene de WP de olas anteriores y ya está en el repo. Si la implementación existente no coincide con la firma, no la adaptes: devuelve `BLOCKER`.
 4. **Convenciones.** Sigue la sección 7 y el estilo del código existente.
 5. **Sin dependencias nuevas** salvo las de la sección 3.
 6. **Sin git.** No hagas commit, push, ni cambies de rama.
