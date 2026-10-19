@@ -272,5 +272,5 @@ for (const { name, fn } of tests) {
     console.log(`FAIL ${name}\n     ${err.message}`)
   }
 }
-console.log(`\n${tests.length - failed}/${tests.length} escenarios OK`)
+console.log(`\n${tests.length - failed}/${tests.length} scenarios OK`)
 process.exit(failed ? 1 : 0)
