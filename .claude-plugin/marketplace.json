@@ -5,13 +5,13 @@
     "url": "https://github.com/jagosar"
   },
   "metadata": {
-    "description": "Flow de desarrollo agéntico para Claude Code"
+    "description": "Agentic development flow for Claude Code"
   },
   "plugins": [
     {
       "name": "agentic-flow",
       "source": "./",
-      "description": "Instala y actualiza el flow agéntico (/architect, /implement, agentes, workflow, guardarraíles y reglas por lenguaje) en tu repo.",
+      "description": "Installs and updates the agentic flow (/architect, /implement, agents, workflow, guardrails and language rules) in your repo.",
       "category": "workflow"
     }
   ]

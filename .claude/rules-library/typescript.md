@@ -7,45 +7,45 @@ paths:
   - "**/*.mjs"
   - "**/*.cjs"
 ---
-<!-- Adaptado de ECC (rules/typescript), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
-# TypeScript y JavaScript
+<!-- Adapted from ECC (rules/typescript), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+# TypeScript and JavaScript
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- Tipos explícitos de parámetros y retorno en todo lo exportado; inferencia en las variables locales obvias.
-- `interface` para formas de objeto extensibles; `type` para uniones, intersecciones y tipos utilitarios.
-- Uniones de literales en vez de `enum`, salvo que haga falta por interoperabilidad.
-- Sin `any`: `unknown` para lo que llega de fuera, y se estrecha antes de usarlo. Genéricos cuando el tipo depende de quien llama.
-- `const` por defecto; spread o `structuredClone` en vez de mutar objetos recibidos.
-- En ficheros `.js`, JSDoc cuando aclare los tipos.
+- Explicit parameter and return types on everything exported; inference for obvious local variables.
+- `interface` for extensible object shapes; `type` for unions, intersections and utility types.
+- Unions of literals instead of `enum`, unless interoperability requires it.
+- No `any`: `unknown` for what comes from outside, narrowed before use. Generics when the type depends on the caller.
+- `const` by default; spread or `structuredClone` instead of mutating received objects.
+- In `.js` files, JSDoc where it clarifies the types.
 
-## Errores
+## Errors
 
-- Clases de error propias que extienden `Error`, con `name` y `cause`.
-- Toda promesa se espera o se devuelve: nada de promesas sueltas. `try/catch` alrededor del `await`, no `.catch` vacío.
-- Valida en la frontera lo que llega sin tipo (JSON, cuerpo de una petición), con un esquema (por ejemplo zod) si el proyecto ya lo usa.
+- Custom error classes that extend `Error`, with `name` and `cause`.
+- Every promise is awaited or returned: no floating promises. `try/catch` around the `await`, not an empty `.catch`.
+- Validate untyped input at the boundary (JSON, a request body), with a schema (for example zod) if the project already uses one.
 
 ## Tests
 
-- El runner que ya use el proyecto (`vitest`, `jest` o `node --test`).
-- Tests de componentes por comportamiento visible (Testing Library), no por detalles internos.
-- Playwright para los flujos de extremo a extremo críticos, si el proyecto lo tiene.
-- Sin `console.log` en el código de producción; se usa el logger del proyecto.
+- The runner the project already uses (`vitest`, `jest` or `node --test`).
+- Component tests by visible behaviour (Testing Library), not by internal details.
+- Playwright for critical end-to-end flows, if the project has it.
+- No `console.log` in production code; use the project's logger.
 
-## Seguridad
+## Security
 
-- Secretos con `process.env`, comprobados al arrancar.
-- Nunca `eval`, `new Function` ni `innerHTML` con datos externos; en React, nada de `dangerouslySetInnerHTML` sin sanear.
-- `child_process.execFile` o `spawn` con lista de argumentos, no `exec` con texto concatenado.
-- `npm audit` (o el equivalente del gestor) cuando cambie el lockfile.
+- Secrets with `process.env`, checked at startup.
+- Never `eval`, `new Function` or `innerHTML` with external data; in React, no `dangerouslySetInnerHTML` without sanitising.
+- `child_process.execFile` or `spawn` with an argument list, not `exec` with concatenated text.
+- `npm audit` (or the package manager's equivalent) when the lockfile changes.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `npm run build` |
 | types | `npx tsc --noEmit` |
 | lint | `npx eslint .` |
-| tests | `npm test` o `npx vitest run` |
+| tests | `npm test` or `npx vitest run` |

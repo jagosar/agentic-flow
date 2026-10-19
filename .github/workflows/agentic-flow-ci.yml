@@ -1,9 +1,8 @@
-# Tests del propio flow: guardarraíles, comandos del pipeline, lógica del workflow (agentes simulados),
-# definiciones de agentes y deriva de la documentación. Solo corre en el repo plantilla, no en los
-# proyectos creados a partir de él.
+# The flow's own tests: guardrails, pipeline commands, workflow logic (simulated agents), agent definitions
+# and documentation drift. It only runs in the template repo, not in projects created from it.
 #
-# Endurecido: actions fijadas por SHA (la etiqueta va en el comentario), permisos mínimos, sin credenciales
-# persistidas en el checkout, sin instalar nada de terceros, concurrencia y timeout acotados.
+# Hardened: actions pinned by SHA (the tag goes in the comment), minimal permissions, no credentials
+# persisted in the checkout, nothing third-party installed, bounded concurrency and timeout.
 name: agentic-flow-ci
 on:
   push:
@@ -39,9 +38,9 @@ jobs:
         with:
           node-version: "22"
       - run: git config --global init.defaultBranch main
-      - name: Escenarios del workflow (agentes simulados)
+      - name: Workflow scenarios (simulated agents)
         run: node .claude/bin/test_workflow.mjs
-      - name: Guardarraíles, comandos y definiciones
+      - name: Guardrails, commands and definitions
         run: python -m unittest discover -s .claude/bin -p "test_*.py" -v
 
   plugin:
@@ -55,8 +54,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
-      # Versión exacta y sin scripts de instalación: el binario nativo viene en su propio paquete y se usa tal cual.
-      - name: Claude Code (solo para validar el plugin, sin credenciales)
+      # Exact version and no install scripts: the native binary ships in its own package and is used as it is.
+      - name: Claude Code (only to validate the plugin, no credentials)
         run: npm install --prefix "$RUNNER_TEMP/cc" --no-save --ignore-scripts --no-audit --no-fund @anthropic-ai/claude-code@2.1.302
-      - name: Validar plugin y marketplace
+      - name: Validate plugin and marketplace
         run: '"$RUNNER_TEMP/cc/node_modules/@anthropic-ai/claude-code-linux-x64/claude" plugin validate --strict .'

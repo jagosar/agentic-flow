@@ -3,40 +3,40 @@ paths:
   - "**/*.swift"
   - "**/Package.swift"
 ---
-<!-- Adaptado de ECC (rules/swift), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/swift), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # Swift
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- SwiftFormat y SwiftLint, o `swift-format`, según lo que use el proyecto.
-- `let` por defecto; `struct` con semántica de valor salvo que haga falta identidad.
-- Claridad en el punto de uso: los métodos se nombran por su papel, sin palabras de sobra.
-- Enums con valores asociados para modelar estados distintos; protocolos para las dependencias.
-- Concurrencia estructurada (`async let`, `TaskGroup`) mejor que `Task {}` sueltos; actores para el estado mutable compartido y tipos `Sendable` entre dominios de aislamiento.
+- SwiftFormat and SwiftLint, or `swift-format`, depending on what the project uses.
+- `let` by default; `struct` with value semantics unless identity is needed.
+- Clarity at the point of use: methods are named for their role, with no needless words.
+- Enums with associated values to model distinct states; protocols for dependencies.
+- Structured concurrency (`async let`, `TaskGroup`) rather than loose `Task {}`; actors for shared mutable state and `Sendable` types across isolation domains.
 
-## Errores
+## Errors
 
-- `throws` con tipos de error propios (`enum` que conforma `Error`).
-- Nada de `try!` ni de desempaquetado forzado (`!`) con datos externos: `guard let` o `if let`.
+- `throws` with your own error types (an `enum` that conforms to `Error`).
+- No `try!` and no force-unwrapping (`!`) with external data: use `guard let` or `if let`.
 
 ## Tests
 
-- Swift Testing (`@Test`, `#expect`) o XCTest, el que use el proyecto.
-- Tests parametrizados para tablas de casos; dependencias inyectadas por protocolo para aislarlos.
+- Swift Testing (`@Test`, `#expect`) or XCTest, whichever the project uses.
+- Parameterised tests for tables of cases; dependencies injected through protocols to isolate them.
 
-## Seguridad
+## Security
 
-- Secretos en el Llavero (Keychain), nunca en `UserDefaults` ni en el código.
-- App Transport Security activado; solo HTTPS.
-- Se valida todo lo que llega de fuera (deep links, portapapeles, API) antes de usarlo.
+- Secrets in the Keychain, never in `UserDefaults` or in the code.
+- App Transport Security enabled; HTTPS only.
+- Validate everything that comes from outside (deep links, the pasteboard, an API) before using it.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `swift build` |
-| types | (lo cubre el compilador en build) |
+| types | (the compiler covers it in the build) |
 | lint | `swiftlint --strict` |
 | tests | `swift test` |

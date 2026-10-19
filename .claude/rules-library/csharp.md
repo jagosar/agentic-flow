@@ -3,40 +3,40 @@ paths:
   - "**/*.cs"
   - "**/*.csproj"
 ---
-<!-- Adaptado de ECC (rules/csharp), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/csharp), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # C#
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- Convenciones actuales de .NET, con los tipos de referencia anulables activados (`<Nullable>enable</Nullable>`).
-- `record` para valores; `class` para entidades con identidad; `interface` en las fronteras entre servicios.
-- Setters `init` y colecciones inmutables para el estado compartido. Sin `dynamic`.
-- Modificadores de acceso explícitos; un tipo principal por fichero.
+- Current .NET conventions, with nullable reference types enabled (`<Nullable>enable</Nullable>`).
+- `record` for values; `class` for entities with identity; `interface` at the boundaries between services.
+- `init` setters and immutable collections for shared state. No `dynamic`.
+- Explicit access modifiers; one main type per file.
 
-## Errores
+## Errors
 
-- `async`/`await` de punta a punta; nunca `.Result` ni `.Wait()`. `CancellationToken` en todo API asíncrono público.
-- Excepciones concretas, con log estructurado en el punto donde se gestionan.
+- `async`/`await` all the way; never `.Result` or `.Wait()`. `CancellationToken` in every public async API.
+- Specific exceptions, with structured logging at the point where they are handled.
 
 ## Tests
 
-- xUnit, con NSubstitute o Moq para dependencias, si el proyecto los usa.
-- `WebApplicationFactory<T>` para probar un API por HTTP, sin saltarse el middleware.
-- La estructura de `tests/` refleja la de `src/`.
+- xUnit, with NSubstitute or Moq for dependencies, if the project uses them.
+- `WebApplicationFactory<T>` to test an API over HTTP, without bypassing the middleware.
+- The structure of `tests/` mirrors that of `src/`.
 
-## Seguridad
+## Security
 
-- Secretos en variables de entorno o user-secrets en local, nunca en `appsettings.*.json`.
-- Consultas parametrizadas con EF Core, Dapper o ADO.NET.
-- Autenticación con los manejadores del framework, sin parsear tokens a mano. No se registran tokens ni contraseñas.
+- Secrets in environment variables, or user-secrets locally; never in `appsettings.*.json`.
+- Parameterised queries with EF Core, Dapper or ADO.NET.
+- Authentication with the framework's handlers, without hand-parsing tokens. Tokens and passwords are not logged.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `dotnet build --nologo` |
-| types | (lo cubre el compilador en build) |
+| types | (the compiler covers it in the build) |
 | lint | `dotnet format --verify-no-changes` |
 | tests | `dotnet test --nologo` |

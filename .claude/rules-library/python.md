@@ -3,43 +3,43 @@ paths:
   - "**/*.py"
   - "**/*.pyi"
 ---
-<!-- Adaptado de ECC (rules/python), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/python), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # Python
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- PEP 8. Anotaciones de tipo en todas las firmas públicas; `X | None` en vez de `Optional[X]` desde Python 3.10.
-- `dataclass(frozen=True)` o `NamedTuple` para valores; `Protocol` para depender de una interfaz sin herencia.
-- `pathlib.Path` para rutas, `with` para todo recurso que se abre, generadores para recorrer datos grandes.
-- Nada de argumentos por defecto mutables (`def f(x=[])`). Nada de `import *`.
-- Imports agrupados: librería estándar, terceros y locales.
+- PEP 8. Type annotations on every public signature; `X | None` instead of `Optional[X]` from Python 3.10.
+- `dataclass(frozen=True)` or `NamedTuple` for values; `Protocol` to depend on an interface without inheritance.
+- `pathlib.Path` for paths, `with` for every resource you open, generators to walk large data.
+- No mutable default arguments (`def f(x=[])`). No `import *`.
+- Grouped imports: standard library, third party and local.
 
-## Errores
+## Errors
 
-- Excepciones propias del dominio, que heredan de una base del módulo (`class StorageError(Exception)`).
-- `raise NuevoError(...) from e` al traducir una excepción, para no perder la causa.
-- Nunca `except:` ni `except Exception: pass`. Captura lo concreto.
+- Domain exceptions that inherit from a module base (`class StorageError(Exception)`).
+- `raise NewError(...) from e` when translating an exception, so the cause is not lost.
+- Never `except:` or `except Exception: pass`. Catch the specific one.
 
 ## Tests
 
-- `pytest` si el proyecto lo usa; si no, `unittest`, que no añade dependencias.
-- Fixtures para preparar estado, `tmp_path` para ficheros, `monkeypatch` para el entorno. Sin escribir fuera del directorio temporal.
-- `pytest.mark.parametrize` para tablas de casos.
+- `pytest` if the project uses it; otherwise `unittest`, which adds no dependency.
+- Fixtures to prepare state, `tmp_path` for files, `monkeypatch` for the environment. No writing outside the temporary directory.
+- `pytest.mark.parametrize` for tables of cases.
 
-## Seguridad
+## Security
 
-- Secretos con `os.environ["NOMBRE"]`, que falla si falta.
-- Nunca `eval`, `exec`, `pickle` de datos externos ni `yaml.load` sin `SafeLoader`.
-- `subprocess.run([...])` con lista de argumentos, sin `shell=True` cuando hay entrada externa.
-- Si el proyecto lo usa, `bandit -r src/` como análisis estático.
+- Secrets with `os.environ["NAME"]`, which fails if missing.
+- Never `eval`, `exec`, `pickle` of external data or `yaml.load` without `SafeLoader`.
+- `subprocess.run([...])` with an argument list, without `shell=True` when there is external input.
+- If the project uses it, `bandit -r src/` as static analysis.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `python3 -m compileall -q src` |
-| types | `mypy src` o `pyright` |
-| lint | `ruff check .` (y `ruff format --check .`) |
-| tests | `python3 -m pytest -q` o `python3 -m unittest discover -s tests` |
+| types | `mypy src` or `pyright` |
+| lint | `ruff check .` (and `ruff format --check .`) |
+| tests | `python3 -m pytest -q` or `python3 -m unittest discover -s tests` |

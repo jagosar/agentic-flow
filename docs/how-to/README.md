@@ -46,9 +46,8 @@ Models are set by alias and cannot be changed: `validate` fails if any piece dec
 - **Native workflow (default).** `/implement` launches the `agentic-implement` workflow (`.claude/workflows/`), a Claude Code script that runs the whole pipeline deterministically in the background: agents in parallel, schema-validated reports and adversarial review. Follow it with `/workflows`. On Pro, enable **Dynamic workflows** in `/config`; the template already sets `"enableWorkflows": true`.
 - **Fallback mode.** Without workflows, `/implement` uses `agentic.py run-*`, which starts one `claude -p` process per package. It needs the `claude` CLI on the `PATH`.
 
-`/implement` picks automatically. To force the fallback: `/implement modo A`. Both are diagrammed in [How it works § 6](../how-it-works.md#6-native-workflow-and-fallback-mode).
+`/implement` picks automatically. To force the fallback: `/implement fallback`. Both are diagrammed in [How it works § 6](../how-it-works.md#6-native-workflow-and-fallback-mode).
 
-> The flow's runtime messages (prompts, ledger, hook) are in Spanish for now; the screenshots show them as they are. `RESULTADO: OK` means the step passed and `REVISAR` that it needs review.
 
 ## Requirements
 
@@ -222,26 +221,26 @@ python3 .claude/bin/agentic.py check-wave 1            # ownership check
 
 ## Troubleshooting
 
-The messages below are quoted as the flow prints them.
+The messages below are quoted as the flow prints them (the first words are enough to find them).
 
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | `does not support this model; version X or newer is required` | An old CLI for a new model | `claude update`. With npm: `npm install -g @anthropic-ai/claude-code@latest` (with nvm, use nvm's npm) |
 | `Ignoring 1 permissions.allow entry ... not been trusted` | The folder is not trusted | Open `claude` in it once and accept the prompt |
-| `Manifiesto inválido: ... model: sonnet` or `opus` | Someone pinned another model in an agent or command | Restore `model: sonnet` (working agents and `/implement`) or `model: opus` (`/architect`, `plan-reviewer`) |
-| `Fichero con dos propietarios` ("file with two owners") | Two zones overlap in the manifest | Fix the manifest with `/architect`; see the example below |
-| `RESULTADO: REVISAR` without a `STATUS` | The child process failed (usage limit, network, auth) | Read `.claude/state/runs/<ID>.log` |
+| `Invalid manifest: ... model: sonnet` or `opus` | Someone pinned another model in an agent or command | Restore `model: sonnet` (working agents and `/implement`) or `model: opus` (`/architect`, `plan-reviewer`) |
+| `File with two owners` | Two zones overlap in the manifest | Fix the manifest with `/architect`; see the example below |
+| `RESULT: REVIEW` without a `STATUS` | The child process failed (usage limit, network, auth) | Read `.claude/state/runs/<ID>.log` |
 | `TIMEOUT` | The stage exceeded `timeout_s` | Raise `timeout_s` or split the package |
-| `FUERA DE PROPIEDAD` ("outside ownership") | An agent wrote outside its zone, or a build artefact is not ignored | Check `git diff`. For an artefact (`dist/`…), add it to `ignore` in the manifest |
-| `[agentic guard] ... no posee ...` ("does not own") | The hook did its job | If the file should belong to that package, fix the manifest with `/architect` |
-| `YA PASAN SIN CÓDIGO` in wave 0 ("already pass without code") | The acceptance tests prove nothing | Revisit the criteria with `/architect`: they lack a concrete observable result |
-| `agotó sus 2 ciclos --fix` ("used up its 2 fix cycles") | The defect won't yield to repetition | Decide yourself, or change the contract or the criterion with `/architect` |
-| `mirror apunta a un fichero que no existe` / `fuera de rango` | The plan cites code that is not there | Ask `/architect` to correct the "patterns to mirror" |
-| Verification reports a `fallo previo` ("pre-existing failure") | That phase failed before the run | It neither blocks nor is blamed on a package. Fix it separately, or request it as a `fix` |
-| `... es configuración de calidad ya existente` | An agent tried to relax a linter or formatter | As intended. If the design really requires it, add `"config_edit": true` to that package with `/architect` |
-| `no se desactivan tests para ponerlos en verde` | An agent tried to add `skip`, `xfail` or `only` | Fix the test or report a `BLOCKER`. Conditional skips (`skipIf`) are allowed |
-| `... parece una clave ...` ("looks like a key") | An agent was about to write something shaped like a credential | Use environment variables or synthetic values |
-| `saltarse los hooks de git ... no está permitido` | `--no-verify`, `commit -n` or `core.hooksPath` | Fix what makes the git hook fail |
+| `OUTSIDE OWNERSHIP` | An agent wrote outside its zone, or a build artefact is not ignored | Check `git diff`. For an artefact (`dist/`…), add it to `ignore` in the manifest |
+| `[agentic guard] ... does not own ...` | The hook did its job | If the file should belong to that package, fix the manifest with `/architect` |
+| `ALREADY PASS WITHOUT CODE` in wave 0 | The acceptance tests prove nothing | Revisit the criteria with `/architect`: they lack a concrete observable result |
+| `has used up its 2 --fix cycles` | The defect won't yield to repetition | Decide yourself, or change the contract or the criterion with `/architect` |
+| `mirror points to a file that does not exist` / `out of range` | The plan cites code that is not there | Ask `/architect` to correct the "patterns to mirror" |
+| Verification reports a `pre-existing failure` | That phase failed before the run | It neither blocks nor is blamed on a package. Fix it separately, or request it as a `fix` |
+| `... is existing quality configuration` | An agent tried to relax a linter or formatter | As intended. If the design really requires it, add `"config_edit": true` to that package with `/architect` |
+| `tests are not disabled to turn them green` | An agent tried to add `skip`, `xfail` or `only` | Fix the test or report a `BLOCKER`. Conditional skips (`skipIf`) are allowed |
+| `... looks like an AWS access key` (or another credential) | An agent was about to write something shaped like a credential | Use environment variables or synthetic values |
+| `bypassing git hooks ... is not allowed` | `--no-verify`, `commit -n` or `core.hooksPath` | Fix what makes the git hook fail |
 | A package returns `BLOCKER` about its acceptance tests | A test is wrong and the package cannot touch it | Check the diagnosis, fix the test, and resume with `/implement <wave>` |
 | Every wave has a single package | The architect chose real layers | Ask for "contracts first" |
 | `/implement` uses the fallback mode on Pro | Workflows are not enabled | Enable them in `/config` (Dynamic workflows) or with `"enableWorkflows": true` |

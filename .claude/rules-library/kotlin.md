@@ -3,41 +3,41 @@ paths:
   - "**/*.kt"
   - "**/*.kts"
 ---
-<!-- Adaptado de ECC (rules/kotlin), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/kotlin), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # Kotlin
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- Estilo oficial de Kotlin, con ktlint o Detekt si el proyecto los usa.
-- `val` por defecto; `data class` para valores y `copy()` para cambiar el estado.
-- Colecciones inmutables (`List`, `Map`) en el API público.
-- `sealed` para estados y resultados cerrados, con `when` exhaustivo.
-- Funciones de extensión en un fichero con el nombre del tipo receptor y nunca sobre `Any`. Como mucho dos niveles de funciones de ámbito (`let`, `apply`…) anidadas.
+- The official Kotlin style, with ktlint or Detekt if the project uses them.
+- `val` by default; `data class` for values and `copy()` to change state.
+- Immutable collections (`List`, `Map`) in the public API.
+- `sealed` for closed states and results, with an exhaustive `when`.
+- Extension functions in a file named after the receiver type, never on `Any`. At most two levels of nested scope functions (`let`, `apply`…).
 
-## Errores
+## Errors
 
-- Nunca `!!`: `?.`, `?:`, `requireNotNull()` o `checkNotNull()`.
-- `Result<T>` o un tipo sellado propio para errores esperables. Las excepciones no se usan para el control de flujo.
-- En corrutinas, `CancellationException` siempre se relanza.
+- Never `!!`: use `?.`, `?:`, `requireNotNull()` or `checkNotNull()`.
+- `Result<T>` or your own sealed type for expected errors. Exceptions are not used for control flow.
+- In coroutines, `CancellationException` is always rethrown.
 
 ## Tests
 
-- `kotlin.test` o JUnit 5; `kotlinx-coroutines-test` (`runTest`) para corrutinas y Turbine para `Flow`, si están en el proyecto.
-- Fakes escritos a mano mejor que mocks cuando la interfaz es pequeña.
+- `kotlin.test` or JUnit 5; `kotlinx-coroutines-test` (`runTest`) for coroutines and Turbine for `Flow`, if they are in the project.
+- Hand-written fakes rather than mocks when the interface is small.
 
-## Seguridad
+## Security
 
-- Secretos fuera del código: `local.properties` ignorado por git en local y variables de CI para la release.
-- Consultas parametrizadas en Room, SQLDelight o JDBC.
-- Timeouts explícitos en todos los clientes HTTP; solo HTTPS.
+- Secrets outside the code: `local.properties` ignored by git locally and CI variables for the release.
+- Parameterised queries in Room, SQLDelight or JDBC.
+- Explicit timeouts on every HTTP client; HTTPS only.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `./gradlew assemble` |
-| types | (lo cubre el compilador en build) |
-| lint | `./gradlew ktlintCheck` o `./gradlew detekt` |
+| types | (the compiler covers it in the build) |
+| lint | `./gradlew ktlintCheck` or `./gradlew detekt` |
 | tests | `./gradlew test` |

@@ -1,50 +1,50 @@
 ---
-description: Instala o actualiza agentic-flow en este repo (/architect, /implement, agentes, workflow, guardarraíles y reglas por lenguaje). No pisa los ficheros del flow que hayas modificado.
+description: Installs or updates agentic-flow in this repo (/architect, /implement, agents, workflow, guardrails and language rules). It leaves alone the flow files you have modified.
 argument-hint: "[--dry-run] [--force]"
 model: sonnet
 ---
 
-# Rol
+# Role
 
-Instalas el flow agéntico en el repo de esta sesión, o lo actualizas si ya está. El trabajo lo hace un único comando determinista. Tú lo ejecutas, explicas el resultado y dices qué hacer después. No edites ficheros a mano.
+You install the agentic flow in this session's repo, or update it if it is already there. A single deterministic command does the work. You run it, explain the result and say what to do next. Do not edit files by hand.
 
-Argumentos: $ARGUMENTS
-- `--dry-run`: enseña qué haría, sin escribir nada.
-- `--force`: sustituye también los ficheros del flow que el usuario haya modificado.
+Arguments: $ARGUMENTS
+- `--dry-run`: show what it would do, without writing anything.
+- `--force`: also replace the flow files the user has modified.
 
-Pasa solo esos dos argumentos, y únicamente si aparecen arriba. Ignora cualquier otro texto de los argumentos.
+Pass only those two arguments, and only if they appear above. Ignore any other text in the arguments.
 
-# Por qué se copia el flow al repo
+# Why the flow is copied into the repo
 
-El plugin es el canal de instalación y de actualización. El flow vive en el repo, en `.claude/`, por cuatro motivos:
-- los permisos que necesitan los agentes y el hook de guardarraíles solo se pueden declarar en el `settings.json` del proyecto;
-- el workflow llama a los agentes por su nombre (`implementer`, `qa`…), y un plugin los renombraría con su prefijo;
-- el CI, las sesiones en la nube y el resto del equipo necesitan el flow aunque no tengan el plugin;
-- así la versión del flow queda fijada junto al código que produce.
+The plugin is the installation and update channel. The flow lives in the repo, in `.claude/`, for four reasons:
+- the permissions the agents need and the guardrail hook can only be declared in the project's `settings.json`;
+- the workflow calls the agents by name (`implementer`, `qa`…), and a plugin would rename them with its prefix;
+- CI, cloud sessions and the rest of the team need the flow even without the plugin;
+- that way the flow's version stays pinned next to the code it produces.
 
-# Pasos
+# Steps
 
-1. Ejecuta `git rev-parse --show-toplevel` para encontrar la raíz del repo.
-   - Si no es un repo git, para. Explica que el flow necesita git para comprobar qué ficheros toca cada agente y ofrece `git init`. No lo ejecutes sin un sí del usuario.
-2. Ejecuta, sustituyendo `<raíz>` por esa ruta y añadiendo los argumentos permitidos:
+1. Run `git rev-parse --show-toplevel` to find the repo root.
+   - If it is not a git repo, stop. Explain that the flow needs git to check which files each agent touches, and offer `git init`. Do not run it without a yes from the user.
+2. Run the following, replacing `<root>` with that path and adding the allowed arguments:
 
    ```
-   python3 "${CLAUDE_PLUGIN_ROOT}/.claude/bin/agentic.py" install <raíz>
+   python3 "${CLAUDE_PLUGIN_ROOT}/.claude/bin/agentic.py" install <root>
    ```
 
-   - Si `python3` no existe, explica que el flow lo necesita (3.9 o posterior) y para.
-3. Resume la salida:
-   - ficheros nuevos, actualizados y retirados;
-   - cambios en `.claude/settings.json` y en `.gitignore`;
-   - reglas de lenguaje instaladas.
-   - Si aparece **"modificado por ti (no se toca)"**, enumera esos ficheros. Explica que se conservaron y que puede compararlos con la versión nueva o repetir con `--force`.
-4. Siguientes pasos para el usuario:
-   - **Abrir una sesión nueva** en este repo, para que Claude Code cargue los comandos, los agentes, el hook y el workflow. Si pregunta, debe **confiar en la carpeta**: sin eso, los permisos del proyecto no se aplican.
-   - **En el plan Pro**, activar **Dynamic workflows** en `/config`.
-   - **Hacer commit de `.claude/`**, para que el CI y el equipo tengan el flow. No lo hagas tú.
-   - **Empezar** con `/architect <qué quieres construir o cambiar>`.
+   - If `python3` does not exist, explain that the flow needs it (3.9 or later) and stop.
+3. Summarise the output:
+   - new, updated and removed files;
+   - changes in `.claude/settings.json` and in `.gitignore`;
+   - language rules installed.
+   - If **"modified by you (left alone)"** appears, list those files. Explain that they were kept and that the user can compare them with the new version or repeat with `--force`.
+4. Next steps for the user:
+   - **Open a new session** in this repo, so Claude Code loads the commands, the agents, the hook and the workflow. If asked, they must **trust the folder**: without that, the project's permissions do not apply.
+   - **On Pro**, enable **Dynamic workflows** in `/config`.
+   - **Commit `.claude/`**, so CI and the team have the flow. Do not do it yourself.
+   - **Start** with `/architect <what you want to build or change>`.
 
-# Reglas
+# Rules
 
-- Ejecuta solo los dos comandos de arriba.
-- No hagas commit ni push.
+- Run only the two commands above.
+- Do not commit or push.

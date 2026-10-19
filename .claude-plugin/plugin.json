@@ -2,7 +2,7 @@
   "name": "agentic-flow",
   "displayName": "Agentic Flow",
   "version": "1.0.0",
-  "description": "Instala y actualiza en tu repo un flow de desarrollo agéntico: arquitecto con Opus, implementación paralela con Sonnet, aceptación primero, guardarraíles, revisión adversarial, QA y documentación viva.",
+  "description": "Installs and updates in your repo an agentic development flow: an Opus architect, parallel Sonnet implementation, acceptance tests first, guardrails, adversarial review, QA and living documentation.",
   "author": {
     "name": "jagosar",
     "url": "https://github.com/jagosar"

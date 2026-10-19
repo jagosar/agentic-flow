@@ -31,7 +31,7 @@ Type `/`: `/architect` and `/implement` should appear.
 ```
 
 - The questions appear as cards with options, the recommended one first.
-- It ends with `Manifiesto válido` ("manifest valid") and a request for approval.
+- It ends with `Manifest valid` and a request for approval.
 - Open `architecture.md` from the file pane (click its path) and read it. Once you approve, ask the session to "commit architecture.md".
 
 ## 3. Build

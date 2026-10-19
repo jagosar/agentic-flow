@@ -97,6 +97,7 @@ Common rules plus rules for Python, TypeScript/JavaScript, Go, Rust, Java, Kotli
 Tested end to end with real agents:
 - **A new project:** acceptance tests red first, two parallel waves, verification, review and QA, in about five minutes.
 - **An existing codebase:** the plan cited exact `file:line` references, 13 new criteria passed and 16 existing ones stayed green. Data files from the previous version still read byte for byte.
+- **The fully English flow:** the whole pipeline (prompts, ledger, hook messages, reports) ran on a new feature: wave 0, a parallel wave, the fix cycle, QA and the documentation.
 - **A full cycle with an injected defect:** the reviewer and QA found it independently, the verifier upheld it, its package fixed it in one cycle, and the doc-updater brought README and CHANGELOG in line with the real CLI. About four minutes.
 - **A badly written acceptance test:** the implementer could not touch it, did not cheat, and reported the exact cause. The flow stopped, and resumed from the same wave once the test was fixed.
 - **The plugin and the fallback mode:** `/agentic-flow:init` installed the flow in a TypeScript repo in a real session. The fallback mode without workflows also ran end to end.

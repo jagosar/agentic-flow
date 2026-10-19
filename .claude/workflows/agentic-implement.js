@@ -1,33 +1,33 @@
 export const meta = {
   name: 'agentic-implement',
-  description: 'Lleva architecture.md a código verificado: ola 0 (aceptación primero), olas en paralelo, verificación, revisión adversarial, QA, correcciones con tope y documentación viva.',
+  description: 'Takes architecture.md to verified code: wave 0 (acceptance first), parallel waves, verification, adversarial review, QA, capped fix cycles and living documentation.',
   phases: [
-    { title: 'Preparar', detail: 'pipeline-plan: olas, WP, aceptación y tope de correcciones' },
-    { title: 'Línea base', detail: 'estado de build, tipos, lint y tests antes de tocar nada' },
-    { title: 'Ola 0', detail: 'test-author escribe la aceptación; debe quedar en rojo' },
-    { title: 'Olas', detail: 'implementers en paralelo por ola, con propiedad verificada' },
-    { title: 'Verificación', detail: 'build, tipos, lint, tests y aceptación en verde' },
-    { title: 'Revisión', detail: 'reviewer y verificación adversarial de los hallazgos graves' },
-    { title: 'QA', detail: 'pruebas exploratorias más allá de los AC' },
-    { title: 'Corrección', detail: 'cada defecto vuelve a su WP, con tope de ciclos' },
-    { title: 'Documentación', detail: 'codemap, doc-updater y comprobación de enlaces y rutas' },
+    { title: 'Prepare', detail: 'pipeline-plan: waves, packages, acceptance and the fix limit' },
+    { title: 'Baseline', detail: 'state of build, types, lint and tests before any change' },
+    { title: 'Wave 0', detail: 'the test-author writes the acceptance tests; they must be red' },
+    { title: 'Waves', detail: 'implementers in parallel per wave, with ownership checked' },
+    { title: 'Verification', detail: 'build, types, lint, tests and green acceptance' },
+    { title: 'Review', detail: 'reviewer and adversarial verification of serious findings' },
+    { title: 'QA', detail: 'exploratory tests beyond the acceptance criteria' },
+    { title: 'Fixes', detail: 'each defect goes back to its package, with a cycle limit' },
+    { title: 'Documentation', detail: 'code map, doc-updater and a check of links and paths' },
   ],
 }
 
-// Entrada opcional: args = { start_wave: N } para retomar desde una ola (se salta la ola 0).
-// El script solo orquesta: no toca la shell ni el disco. Lo determinista lo ejecuta el agente gatekeeper con
-// agentic.py, y los guardarraíles (hook PreToolUse) aplican a cada agente igual que fuera de un workflow.
+// Optional input: args = { start_wave: N } to resume from a wave (skips wave 0).
+// The script only orchestrates: it has no shell and no disk. The deterministic steps are run by the gatekeeper agent
+// with agentic.py, and the guardrails (the PreToolUse hook) apply to every agent just as outside a workflow.
 const opts = args || {}
 const startWave = Number.isInteger(opts.start_wave) ? opts.start_wave : null
 const AGENTIC = 'python3 .claude/bin/agentic.py'
 
-// ---------- esquemas ----------
+// ---------- schemas ----------
 const GATE_SCHEMA = {
   type: 'object',
   required: ['exit_code', 'output'],
   properties: { exit_code: { type: 'integer' }, output: { type: 'string' } },
 }
-const SEVERITY = { type: 'string', enum: ['critica', 'alta', 'media', 'baja'] }
+const SEVERITY = { type: 'string', enum: ['critical', 'high', 'medium', 'low'] }
 const AT_SCHEMA = {
   type: 'object',
   required: ['status', 'coverage', 'blocker'],
@@ -98,37 +98,37 @@ const DOCS_SCHEMA = {
   },
 }
 
-// ---------- utilidades ----------
-const safe = (p, label) => p.catch(err => { log(`${label} falló: ${String((err && err.message) || err)}`); return null })
+// ---------- utilities ----------
+const safe = (p, label) => p.catch(err => { log(`${label} failed: ${String((err && err.message) || err)}`); return null })
 const gate = (cmd, label) =>
-  safe(agent(`Ejecuta exactamente este comando desde la raíz del repo y devuelve su código de salida y su salida completa:\n\n${AGENTIC} ${cmd}`,
+  safe(agent(`Run exactly this command from the repo root and return its exit code and its full output:\n\n${AGENTIC} ${cmd}`,
     { agentType: 'gatekeeper', label, schema: GATE_SCHEMA }), label)
 const lastJson = out => {
   const lines = String(out || '').trim().split('\n').filter(l => l.trim().startsWith('{'))
   try { return lines.length ? JSON.parse(lines[lines.length - 1]) : null } catch (e) { return null }
 }
-const BLOCKING = new Set(['critica', 'alta'])
-// Ficheros que close-stage vio cambiar para un ID ("WP-01: 2 fichero(s) cambiado(s): a, b"). Sirve para contrastar
-// lo que un agente dice que hizo con lo que hay en disco.
+const BLOCKING = new Set(['critical', 'high'])
+// Files that close-stage saw change for an ID ("WP-01: 2 file(s) changed: a, b"). Used to compare what an agent
+// says it did with what is on disk.
 const changedBy = (out, id) => {
-  const m = String(out || '').match(new RegExp(`^${id}: \\d+ fichero\\(s\\) cambiado\\(s\\)(?:: (.*))?$`, 'm'))
+  const m = String(out || '').match(new RegExp(`^${id}: \\d+ file\\(s\\) changed(?:: (.*))?$`, 'm'))
   return m ? (m[1] ? m[1].split(', ') : []) : null
 }
-// Los agentes a veces dan rutas absolutas: cuenta como vista si termina en la ruta relativa que vio close-stage.
+// Agents sometimes give absolute paths: it counts as seen if it ends in the relative path close-stage saw.
 const unchangedClaims = (report, out, id) => {
   const seen = changedBy(out, id)
   return report && Array.isArray(report.files) && seen
     ? report.files.filter(f => !seen.some(s => f === s || f.endsWith('/' + s)))
     : []
 }
-const run = { result: 'REVISAR', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, docs: null, fix_cycles: 0, pending: [] }
+const run = { result: 'REVIEW', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, docs: null, fix_cycles: 0, pending: [] }
 const stop = (stage, detail, extra) => ({ ...run, failed_stage: stage, detail, ...(extra || {}) })
 
-// Documentación viva: solo con el código aceptado. El mapa del código lo genera agentic.py (determinista); el
-// doc-updater pone al día README, CHANGELOG y guías dentro de su zona, y docs-check comprueba enlaces y rutas.
-// Un problema de documentación no invalida el código: queda como pendiente, salvo una escritura fuera de su zona.
+// Living documentation: only with accepted code. The code map is generated by agentic.py (deterministic); the
+// doc-updater brings README, CHANGELOG and guides up to date inside its zone, and docs-check checks links and paths.
+// A documentation problem does not invalidate the code: it becomes a pending item, unless a write left its zone.
 async function documentStage() {
-  phase('Documentación')
+  phase('Documentation')
   run.docs = { codemap: null, report: null, ownership_ok: false, check: null }
   if (plan.codemap) {
     const cm = await gate('codemap', 'codemap')
@@ -136,28 +136,28 @@ async function documentStage() {
   }
   const open = await gate('open-stage docs', 'open-stage docs')
   if (!open || open.exit_code !== 0) {
-    run.pending.push({ type: 'documentación', severity: 'media', problem: 'no se pudo abrir la etapa de documentación' })
+    run.pending.push({ type: 'documentation', severity: 'medium', problem: 'the documentation stage could not be opened' })
     return
   }
-  const doc = await safe(agent('Actualiza la documentación según architecture.md y el código integrado.' + RULES, { agentType: 'doc-updater', label: 'doc-updater', schema: DOCS_SCHEMA }), 'doc-updater')
+  const doc = await safe(agent('Update the documentation according to architecture.md and the integrated code.' + RULES, { agentType: 'doc-updater', label: 'doc-updater', schema: DOCS_SCHEMA }), 'doc-updater')
   const close = await gate(`close-stage docs DOCS=${doc && doc.status === 'DONE' ? 'done' : 'blocker'}`, 'close-stage docs')
   const check = await gate('docs-check', 'docs-check')
   run.docs.report = doc
   run.docs.ownership_ok = !!close && close.exit_code === 0
   run.docs.check = check ? lastJson(check.output) : null
-  run.stages.push({ stage: 'documentación', ok: run.docs.ownership_ok && !!check && check.exit_code === 0, check: close && close.output })
+  run.stages.push({ stage: 'documentation', ok: run.docs.ownership_ok && !!check && check.exit_code === 0, check: close && close.output })
   const ghost = unchangedClaims(doc, close && close.output, 'DOCS')
   if (doc && doc.status === 'DONE' && ghost.length) {
-    run.pending.push({ type: 'documentación', severity: 'media', problem: 'el doc-updater declara cambios que no están en disco', files: ghost })
+    run.pending.push({ type: 'documentation', severity: 'medium', problem: 'the doc-updater claims changes that are not on disk', files: ghost })
   }
   if (!doc || doc.status !== 'DONE') {
-    run.pending.push({ type: 'documentación', severity: 'media', problem: doc ? `doc-updater bloqueado: ${doc.blocker}` : 'el doc-updater no devolvió informe' })
+    run.pending.push({ type: 'documentation', severity: 'medium', problem: doc ? `doc-updater blocked: ${doc.blocker}` : 'the doc-updater returned no report' })
   } else if (!run.docs.ownership_ok) {
-    run.pending.push({ type: 'documentación', severity: 'alta', problem: 'el doc-updater escribió fuera de su zona (ver docs.check)' })
+    run.pending.push({ type: 'documentation', severity: 'high', problem: 'the doc-updater wrote outside its zone (see docs.check)' })
   }
   const broken = (run.docs.check && run.docs.check.broken) || []
-  if (broken.length) run.pending.push({ type: 'documentación', severity: 'media', problem: `${broken.length} enlace(s) o ruta(s) rota(s) en la documentación`, broken })
-  if (doc && doc.unverified && doc.unverified.length) run.pending.push({ type: 'documentación', severity: 'baja', problem: 'afirmaciones que el doc-updater no pudo comprobar', unverified: doc.unverified })
+  if (broken.length) run.pending.push({ type: 'documentation', severity: 'medium', problem: `${broken.length} broken link(s) or path(s) in the documentation`, broken })
+  if (doc && doc.unverified && doc.unverified.length) run.pending.push({ type: 'documentation', severity: 'low', problem: 'claims the doc-updater could not verify', unverified: doc.unverified })
 }
 
 async function runWave(wave, wpIds, defectsByWp) {
@@ -166,82 +166,82 @@ async function runWave(wave, wpIds, defectsByWp) {
   if (!open || open.exit_code !== 0) return { ok: false, open }
   const reports = await parallel(wpIds.map(wp => () => {
     const prompt = fixing
-      ? `Corrige ${wp} según architecture.md. El código ya existe. Estos son los defectos que los jueces (revisor y QA) atribuyen a tu WP, en JSON:\n` +
-        `${JSON.stringify(defectsByWp[wp])}\nNo te salgas del contrato, no toques ficheros ajenos ni los tests de aceptación, y deja en verde los tests de aceptación de tus AC.`
-      : `Implementa ${wp} según architecture.md.`
+      ? `Fix ${wp} according to architecture.md. The code already exists. These are the defects the judges (reviewer and QA) attribute to your package, as JSON:\n` +
+        `${JSON.stringify(defectsByWp[wp])}\nStay within the contract, do not touch other packages' files or the acceptance tests, and keep the acceptance tests of your criteria green.`
+      : `Implement ${wp} according to architecture.md.`
     return safe(agent(prompt + RULES, { agentType: plan.agents[wp] || 'implementer', label: fixing ? `${wp} (fix)` : wp, schema: REPORT_SCHEMA }), wp)
   }))
   wpIds.forEach((wp, i) => { run.work_packages[wp] = reports[i] })
   const states = wpIds.map((wp, i) => `${wp}=${!reports[i] ? 'error' : reports[i].status === 'DONE' ? 'done' : 'blocker'}`)
   const close = await gate(`close-stage ${wave} ${states.join(' ')}${fixing ? ' --fix' : ''}`, `close-stage ${wave}`)
   const ok = !!close && close.exit_code === 0
-  run.stages.push({ stage: fixing ? `ola ${wave} (fix)` : `ola ${wave}`, ok, check: close && close.output })
+  run.stages.push({ stage: fixing ? `wave ${wave} (fix)` : `wave ${wave}`, ok, check: close && close.output })
   return { ok, reports, close }
 }
 
-// ---------- Preparar ----------
-phase('Preparar')
+// ---------- Prepare ----------
+phase('Prepare')
 const planGate = await gate('pipeline-plan', 'pipeline-plan')
 const plan = planGate && planGate.exit_code === 0 ? lastJson(planGate.output) : null
-if (!plan) return stop('preparar', 'pipeline-plan falló: el manifiesto no es válido', { gate: planGate })
-// Reglas del lenguaje (rules-sync): cada agente que escribe o juzga código las recibe en su prompt.
-const RULES = plan.rules && plan.rules.length ? ` Reglas que debes seguir (lenguaje y comunes): ${plan.rules.join(', ')}.` : ''
+if (!plan) return stop('prepare', 'pipeline-plan failed: the manifest is not valid', { gate: planGate })
+// Language rules (rules-sync): every agent that writes or judges code receives them in its prompt.
+const RULES = plan.rules && plan.rules.length ? ` Rules you must follow (language and common): ${plan.rules.join(', ')}.` : ''
 
-// ---------- Línea base ----------
-// Antes de tocar nada: así, al final, una fase que ya fallaba es "fallo previo" y no se atribuye a ningún WP.
-// Al retomar desde una ola (start_wave) se conserva la línea base de la ejecución original.
+// ---------- Baseline ----------
+// Before touching anything: that way, at the end, a phase that already failed is a "pre-existing failure" and is
+// blamed on no package. When resuming from a wave (start_wave), the original run's baseline is kept.
 if (startWave === null && plan.baseline) {
-  phase('Línea base')
+  phase('Baseline')
   const base = await gate('baseline', 'baseline')
   run.baseline = base ? lastJson(base.output) : null
-  if (!base || base.exit_code !== 0) return stop('línea base', 'algún comando de verify no se pudo ejecutar (no existe o superó el tiempo)', { gate: base })
+  if (!base || base.exit_code !== 0) return stop('baseline', 'a verify command could not be run (it does not exist or timed out)', { gate: base })
 }
 
-// ---------- Ola 0 ----------
+// ---------- Wave 0 ----------
 if (startWave === null && plan.acceptance) {
-  phase('Ola 0')
+  phase('Wave 0')
   if (plan.type === 'refactor') {
-    // En un refactor la aceptación es la suite existente: debe estar en verde antes de tocar nada.
-    const base = await gate('acceptance --expect green', 'línea base')
-    run.stages.push({ stage: 'línea base', ok: !!base && base.exit_code === 0, check: base && base.output })
-    if (!base || base.exit_code !== 0) return stop('ola 0', 'la suite existente no está en verde antes del refactor', { gate: base })
+    // In a refactor, acceptance is the existing suite: it must be green before anything changes.
+    const base = await gate('acceptance --expect green', 'baseline')
+    run.stages.push({ stage: 'baseline', ok: !!base && base.exit_code === 0, check: base && base.output })
+    if (!base || base.exit_code !== 0) return stop('wave 0', 'the existing suite is not green before the refactor', { gate: base })
   } else {
     const open = await gate('open-stage acceptance', 'open-stage acceptance')
-    if (!open || open.exit_code !== 0) return stop('ola 0', 'no se pudo abrir la etapa de aceptación', { gate: open })
-    const at = await safe(agent('Escribe los tests de aceptación según architecture.md.' + RULES, { agentType: 'test-author', label: 'test-author', schema: AT_SCHEMA }), 'test-author')
+    if (!open || open.exit_code !== 0) return stop('wave 0', 'the acceptance stage could not be opened', { gate: open })
+    const at = await safe(agent('Write the acceptance tests according to architecture.md.' + RULES, { agentType: 'test-author', label: 'test-author', schema: AT_SCHEMA }), 'test-author')
     const state = at && at.status === 'DONE' ? 'done' : 'blocker'
     const close = await gate(`close-stage acceptance AT=${state} --expect red`, 'close-stage acceptance')
-    run.stages.push({ stage: 'ola 0', ok: !!close && close.exit_code === 0, test_author: at, check: close && close.output })
+    run.stages.push({ stage: 'wave 0', ok: !!close && close.exit_code === 0, test_author: at, check: close && close.output })
     if (!close || close.exit_code !== 0) {
-      return stop('ola 0', at && at.status === 'BLOCKER'
-        ? 'el test-author no puede probar algún criterio: hay que revisar architecture.md'
-        : 'la aceptación no quedó en rojo por el motivo correcto (o se tocaron ficheros ajenos)', { test_author: at })
+      return stop('wave 0', at && at.status === 'BLOCKER'
+        ? 'the test-author cannot test some criterion: architecture.md needs review'
+        : 'acceptance did not end up red for the right reason (or files outside its zone were touched)', { test_author: at })
     }
   }
 }
 
-// ---------- Olas ----------
-phase('Olas')
+// ---------- Waves ----------
+phase('Waves')
 for (const wave of plan.waves.filter(w => startWave === null || w >= startWave)) {
   const res = await runWave(wave, plan.work_packages[String(wave)], null)
-  if (!res.ok) return stop(`ola ${wave}`, 'la ola terminó con bloqueos, informes ausentes o escrituras fuera de propiedad')
+  if (!res.ok) return stop(`wave ${wave}`, 'the wave ended with blockers, missing reports or writes outside ownership')
 }
 
-// ---------- Verificación, revisión, QA y correcciones ----------
+// ---------- Verification, review, QA and fixes ----------
 while (true) {
-  phase('Verificación')
+  phase('Verification')
   const v = await gate('verify', 'verify')
   run.verification = v ? lastJson(v.output) : null
-  if (!v || v.exit_code !== 0) return stop('verificación', 'alguna fase de verificación falla (ver verification)')
+  if (!v || v.exit_code !== 0) return stop('verification', 'a verification phase fails (see verification)')
 
-  phase('Revisión')
+  phase('Review')
   const openR = await gate('open-stage review', 'open-stage review')
-  const review = await safe(agent('Revisa el código integrado según architecture.md.' + RULES, { agentType: 'reviewer', label: 'reviewer', schema: FINDINGS_SCHEMA }), 'reviewer')
-  if (!review) return stop('revisión', 'el revisor no devolvió informe')
+  const review = await safe(agent('Review the integrated code according to architecture.md.' + RULES, { agentType: 'reviewer', label: 'reviewer', schema: FINDINGS_SCHEMA }), 'reviewer')
+  if (!review) return stop('review', 'the reviewer returned no report')
   const graves = review.findings.filter(f => BLOCKING.has(f.severity))
   const verdicts = await parallel(graves.map(f => () =>
-    safe(agent(`Intenta refutar este hallazgo del revisor, en JSON:\n${JSON.stringify(f)}`, { agentType: 'verifier', label: `verificar ${f.file}`, schema: VERDICT_SCHEMA }), 'verifier')))
-  // Un hallazgo solo se descarta si el verificador lo refuta con confianza. La incertidumbre nunca rebaja un bloqueo.
+    safe(agent(`Try to refute this finding from the reviewer, as JSON:\n${JSON.stringify(f)}`, { agentType: 'verifier', label: `verify ${f.file}`, schema: VERDICT_SCHEMA }), 'verifier')))
+  // A finding is only dismissed if the verifier refutes it with confidence. Uncertainty never downgrades a blocker.
   const confirmed = graves.filter((f, i) => !(verdicts[i] && verdicts[i].is_real === false && verdicts[i].confidence >= 0.7))
   const refuted = graves.filter(f => !confirmed.includes(f))
   const advisory = review.findings.filter(f => !BLOCKING.has(f.severity))
@@ -250,41 +250,41 @@ while (true) {
 
   phase('QA')
   await gate('open-stage qa', 'open-stage qa')
-  const qa = await safe(agent('Ejecuta la validación QA del sistema según architecture.md.' + RULES, { agentType: 'qa', label: 'qa', schema: QA_SCHEMA }), 'qa')
-  if (!qa) return stop('qa', 'QA no devolvió informe')
+  const qa = await safe(agent('Run the system\'s QA validation according to architecture.md.' + RULES, { agentType: 'qa', label: 'qa', schema: QA_SCHEMA }), 'qa')
+  if (!qa) return stop('qa', 'QA returned no report')
   await gate(`close-stage qa QA=${qa.status === 'PASS' ? 'pass' : 'fail'}`, 'close-stage qa')
   run.qa = qa
 
   const implDefects = [
-    ...confirmed.map(f => ({ source: 'revisor', ...f })),
+    ...confirmed.map(f => ({ source: 'reviewer', ...f })),
     ...qa.defects.filter(d => d.kind === 'implementation' && BLOCKING.has(d.severity)).map(d => ({ source: 'qa', ...d })),
   ].filter(d => plan.wave_of[d.wp] !== undefined)
   const designDefects = qa.defects.filter(d => d.kind === 'design')
   const unassigned = [...confirmed, ...qa.defects.filter(d => d.kind === 'implementation' && BLOCKING.has(d.severity))]
     .filter(d => plan.wave_of[d.wp] === undefined)
-  run.pending = [...designDefects.map(d => ({ type: 'diseño', ...d })), ...unassigned.map(d => ({ type: 'sin WP', ...d }))]
+  run.pending = [...designDefects.map(d => ({ type: 'design', ...d })), ...unassigned.map(d => ({ type: 'no WP', ...d }))]
 
   if (implDefects.length === 0) {
-    run.result = qa.status === 'BLOCKER' || run.pending.some(p => BLOCKING.has(p.severity)) ? 'REVISAR' : 'OK'
+    run.result = qa.status === 'BLOCKER' || run.pending.some(p => BLOCKING.has(p.severity)) ? 'REVIEW' : 'OK'
     if (run.result === 'OK' && plan.docs) {
       await documentStage()
-      if (run.pending.some(p => BLOCKING.has(p.severity))) run.result = 'REVISAR'
+      if (run.pending.some(p => BLOCKING.has(p.severity))) run.result = 'REVIEW'
     }
     return run
   }
   if (run.fix_cycles >= plan.max_fix_cycles) {
-    run.pending.push(...implDefects.map(d => ({ type: 'tope de correcciones agotado', ...d })))
+    run.pending.push(...implDefects.map(d => ({ type: 'fix limit reached', ...d })))
     return run
   }
 
   run.fix_cycles += 1
-  phase('Corrección')
+  phase('Fixes')
   const byWp = {}
   for (const d of implDefects) (byWp[d.wp] = byWp[d.wp] || []).push(d)
   const waves = [...new Set(Object.keys(byWp).map(wp => plan.wave_of[wp]))].sort((a, b) => a - b)
   for (const wave of waves) {
     const ids = Object.keys(byWp).filter(wp => plan.wave_of[wp] === wave).sort()
     const res = await runWave(wave, ids, byWp)
-    if (!res.ok) return stop(`corrección ola ${wave}`, 'la corrección terminó con bloqueos o escrituras fuera de propiedad')
+    if (!res.ok) return stop(`fix wave ${wave}`, 'the fix ended with blockers or writes outside ownership')
   }
 }

@@ -1,57 +1,57 @@
-<!-- Adaptado de ECC (rules/common), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
-# Reglas comunes
+<!-- Adapted from ECC (rules/common), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+# Common rules
 
-Estas reglas valen para cualquier lenguaje. Las del lenguaje concreto (`.claude/rules/agentic/<lenguaje>.md`) las amplían.
+These rules apply to any language. The language-specific ones (`.claude/rules/agentic/<language>.md`) extend them.
 
-## Precedencia
+## Precedence
 
-Cuando dos fuentes se contradicen, gana la primera de esta lista:
-1. `architecture.md`: contratos (sección 6), convenciones (sección 7) y patrones a imitar del WP.
-2. El estilo del código que ya existe en el repo (sección 4b).
-3. Las reglas propias del proyecto en `.claude/rules/`, fuera de `agentic/`.
-4. Estas reglas genéricas.
+When two sources contradict each other, the first on this list wins:
+1. `architecture.md`: contracts (section 6), conventions (section 7) and the WP's patterns to mirror.
+2. The style of the code that already exists in the repo (section 4b).
+3. The project's own rules in `.claude/rules/`, outside `agentic/`.
+4. These generic rules.
 
-En un repo con código, imitar lo existente vale más que aplicar aquí una preferencia. Si una regla de aquí contradice el plan, se sigue el plan y la contradicción se anota en el informe.
+In a repo with code, imitating what exists is worth more than applying a preference from here. If a rule here contradicts the plan, follow the plan and note the contradiction in the report.
 
-## Diseño
+## Design
 
-- **Lo más simple que funcione.** Nada de abstracciones especulativas (YAGNI). Se extrae una función o un tipo cuando la repetición es real, no por si acaso.
-- **Ficheros con un propósito.** Alta cohesión, poco acoplamiento. Organiza por funcionalidad o dominio, no por tipo de fichero.
-- **Funciones cortas y planas.** Retorno temprano en vez de anidar condicionales; más de 4 niveles de anidación es una señal de que hay que partir.
-- **Sin números mágicos.** Umbrales, tiempos y límites van en constantes con nombre o en configuración.
-- **Datos inmutables por defecto** cuando el lenguaje lo facilita: se devuelve una copia en vez de modificar lo que entra, salvo que el contrato diga lo contrario.
+- **The simplest thing that works.** No speculative abstractions (YAGNI). Extract a function or a type when the repetition is real, not just in case.
+- **Files with one purpose.** High cohesion, low coupling. Organise by feature or domain, not by file type.
+- **Short, flat functions.** Early returns instead of nested conditionals; more than 4 levels of nesting is a sign to split.
+- **No magic numbers.** Thresholds, times and limits go in named constants or configuration.
+- **Immutable data by default** when the language makes it easy: return a copy instead of mutating what comes in, unless the contract says otherwise.
 
-## Errores y entradas
+## Errors and inputs
 
-- Valida en las fronteras del sistema (entrada de usuario, ficheros, red, variables de entorno) y falla pronto, con un mensaje claro.
-- Nunca te tragues un error en silencio. Captura la excepción concreta, no la genérica, salvo en el punto de entrada.
-- Los mensajes de cara al usuario no filtran rutas internas, trazas, SQL ni secretos. El detalle va al log.
-- Los errores que cruzan un contrato son los de la sección 6, con su nombre exacto.
+- Validate at the system's boundaries (user input, files, network, environment variables) and fail early, with a clear message.
+- Never swallow an error silently. Catch the specific exception, not the generic one, except at the entry point.
+- User-facing messages do not leak internal paths, traces, SQL or secrets. The detail goes to the log.
+- The errors that cross a contract are those of section 6, with their exact name.
 
-## Nombres
+## Naming
 
-- El nombre dice qué contiene o qué hace, sin necesitar un comentario.
-- Los booleanos se leen como una afirmación (`is_expired`, `hasAccess`).
-- Mayúsculas y prefijos siguen la convención del lenguaje (ver su fichero de reglas).
+- The name says what it holds or does, without needing a comment.
+- Booleans read like a claim (`is_expired`, `hasAccess`).
+- Capitalisation and prefixes follow the language's convention (see its rules file).
 
 ## Tests
 
-- Estructura preparar, actuar, comprobar. Un comportamiento por test, con un nombre que lo describa (`devuelve_404_si_el_enlace_no_existe`).
-- En un fix, el test que reproduce el bug va antes que la corrección y falla sin ella.
-- Prueba los casos límite y los de error, no solo el camino feliz: vacío, nulo, máximo, duplicado, sin permisos.
-- Los tests son deterministas: sin red real, sin depender de la hora ni del orden de ejecución. Los dobles de prueba se definen en los ficheros del propio WP.
-- Un test que falla se arregla o se reporta. Nunca se desactiva para ponerlo en verde (el hook lo bloquea).
+- Arrange, act, assert. One behaviour per test, with a name that describes it (`returns_404_if_the_link_does_not_exist`).
+- In a fix, the test that reproduces the bug comes before the correction and fails without it.
+- Test edge cases and error cases, not just the happy path: empty, null, maximum, duplicate, no permissions.
+- Tests are deterministic: no real network, no dependence on the clock or on execution order. Test doubles are defined in the WP's own files.
+- A failing test is fixed or reported. It is never disabled to turn it green (the hook blocks that).
 
-## Seguridad
+## Security
 
-- Ningún secreto en el código, en los tests ni en los informes: variables de entorno o un gestor de secretos.
-- Consultas parametrizadas siempre; nunca se concatena entrada del usuario en SQL, en comandos de shell ni en rutas.
-- Las rutas que llegan de fuera se normalizan y se comprueba que no salen del directorio permitido.
-- Escapa la salida en plantillas HTML y trata como sospechoso todo lo que llega de una API externa, un webhook o un fichero subido.
-- Autenticación y criptografía con librerías establecidas; nunca implementaciones propias.
+- No secrets in code, tests or reports: environment variables or a secrets manager.
+- Always parameterised queries; never concatenate user input into SQL, shell commands or paths.
+- Paths that come from outside are normalised and checked not to leave the allowed directory.
+- Escape output in HTML templates and treat as suspicious everything that comes from an external API, a webhook or an uploaded file.
+- Authentication and cryptography with established libraries; never your own implementations.
 
-## Antes de decir DONE
+## Before saying DONE
 
-- Pasan los comandos de validación del WP y los tests de aceptación de sus AC.
-- No quedan restos de depuración (`print`, `console.log`, `dbg!`, código comentado).
-- El formateador y el linter del proyecto no dan avisos nuevos en tus ficheros.
+- The WP's validation commands and the acceptance tests of its ACs pass.
+- No debugging leftovers (`print`, `console.log`, `dbg!`, commented-out code).
+- The project's formatter and linter give no new warnings in your files.

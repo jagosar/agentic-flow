@@ -3,42 +3,42 @@ paths:
   - "**/*.php"
   - "**/composer.json"
 ---
-<!-- Adaptado de ECC (rules/php), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/php), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # PHP
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- PSR-12, con PHP-CS-Fixer o Laravel Pint.
-- `declare(strict_types=1);`, tipos escalares, tipos de retorno y propiedades tipadas en todo el código nuevo.
-- DTO y objetos de valor con propiedades `readonly` para los datos que cruzan una frontera; los arrays, solo para mapas simples.
-- Controladores finos y servicios explícitos, con las dependencias por constructor.
-- `use` para cada clase referenciada.
+- PSR-12, with PHP-CS-Fixer or Laravel Pint.
+- `declare(strict_types=1);`, scalar types, return types and typed properties in all new code.
+- DTOs and value objects with `readonly` properties for data that crosses a boundary; arrays only for simple maps.
+- Thin controllers and explicit services, with dependencies through the constructor.
+- A `use` for every class referenced.
 
-## Errores
+## Errors
 
-- Excepciones para los estados excepcionales; nunca `false` o `null` como canal oculto de error en código nuevo.
-- La entrada se convierte en un DTO validado antes de llegar al dominio.
+- Exceptions for exceptional states; never `false` or `null` as a hidden error channel in new code.
+- Input becomes a validated DTO before it reaches the domain.
 
 ## Tests
 
-- PHPUnit o Pest, el que use el proyecto.
-- Tests unitarios rápidos, separados de los de integración con el framework o la base de datos.
-- Factories o builders para preparar datos, no arrays enormes escritos a mano.
+- PHPUnit or Pest, whichever the project uses.
+- Fast unit tests, separate from integration tests with the framework or the database.
+- Factories or builders to prepare data, not huge hand-written arrays.
 
-## Seguridad
+## Security
 
-- Sentencias preparadas (PDO, Doctrine, query builder de Eloquent) para toda consulta dinámica.
-- `password_hash()` y `password_verify()`; se regenera la sesión al autenticar.
-- Escapado por defecto en las plantillas. CSRF en toda petición que cambie el estado.
-- `composer audit` cuando cambie el `composer.lock`.
+- Prepared statements (PDO, Doctrine, Eloquent's query builder) for every dynamic query.
+- `password_hash()` and `password_verify()`; regenerate the session on authentication.
+- Escaping by default in templates. CSRF on every request that changes state.
+- `composer audit` when `composer.lock` changes.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `composer validate --strict` |
 | types | `vendor/bin/phpstan analyse` |
-| lint | `vendor/bin/php-cs-fixer fix --dry-run` o `vendor/bin/pint --test` |
-| tests | `vendor/bin/phpunit` o `vendor/bin/pest` |
+| lint | `vendor/bin/php-cs-fixer fix --dry-run` or `vendor/bin/pint --test` |
+| tests | `vendor/bin/phpunit` or `vendor/bin/pest` |

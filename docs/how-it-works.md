@@ -11,7 +11,6 @@ The technical reference: which pieces exist, in what order they act, who may wri
 7. [Files and state](#7-files-and-state)
 8. [Glossary](#8-glossary)
 
-> **A note on language.** The documentation is in English. The flow's own runtime messages (agent prompts, the ledger, the hook's messages, `RESULTADO: OK` / `REVISAR`) are still in Spanish, and the screenshots show them as they are. `REVISAR` means "needs review".
 
 ## 1. Overview
 
@@ -202,7 +201,7 @@ An agent of the flow must claim its zone before it can write anything; that incl
 
 <p align="center"><img src="assets/screens/hook.png" width="760" alt="Three real hook messages: an implementer that has not claimed its package, WP-02 trying to write a file owned by WP-01, and WP-02 trying to commit."></p>
 
-On top of the hook, closing each stage compares the fingerprint of every file before and after. Any change outside that stage's zones leaves it in `REVISAR`, including changes made through Bash to dodge the hook.
+On top of the hook, closing each stage compares the fingerprint of every file before and after. Any change outside that stage's zones leaves it in `REVIEW`, including changes made through Bash to dodge the hook.
 
 ## 5. Permission matrix
 
@@ -237,7 +236,7 @@ flowchart LR
     A1 --> L
 ```
 
-| | Native workflow (default) | Fallback mode (`modo A`) |
+| | Native workflow (default) | Fallback mode (`fallback`) |
 |---|---|---|
 | Requirement | Dynamic workflows enabled (on Pro, in `/config`, or `"enableWorkflows": true`) | The `claude` CLI on the `PATH` |
 | Where it works | CLI, Desktop, IDEs, `claude -p` and the cloud | Wherever the CLI is: terminal, Desktop, IDEs |

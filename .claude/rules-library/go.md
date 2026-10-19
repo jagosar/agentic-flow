@@ -4,41 +4,41 @@ paths:
   - "**/go.mod"
   - "**/go.sum"
 ---
-<!-- Adaptado de ECC (rules/golang), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/golang), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # Go
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- `gofmt` y `goimports`, sin discusión.
-- Acepta interfaces y devuelve structs. Interfaces pequeñas (de 1 a 3 métodos), definidas donde se consumen.
-- Inyección de dependencias por constructor (`NewServicio(repo Repo)`); opciones funcionales cuando hay muchos parámetros opcionales.
-- `context.Context` como primer parámetro de toda función que haga E/S o pueda tardar.
-- Nombres cortos en ámbitos cortos; exportado solo lo que forma parte del contrato.
+- `gofmt` and `goimports`, no debate.
+- Accept interfaces, return structs. Small interfaces (1 to 3 methods), defined where they are consumed.
+- Dependency injection through constructors (`NewService(repo Repo)`); functional options when there are many optional parameters.
+- `context.Context` as the first parameter of any function that does I/O or may take long.
+- Short names in short scopes; export only what is part of the contract.
 
-## Errores
+## Errors
 
-- Siempre se comprueba el error. Se envuelve con contexto: `fmt.Errorf("guardar enlace %s: %w", id, err)`.
-- Errores centinela (`var ErrNotFound = errors.New(...)`) o tipos de error, comparados con `errors.Is` y `errors.As`.
-- `panic` solo para estados imposibles, nunca para errores esperables.
+- Always check the error. Wrap it with context: `fmt.Errorf("save link %s: %w", id, err)`.
+- Sentinel errors (`var ErrNotFound = errors.New(...)`) or error types, compared with `errors.Is` and `errors.As`.
+- `panic` only for impossible states, never for expected errors.
 
 ## Tests
 
-- Tests de tabla con `t.Run` por caso. `t.Helper()` en las funciones auxiliares y `t.TempDir()` para ficheros.
-- `go test -race` en la suite: las condiciones de carrera son defectos.
-- Dobles de prueba escritos a mano contra la interfaz pequeña, mejor que librerías de mocks.
+- Table tests with `t.Run` per case. `t.Helper()` in helpers and `t.TempDir()` for files.
+- `go test -race` on the suite: race conditions are defects.
+- Hand-written test doubles against the small interface, rather than mock libraries.
 
-## Seguridad
+## Security
 
-- Secretos con `os.Getenv`, comprobados al arrancar.
-- `database/sql` con parámetros (`?`, `$1`); nunca `fmt.Sprintf` para construir SQL.
-- Timeouts en todo cliente y servidor HTTP: los valores por defecto no tienen límite.
-- `gosec ./...` y `govulncheck ./...` si el proyecto los usa.
+- Secrets with `os.Getenv`, checked at startup.
+- `database/sql` with parameters (`?`, `$1`); never `fmt.Sprintf` to build SQL.
+- Timeouts on every HTTP client and server: the defaults have no limit.
+- `gosec ./...` and `govulncheck ./...` if the project uses them.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `go build ./...` |
 | types | `go vet ./...` |

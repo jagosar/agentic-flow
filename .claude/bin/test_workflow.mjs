@@ -1,5 +1,5 @@
-// Tests de la lógica de orquestación de .claude/workflows/agentic-implement.js con agentes simulados.
-// Ejecutar: node .claude/bin/test_workflow.mjs   (sin llamadas reales: agent() y parallel() son dobles)
+// Tests of the orchestration logic of .claude/workflows/agentic-implement.js with simulated agents.
+// Run: node .claude/bin/test_workflow.mjs   (no real calls: agent() and parallel() are doubles)
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -17,7 +17,7 @@ const PLAN = {
   wave_of: { 'WP-01': 1, 'WP-02': 1, 'WP-03': 2 },
 }
 
-// Escenario configurable: cada clave sobrescribe el comportamiento por defecto (todo bien).
+// A configurable scenario: each key overrides the default behaviour (everything fine).
 async function simulate(scenario = {}, args = {}) {
   const calls = []
   let reviewRound = 0
@@ -45,12 +45,12 @@ async function simulate(scenario = {}, args = {}) {
         reviewRound += 1
         return scenario.review ? scenario.review(reviewRound) : { status: 'PASS', findings: [] }
       case 'verifier':
-        return scenario.verifier || { is_real: true, confidence: 0.9, reasoning: 'se sostiene' }
+        return scenario.verifier || { is_real: true, confidence: 0.9, reasoning: 'it holds' }
       case 'qa':
         qaRound += 1
-        return scenario.qa ? scenario.qa(qaRound) : { status: 'PASS', plan: ['contratos'], defects: [], gaps: [] }
+        return scenario.qa ? scenario.qa(qaRound) : { status: 'PASS', plan: ['contracts'], defects: [], gaps: [] }
       case 'doc-updater':
-        return scenario.docs || { status: 'DONE', files: ['README.md', 'CHANGELOG.md'], changes: ['uso del comando nuevo'], unverified: [], blocker: null }
+        return scenario.docs || { status: 'DONE', files: ['README.md', 'CHANGELOG.md'], changes: ['usage of the new command'], unverified: [], blocker: null }
       default:
         throw new Error(`agentType inesperado: ${opts.agentType}`)
     }
@@ -60,206 +60,206 @@ async function simulate(scenario = {}, args = {}) {
   return { result, calls, gates: calls.filter(c => c.type === 'gatekeeper').map(c => c.prompt.split('agentic.py ')[1].trim()) }
 }
 
-const grave = (wp, severity = 'alta') => ({ severity, wp, file: 'src/a.py', line: 3, problem: 'p', evidence: 'e' })
+const grave = (wp, severity = 'high') => ({ severity, wp, file: 'src/a.py', line: 3, problem: 'p', evidence: 'e' })
 const tests = []
 const test = (name, fn) => tests.push({ name, fn })
 
-test('camino feliz: ola 0, dos olas, verificación, revisión y QA en OK', async () => {
+test('happy path: wave 0, two waves, verification, review and QA in OK', async () => {
   const { result, calls, gates } = await simulate()
   assert.equal(result.result, 'OK')
   assert.equal(result.fix_cycles, 0)
-  assert.ok(gates.includes('close-stage acceptance AT=done --expect red'), 'la ola 0 exige rojo')
+  assert.ok(gates.includes('close-stage acceptance AT=done --expect red'), 'wave 0 demands red')
   assert.ok(gates.includes('close-stage 1 WP-01=done WP-02=done'))
   assert.ok(gates.includes('close-stage 2 WP-03=done'))
   assert.deepEqual(calls.filter(c => c.type === 'implementer').map(c => c.label), ['WP-01', 'WP-02', 'WP-03'])
-  assert.ok(gates.indexOf('verify') > gates.indexOf('close-stage 2 WP-03=done'), 'la verificación va después de las olas')
+  assert.ok(gates.indexOf('verify') > gates.indexOf('close-stage 2 WP-03=done'), 'verification comes after the waves')
 })
 
-test('test-author con BLOCKER: se para en la ola 0 sin lanzar implementers', async () => {
+test('test-author with BLOCKER: stops at wave 0 without launching implementers', async () => {
   const { result, calls, gates } = await simulate({
-    testAuthor: { status: 'BLOCKER', coverage: [], blocker: 'AC-003 no es observable' },
-    gate: cmd => (cmd.startsWith('close-stage acceptance') ? { exit_code: 3, output: 'RESULTADO: REVISAR' } : null),
+    testAuthor: { status: 'BLOCKER', coverage: [], blocker: 'AC-003 is not observable' },
+    gate: cmd => (cmd.startsWith('close-stage acceptance') ? { exit_code: 3, output: 'RESULT: REVIEW' } : null),
   })
-  assert.equal(result.result, 'REVISAR')
-  assert.equal(result.failed_stage, 'ola 0')
+  assert.equal(result.result, 'REVIEW')
+  assert.equal(result.failed_stage, 'wave 0')
   assert.ok(gates.includes('close-stage acceptance AT=blocker --expect red'))
   assert.equal(calls.filter(c => c.type === 'implementer').length, 0)
 })
 
-test('una ola en REVISAR detiene el pipeline antes de la siguiente', async () => {
+test('a wave in REVIEW stops the pipeline before the next one', async () => {
   const { result, calls } = await simulate({
-    gate: cmd => (cmd.startsWith('close-stage 1 ') ? { exit_code: 3, output: 'FUERA DE PROPIEDAD' } : null),
+    gate: cmd => (cmd.startsWith('close-stage 1 ') ? { exit_code: 3, output: 'OUTSIDE OWNERSHIP' } : null),
   })
-  assert.equal(result.failed_stage, 'ola 1')
-  assert.ok(!calls.some(c => c.label === 'WP-03'), 'la ola 2 no se lanza')
+  assert.equal(result.failed_stage, 'wave 1')
+  assert.ok(!calls.some(c => c.label === 'WP-03'), 'wave 2 is not launched')
 })
 
-test('verificación fallida: se para antes de revisar', async () => {
+test('failed verification: stops before reviewing', async () => {
   const { result, calls } = await simulate({
     gate: cmd => (cmd === 'verify' ? { exit_code: 3, output: JSON.stringify({ ok: false, phases: [{ name: 'tests', passed: false }] }) } : null),
   })
-  assert.equal(result.failed_stage, 'verificación')
+  assert.equal(result.failed_stage, 'verification')
   assert.ok(!calls.some(c => c.type === 'reviewer'))
 })
 
-test('hallazgo grave refutado con confianza: no bloquea', async () => {
+test('a serious finding refuted with confidence: does not block', async () => {
   const { result } = await simulate({
     review: () => ({ status: 'FAIL', findings: [grave('WP-01')] }),
-    verifier: { is_real: false, confidence: 0.9, reasoning: 'validado en el llamador' },
+    verifier: { is_real: false, confidence: 0.9, reasoning: 'validated in the caller' },
   })
   assert.equal(result.result, 'OK')
   assert.equal(result.review.refuted.length, 1)
   assert.equal(result.fix_cycles, 0)
 })
 
-test('refutación insegura: el hallazgo se mantiene y su WP se corrige', async () => {
+test('uncertain refutation: the finding stands and its WP is fixed', async () => {
   const { result, calls, gates } = await simulate({
     review: round => (round === 1 ? { status: 'FAIL', findings: [grave('WP-02')] } : { status: 'PASS', findings: [] }),
-    verifier: { is_real: false, confidence: 0.4, reasoning: 'no estoy seguro' },
+    verifier: { is_real: false, confidence: 0.4, reasoning: 'not sure' },
   })
   assert.equal(result.result, 'OK')
   assert.equal(result.fix_cycles, 1)
   const fix = calls.find(c => c.label === 'WP-02 (fix)')
-  assert.ok(fix && fix.prompt.includes('Corrige WP-02'), 'el WP recibe sus defectos')
-  assert.ok(gates.includes('close-stage 1 WP-02=done --fix'), 'la corrección cuenta como ciclo de fix')
-  assert.ok(!calls.some(c => c.label === 'WP-01 (fix)'), 'solo se corrige el WP afectado')
+  assert.ok(fix && fix.prompt.includes('Fix WP-02'), 'the WP receives its defects')
+  assert.ok(gates.includes('close-stage 1 WP-02=done --fix'), 'the fix counts as a fix cycle')
+  assert.ok(!calls.some(c => c.label === 'WP-01 (fix)'), 'only the affected WP is fixed')
 })
 
-test('defecto que no se arregla: tope de 2 ciclos y queda pendiente', async () => {
-  const defect = { id: 'D1', severity: 'alta', wp: 'WP-03', kind: 'implementation', section: '6.2', repro: 'x' }
+test('a defect that does not get fixed: capped at 2 cycles and left pending', async () => {
+  const defect = { id: 'D1', severity: 'high', wp: 'WP-03', kind: 'implementation', section: '6.2', repro: 'x' }
   const { result, calls } = await simulate({ qa: () => ({ status: 'FAIL', plan: [], defects: [defect], gaps: [] }) })
-  assert.equal(result.result, 'REVISAR')
+  assert.equal(result.result, 'REVIEW')
   assert.equal(result.fix_cycles, 2)
   assert.equal(calls.filter(c => c.label === 'WP-03 (fix)').length, 2)
-  assert.ok(result.pending.some(p => p.type === 'tope de correcciones agotado' && p.id === 'D1'))
+  assert.ok(result.pending.some(p => p.type === 'fix limit reached' && p.id === 'D1'))
 })
 
-test('defecto de diseño: no se corrige en bucle, se devuelve como pendiente', async () => {
-  const defect = { id: 'D2', severity: 'alta', wp: 'WP-01', kind: 'design', section: '6.3', repro: 'y' }
+test('a design defect: not fixed in a loop, returned as pending', async () => {
+  const defect = { id: 'D2', severity: 'high', wp: 'WP-01', kind: 'design', section: '6.3', repro: 'y' }
   const { result, calls } = await simulate({ qa: () => ({ status: 'FAIL', plan: [], defects: [defect], gaps: [] }) })
-  assert.equal(result.result, 'REVISAR')
+  assert.equal(result.result, 'REVIEW')
   assert.equal(result.fix_cycles, 0)
   assert.ok(!calls.some(c => (c.label || '').endsWith('(fix)')))
-  assert.ok(result.pending.some(p => p.type === 'diseño' && p.id === 'D2'))
+  assert.ok(result.pending.some(p => p.type === 'design' && p.id === 'D2'))
 })
 
-test('refactor: sin test-author, la suite existente es la línea base', async () => {
+test('refactor: no test-author, the existing suite is the baseline', async () => {
   const { calls, gates } = await simulate({ plan: { type: 'refactor' } })
   assert.ok(!calls.some(c => c.type === 'test-author'))
   assert.equal(gates[1], 'baseline')
   assert.equal(gates[2], 'acceptance --expect green')
 })
 
-test('línea base: va antes de la ola 0 y su resultado se guarda', async () => {
+test('baseline: goes before wave 0 and its result is saved', async () => {
   const { result, gates } = await simulate()
   assert.equal(gates[1], 'baseline')
   assert.ok(gates.indexOf('baseline') < gates.indexOf('open-stage acceptance'))
   assert.deepEqual(result.baseline.preexisting_failures, [])
 })
 
-test('línea base con fallo previo: no bloquea; un comando que no se puede ejecutar, sí', async () => {
+test('baseline with a pre-existing failure: does not block; a command that cannot run does', async () => {
   const pre = await simulate({ gate: c => (c === 'baseline' ? { exit_code: 0, output: JSON.stringify({ phases: [], preexisting_failures: ['lint'] }) } : null) })
   assert.equal(pre.result.result, 'OK')
   assert.deepEqual(pre.result.baseline.preexisting_failures, ['lint'])
   const broken = await simulate({ gate: c => (c === 'baseline' ? { exit_code: 1, output: '{}' } : null) })
-  assert.equal(broken.result.failed_stage, 'línea base')
+  assert.equal(broken.result.failed_stage, 'baseline')
 })
 
-test('sin comandos de verify no hay línea base', async () => {
+test('without verify commands there is no baseline', async () => {
   const { gates } = await simulate({ plan: { baseline: false } })
   assert.ok(!gates.includes('baseline'))
 })
 
-test('start_wave: se salta la línea base, la ola 0 y las olas anteriores', async () => {
+test('start_wave: skips the baseline, wave 0 and earlier waves', async () => {
   const { calls, gates } = await simulate({}, { start_wave: 2 })
   assert.ok(!gates.includes('baseline'))
   assert.ok(!calls.some(c => c.type === 'test-author'))
   assert.deepEqual(calls.filter(c => c.type === 'implementer').map(c => c.label), ['WP-03'])
 })
 
-test('un agente que falla queda como error y la ola sale en REVISAR', async () => {
-  const failing = { gate: cmd => (cmd.startsWith('close-stage 1 ') ? { exit_code: 3, output: 'REVISAR' } : null) }
+test('an agent that fails is recorded as an error and the wave ends in REVIEW', async () => {
+  const failing = { gate: cmd => (cmd.startsWith('close-stage 1 ') ? { exit_code: 3, output: 'REVIEW' } : null) }
   const { result, gates } = await simulate(failing)
-  assert.equal(result.failed_stage, 'ola 1')
+  assert.equal(result.failed_stage, 'wave 1')
   assert.ok(gates.some(g => g.startsWith('close-stage 1 ')))
 })
 
 const DOCS_PLAN = { docs: true, codemap: 'docs/CODEMAP.md' }
 
-test('documentación viva: tras QA en verde, codemap, doc-updater con su zona y docs-check', async () => {
+test('living documentation: after green QA, codemap, doc-updater within its zone and docs-check', async () => {
   const { result, calls, gates } = await simulate({ plan: DOCS_PLAN })
   assert.equal(result.result, 'OK')
   const order = ['codemap', 'open-stage docs', 'close-stage docs DOCS=done', 'docs-check'].map(g => gates.indexOf(g))
-  assert.ok(order.every(i => i > gates.indexOf('close-stage qa QA=pass')), 'la documentación va después de QA')
-  assert.deepEqual([...order].sort((a, b) => a - b), order, 'codemap, etapa con propiedad y comprobación, en ese orden')
+  assert.ok(order.every(i => i > gates.indexOf('close-stage qa QA=pass')), 'documentation comes after QA')
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'codemap, the stage with ownership, then the check, in that order')
   assert.equal(calls.filter(c => c.type === 'doc-updater').length, 1)
   assert.equal(result.docs.codemap.path, 'docs/CODEMAP.md')
 })
 
-test('sin sección docs, o con el código en REVISAR, no se documenta', async () => {
+test('without a docs section, or with the code in REVIEW, nothing is documented', async () => {
   const off = await simulate()
   assert.ok(!off.calls.some(c => c.type === 'doc-updater'))
   assert.ok(!off.gates.includes('codemap'))
-  const defect = { id: 'D9', severity: 'alta', wp: 'WP-01', kind: 'design', section: '6', repro: 'z' }
-  const revisar = await simulate({ plan: DOCS_PLAN, qa: () => ({ status: 'FAIL', plan: [], defects: [defect], gaps: [] }) })
-  assert.equal(revisar.result.result, 'REVISAR')
-  assert.ok(!revisar.calls.some(c => c.type === 'doc-updater'), 'no se documenta código que no está aceptado')
+  const defect = { id: 'D9', severity: 'high', wp: 'WP-01', kind: 'design', section: '6', repro: 'z' }
+  const reviewed = await simulate({ plan: DOCS_PLAN, qa: () => ({ status: 'FAIL', plan: [], defects: [defect], gaps: [] }) })
+  assert.equal(reviewed.result.result, 'REVIEW')
+  assert.ok(!reviewed.calls.some(c => c.type === 'doc-updater'), 'code that is not accepted is not documented')
 })
 
-test('documentación con enlaces rotos: el código sigue OK y queda un pendiente medio', async () => {
-  const broken = [{ file: 'README.md', line: 4, target: 'docs/x.md', kind: 'enlace' }]
+test('documentation with broken links: the code stays OK and a medium pending item remains', async () => {
+  const broken = [{ file: 'README.md', line: 4, target: 'docs/x.md', kind: 'link' }]
   const { result } = await simulate({
     plan: DOCS_PLAN,
     gate: cmd => (cmd === 'docs-check' ? { exit_code: 3, output: JSON.stringify({ ok: false, checked: 2, broken }) } : null),
   })
   assert.equal(result.result, 'OK')
-  assert.ok(result.pending.some(p => p.type === 'documentación' && p.severity === 'media' && p.broken.length === 1))
+  assert.ok(result.pending.some(p => p.type === 'documentation' && p.severity === 'medium' && p.broken.length === 1))
 })
 
-test('doc-updater fuera de su zona: REVISAR', async () => {
+test('doc-updater outside its zone: REVIEW', async () => {
   const { result } = await simulate({
     plan: DOCS_PLAN,
-    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 3, output: 'FUERA DE PROPIEDAD' } : null),
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 3, output: 'OUTSIDE OWNERSHIP' } : null),
   })
-  assert.equal(result.result, 'REVISAR')
-  assert.ok(result.pending.some(p => p.type === 'documentación' && p.severity === 'alta'))
+  assert.equal(result.result, 'REVIEW')
+  assert.ok(result.pending.some(p => p.type === 'documentation' && p.severity === 'high'))
 })
 
-test('el doc-updater declara cambios que no hizo: pendiente medio con los ficheros', async () => {
+test('the doc-updater claims changes it did not make: a medium pending item with the files', async () => {
   const { result } = await simulate({
     plan: DOCS_PLAN,
-    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 0 fichero(s) cambiado(s)\nRESULTADO: OK' } : null),
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 0 file(s) changed\nRESULT: OK' } : null),
   })
   assert.equal(result.result, 'OK')
-  const p = result.pending.find(x => x.problem.includes('no están en disco'))
-  assert.ok(p, 'debe quedar pendiente')
+  const p = result.pending.find(x => x.problem.includes('not on disk'))
+  assert.ok(p, 'it must be left pending')
   assert.deepEqual(p.files, ['README.md', 'CHANGELOG.md'])
   const honest = await simulate({
     plan: DOCS_PLAN,
-    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 2 fichero(s) cambiado(s): README.md, CHANGELOG.md' } : null),
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 2 file(s) changed: README.md, CHANGELOG.md' } : null),
   })
-  assert.ok(!honest.result.pending.some(x => (x.problem || '').includes('no están en disco')))
+  assert.ok(!honest.result.pending.some(x => (x.problem || '').includes('not on disk')))
 })
 
-test('rutas absolutas en el informe del doc-updater: cuentan como cambiadas', async () => {
+test('absolute paths in the doc-updater report: count as changed', async () => {
   const { result } = await simulate({
     plan: DOCS_PLAN,
     docs: { status: 'DONE', files: ['/repo/README.md', 'CHANGELOG.md'], changes: [], unverified: [], blocker: null },
-    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 2 fichero(s) cambiado(s): CHANGELOG.md, README.md' } : null),
+    gate: cmd => (cmd.startsWith('close-stage docs') ? { exit_code: 0, output: 'DOCS: 2 file(s) changed: CHANGELOG.md, README.md' } : null),
   })
-  assert.ok(!result.pending.some(x => (x.problem || '').includes('no están en disco')))
+  assert.ok(!result.pending.some(x => (x.problem || '').includes('not on disk')))
 })
 
-test('reglas del lenguaje: llegan a los agentes que escriben o juzgan código', async () => {
+test('language rules: reach the agents that write or judge code', async () => {
   const rules = ['.claude/rules/agentic/common.md', '.claude/rules/agentic/python.md']
   const { calls } = await simulate({ plan: { ...DOCS_PLAN, rules } })
   for (const type of ['test-author', 'implementer', 'reviewer', 'qa', 'doc-updater']) {
     const call = calls.find(c => c.type === type)
-    assert.ok(call.prompt.includes(rules.join(', ')), `${type} no recibe las reglas`)
+    assert.ok(call.prompt.includes(rules.join(', ')), `${type} does not receive the rules`)
   }
-  assert.ok(!calls.find(c => c.type === 'gatekeeper').prompt.includes('Reglas'), 'el gatekeeper no las necesita')
+  assert.ok(!calls.find(c => c.type === 'gatekeeper').prompt.includes('Rules'), 'the gatekeeper does not need them')
   const none = await simulate({ plan: { rules: [] } })
-  assert.ok(!none.calls.find(c => c.type === 'implementer').prompt.includes('Reglas'))
+  assert.ok(!none.calls.find(c => c.type === 'implementer').prompt.includes('Rules'))
 })
 
 let failed = 0

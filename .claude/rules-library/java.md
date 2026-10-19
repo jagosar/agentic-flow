@@ -4,43 +4,43 @@ paths:
   - "**/pom.xml"
   - "**/build.gradle"
 ---
-<!-- Adaptado de ECC (rules/java), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/java), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # Java
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- El formateador del proyecto (google-java-format o Checkstyle). Un tipo público por fichero.
-- `record` para valores y DTO; campos `final` por defecto; copias defensivas en el API (`List.copyOf`).
-- Clases selladas y `switch` con patrones para jerarquías cerradas, si la versión de Java lo permite.
-- Inyección por constructor, nunca por campo.
-- Streams cortos y sin efectos secundarios; si la cadena se complica, un bucle se lee mejor.
+- The project's formatter (google-java-format or Checkstyle). One public type per file.
+- `record` for values and DTOs; `final` fields by default; defensive copies in the API (`List.copyOf`).
+- Sealed classes and pattern-matching `switch` for closed hierarchies, if the Java version allows.
+- Constructor injection, never field injection.
+- Short, side-effect-free streams; if the chain gets complicated, a loop reads better.
 
-## Errores
+## Errors
 
-- Excepciones de dominio que extienden `RuntimeException`, con contexto en el mensaje.
-- `Optional<T>` como retorno de búsquedas; nunca como campo ni como parámetro, y nunca `get()` sin comprobar.
-- Nada de `catch (Exception e)` salvo en el manejador de nivel superior.
+- Domain exceptions that extend `RuntimeException`, with context in the message.
+- `Optional<T>` as the return of lookups; never as a field or a parameter, and never `get()` without checking.
+- No `catch (Exception e)` except in the top-level handler.
 
 ## Tests
 
-- JUnit 5 (`@Test`, `@ParameterizedTest`, `@Nested`), AssertJ para aserciones y Mockito para dependencias, si el proyecto los usa.
-- Testcontainers cuando un test de integración necesita una base de datos real.
-- Nombres `metodo_escenario_resultadoEsperado` o `@DisplayName` legible.
+- JUnit 5 (`@Test`, `@ParameterizedTest`, `@Nested`), AssertJ for assertions and Mockito for dependencies, if the project uses them.
+- Testcontainers when an integration test needs a real database.
+- Names like `method_scenario_expectedResult` or a readable `@DisplayName`.
 
-## Seguridad
+## Security
 
-- `PreparedStatement` o el API parametrizado del framework; nunca concatenar SQL.
-- Contraseñas con bcrypt o Argon2; nunca MD5 ni SHA-1.
-- Bean Validation (`@NotNull`, `@Size`) en los DTO de entrada, si el proyecto la usa.
-- OWASP Dependency-Check o equivalente cuando cambien las dependencias.
+- `PreparedStatement` or the framework's parameterised API; never concatenate SQL.
+- Passwords with bcrypt or Argon2; never MD5 or SHA-1.
+- Bean Validation (`@NotNull`, `@Size`) on input DTOs, if the project uses it.
+- OWASP Dependency-Check or the equivalent when the dependencies change.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
-| build | `./mvnw -q -DskipTests package` o `./gradlew assemble` |
-| types | (lo cubre el compilador en build) |
-| lint | `./mvnw -q checkstyle:check` o `./gradlew check -x test` |
-| tests | `./mvnw -q test` o `./gradlew test` |
+| build | `./mvnw -q -DskipTests package` or `./gradlew assemble` |
+| types | (the compiler covers it in the build) |
+| lint | `./mvnw -q checkstyle:check` or `./gradlew check -x test` |
+| tests | `./mvnw -q test` or `./gradlew test` |

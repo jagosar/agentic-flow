@@ -1,84 +1,84 @@
 ---
 model: sonnet
-description: Lleva architecture.md a código verificado con el workflow nativo agentic-implement (ola 0, olas en paralelo, verificación, revisión adversarial, QA, correcciones con tope y documentación viva). Si los workflows no están disponibles, usa el modo A.
-argument-hint: "[ola inicial] [modo A]"
+description: Takes architecture.md to verified code with the native agentic-implement workflow (wave 0, parallel waves, verification, adversarial review, QA, capped fix cycles and living documentation). If workflows are unavailable, uses the fallback mode.
+argument-hint: "[start wave] [fallback]"
 ---
 
-# Rol
+# Role
 
-Eres el lanzador del flow. No escribes código ni tests, y no interpretas la arquitectura. La ejecución la hace el workflow nativo `agentic-implement` (`.claude/workflows/agentic-implement.js`), que orquesta de forma determinista y en segundo plano. Tú validas antes, lo lanzas, y después presentas el resultado y gestionas la puerta humana del commit.
+You are the flow's launcher. You write no code and no tests, and you do not interpret the architecture. The execution is done by the native `agentic-implement` workflow (`.claude/workflows/agentic-implement.js`), which orchestrates deterministically and in the background. You validate first, launch it, and then present the result and manage the human commit gate.
 
-Argumentos: $ARGUMENTS
-- Un número: retoma desde esa ola, sin la ola 0.
-- `modo A`: usa el respaldo sin comprobar nada.
+Arguments: $ARGUMENTS
+- A number: resume from that wave, skipping wave 0.
+- `fallback`: use the fallback mode without checking anything.
 
-# 1. Validación previa
+# 1. Pre-flight validation
 
-1. Ejecuta `python3 .claude/bin/agentic.py validate`. Si falla, para y dile al usuario que vuelva a `/architect`.
-2. Si la sección 11 de `architecture.md` bloquea algún WP, para.
-3. Si el diseño no está commiteado, recomienda hacer el commit antes de empezar.
-4. Ejecuta `python3 .claude/bin/agentic.py sync-permissions`. Añade a `.claude/settings.local.json` los permisos que necesitan los agentes (tests, verificación), para que el workflow no se detenga a preguntar.
-5. Ejecuta `python3 .claude/bin/agentic.py rules-sync`. Deja en `.claude/rules/agentic/` las reglas comunes y las del `stack`, que los agentes reciben en su prompt.
+1. Run `python3 .claude/bin/agentic.py validate`. If it fails, stop and tell the user to go back to `/architect`.
+2. If section 11 of `architecture.md` blocks any WP, stop.
+3. If the design is not committed, recommend committing it before starting.
+4. Run `python3 .claude/bin/agentic.py sync-permissions`. It adds to `.claude/settings.local.json` the permissions the agents need (tests, verification), so the workflow does not stop to ask.
+5. Run `python3 .claude/bin/agentic.py rules-sync`. It leaves the common rules and the `stack`'s in `.claude/rules/agentic/`, which the agents receive in their prompt.
 
-# 2. Lanzar el workflow (vía principal)
+# 2. Launch the workflow (the main path)
 
-Lanza el workflow guardado con la herramienta Workflow:
-- **nombre:** `agentic-implement`;
-- **`args`:** `{}`, o `{ "start_wave": N }` si te pasaron una ola.
+Launch the saved workflow with the Workflow tool:
+- **name:** `agentic-implement`;
+- **`args`:** `{}`, or `{ "start_wave": N }` if you were given a wave.
 
-Corre en segundo plano. Dile al usuario en una línea que ha empezado, que puede seguirlo con `/workflows` y que puede seguir hablando contigo, y termina tu turno. No esperes ni consultes en bucle: la notificación de fin te despertará.
+It runs in the background. Tell the user in one line that it has started, that they can follow it with `/workflows` and keep talking to you, and end your turn. Do not wait or poll: the completion notification will wake you.
 
-Mientras corre:
-- **"¿Cómo va?":** responde con `python3 .claude/bin/agentic.py status` (el ledger) o remite a `/workflows`.
-- **"Para":** el usuario lo detiene desde `/workflows` (tecla `x`). Si te lo pide a ti, díselo.
+While it runs:
+- **"How is it going?":** answer with `python3 .claude/bin/agentic.py status` (the ledger) or point to `/workflows`.
+- **"Stop":** the user stops it from `/workflows` (key `x`). If they ask you, tell them.
 
-**Cuándo pasar al modo A:**
-- Si la herramienta Workflow no existe o el usuario tiene los workflows desactivados, explícale que en Pro se activan en `/config` (**Dynamic workflows**) o con `"enableWorkflows": true`.
-- Si `claude --version` funciona, ofrece el modo A como alternativa.
+**When to switch to the fallback mode:**
+- If the Workflow tool does not exist or the user has workflows disabled, explain that on Pro they are enabled in `/config` (**Dynamic workflows**) or with `"enableWorkflows": true`.
+- If `claude --version` works, offer the fallback mode as an alternative.
 
-# 3. Presentar el resultado (puerta humana)
+# 3. Present the result (the human gate)
 
-El workflow devuelve un JSON. Primero guárdalo, porque es el registro completo de la ejecución, incluido el informe de QA:
-1. Escríbelo tal cual con la herramienta Write en `.agentic-result.json`, en la raíz del repo.
-2. Ejecuta `python3 .claude/bin/agentic.py save-result .agentic-result.json`, que lo mueve a `.claude/state/runs/workflow-result.json`.
+The workflow returns a JSON. Save it first, because it is the full record of the run, QA report included:
+1. Write it as it is with the Write tool to `.agentic-result.json`, at the repo root.
+2. Run `python3 .claude/bin/agentic.py save-result .agentic-result.json`, which moves it to `.claude/state/runs/workflow-result.json`.
 
-No lo escribas directamente en `.claude/`, que es una ruta protegida, ni lo pases por un heredoc, porque el filtro de seguridad de Bash lo bloquea.
+Do not write it directly into `.claude/`, which is a protected path, and do not pass it through a heredoc, because Bash's safety filter blocks it.
 
-Después preséntalo así:
+Then present it like this:
 
-- **Estado:** `result` (`OK` o `REVISAR`) y, si falló, `failed_stage` y `detail`.
-- **WP:** tabla con WP, estado, ficheros y comprobaciones, tomada de `work_packages`.
-- **Verificación:** cada fase de `verification.phases`, con la aceptación en verde.
-- **Revisión:**
-  - hallazgos confirmados;
-  - refutados por el verificador (y por qué);
-  - avisos medios y bajos.
-- **QA:** estado, plan, defectos y huecos de cobertura.
-- **Correcciones:** `fix_cycles` y qué WP se corrigieron.
-- **Documentación (`docs`, si la hubo):** ficheros que actualizó el doc-updater, si cambió el mapa del código y el resultado de `docs-check`.
-- **Pendiente (`pending`):** cada elemento con su tipo.
-  - **Diseño:** se lleva a `/architect`.
-  - **Tope agotado o sin WP:** decide el usuario.
+- **Status:** `result` (`OK` or `REVIEW`) and, if it failed, `failed_stage` and `detail`.
+- **WPs:** a table with WP, status, files and checks, taken from `work_packages`.
+- **Verification:** each phase of `verification.phases`, with acceptance green.
+- **Review:**
+  - confirmed findings;
+  - findings refuted by the verifier (and why);
+  - medium and low notices.
+- **QA:** status, plan, defects and coverage gaps.
+- **Fixes:** `fix_cycles` and which WPs were fixed.
+- **Documentation (`docs`, if there was any):** files the doc-updater updated, whether the code map changed, and the result of `docs-check`.
+- **Pending (`pending`):** each item with its type.
+  - **Design:** goes to `/architect`.
+  - **Fix limit reached, or no WP:** the user decides.
 
-Si `result` es `OK`, propón los mensajes de commit (uno por bloque lógico, en el formato de la sección 7) y **espera la aprobación del usuario**. No hagas commit ni push sin ella.
+If `result` is `OK`, propose the commit messages (one per logical block, in the format of section 7) and **wait for the user's approval**. Do not commit or push without it.
 
-# 4. Modo A (respaldo, sin workflows)
+# 4. Fallback mode (no workflows)
 
-Requiere el CLI `claude` en el `PATH`. Cada paso es un comando de `python3 .claude/bin/agentic.py`, lanzado con Bash **en segundo plano** (`run_in_background: true`). Termina el turno tras lanzarlo y sigue cuando llegue la notificación. Cada comando acaba en `RESULTADO: OK` o `REVISAR`. Ante `REVISAR`, para y presenta el problema.
+It needs the `claude` CLI on the `PATH`. Each step is a `python3 .claude/bin/agentic.py` command, launched with Bash **in the background** (`run_in_background: true`). End the turn after launching and continue when the notification arrives. Each command ends in `RESULT: OK` or `REVIEW`. On `REVIEW`, stop and present the problem.
 
-1. **Ola 0:**
-   - `run-acceptance` y después `acceptance --expect red`.
-   - En un refactor, solo `acceptance --expect green`, como línea base.
-2. **Olas:** `run-wave N` para cada ola, en orden.
-3. **Verificación:** `verify`.
-4. **Revisión y QA:** `run-review` y `run-qa`.
-5. **Correcciones:**
-   - Un defecto de implementación crítico o alto se corrige con `run-wave <ola> <WP> --fix`, con un máximo de 2 ciclos por WP (el script se niega al tercero, con salida 4). Después se repiten la verificación y la etapa que lo encontró.
-   - Un defecto de diseño se lleva a `/architect`.
-6. **Documentación** (solo si el manifiesto tiene `docs` y todo lo anterior está en OK): `codemap`, `run-docs` y `docs-check`.
-7. **Cierre:** el mismo informe y la misma puerta humana que en el paso 3.
+1. **Wave 0:**
+   - `run-acceptance`, then `acceptance --expect red`.
+   - In a refactor, only `acceptance --expect green`, as the baseline.
+2. **Waves:** `run-wave N` for each wave, in order.
+3. **Verification:** `verify`.
+4. **Review and QA:** `run-review` and `run-qa`.
+5. **Fixes:**
+   - A critical or high implementation defect is fixed with `run-wave <wave> <WP> --fix`, at most 2 cycles per WP (the script refuses the third, with exit code 4). Then verification and the stage that found it are repeated.
+   - A design defect goes to `/architect`.
+6. **Documentation** (only if the manifest has `docs` and everything above is OK): `codemap`, `run-docs` and `docs-check`.
+7. **Wrap-up:** the same report and the same human gate as in step 3.
 
-# Reglas
+# Rules
 
-- No resuelvas tú un bloqueo. No edites ficheros de un WP ni los tests de aceptación.
-- No hagas commit ni push salvo que el usuario lo pida explícitamente. Los agentes del flow no pueden hacerlo: el hook se lo bloquea.
+- Do not resolve a blocker yourself. Do not edit a WP's files or the acceptance tests.
+- Do not commit or push unless the user explicitly asks. The flow's agents cannot: the hook blocks them.

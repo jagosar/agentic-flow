@@ -4,42 +4,42 @@ paths:
   - "**/Gemfile"
   - "**/*.rake"
 ---
-<!-- Adaptado de ECC (rules/ruby), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/ruby), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # Ruby
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- La configuración de RuboCop del repo; sin desactivar reglas en línea salvo excepción justificada.
-- `# frozen_string_literal: true` si el proyecto sigue esa convención.
-- Ruby claro antes que metaprogramación ingeniosa; los DSL, aislados y probados.
-- En Rails: primero las convenciones del framework. Los controladores, solo de transporte (autenticación, parámetros, respuesta). Los objetos de servicio o de consulta, cuando la complejidad lo pide, no por defecto.
-- `bin/rails` y los binstubs del repo, no comandos instalados de forma global.
+- The repo's RuboCop configuration; no inline disabling of rules except as a justified exception.
+- `# frozen_string_literal: true` if the project follows that convention.
+- Clear Ruby over clever metaprogramming; DSLs are isolated and tested.
+- In Rails: the framework's conventions first. Controllers only handle transport (authentication, parameters, response). Service or query objects when the complexity calls for them, not by default.
+- `bin/rails` and the repo's binstubs, not globally installed commands.
 
-## Errores
+## Errors
 
-- `rescue` de excepciones concretas; nada de `rescue StandardError` que no relance o conserve el contexto.
-- Sin `puts`, `pp` ni `debugger` en el código que se entrega.
+- `rescue` specific exceptions; no `rescue StandardError` that does not re-raise or keep the context.
+- No `puts`, `pp` or `debugger` in delivered code.
 
 ## Tests
 
-- El framework que ya use el proyecto (Minitest o RSpec), sin mezclarlos en la misma área.
-- Lógica de dominio en tests de modelo o de servicio; contratos HTTP en tests de request. Los tests de sistema, solo para los flujos críticos.
-- Fixtures o `factory_bot`, según lo que ya use el repo.
+- The framework the project already uses (Minitest or RSpec), without mixing them in the same area.
+- Domain logic in model or service tests; HTTP contracts in request tests. System tests only for critical flows.
+- Fixtures or `factory_bot`, whichever the repo already uses.
 
-## Seguridad
+## Security
 
-- Strong parameters antes de cualquier asignación masiva. La protección CSRF, activada.
-- Consultas de Active Record o SQL parametrizado; nunca interpolar parámetros en SQL.
-- `html_safe` y `raw` se tratan como código sensible.
-- `bundle audit` o `bundler-audit` cuando cambie el `Gemfile.lock`.
+- Strong parameters before any mass assignment. CSRF protection, enabled.
+- Active Record queries or parameterised SQL; never interpolate parameters into SQL.
+- `html_safe` and `raw` are treated as sensitive code.
+- `bundle audit` or `bundler-audit` when the `Gemfile.lock` changes.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `bundle exec rails zeitwerk:check` (Rails) |
-| types | (no aplica, o `bundle exec srb tc` con Sorbet) |
+| types | (not applicable, or `bundle exec srb tc` with Sorbet) |
 | lint | `bundle exec rubocop` |
-| tests | `bin/rails test` o `bundle exec rspec` |
+| tests | `bin/rails test` or `bundle exec rspec` |

@@ -3,10 +3,10 @@
 
 Usage: python3 docs/assets/make_screens.py   (needs Pillow and the IBM Plex fonts)
 
-Every transcript below was captured from real runs on 2026-10-18/19 (the shortener test project, a fresh
+Every transcript below was captured from real runs on 2026-10-19 (the shortener test project, a fresh
 TypeScript repo for the installer). Long lists are shortened, marked with "…", and the /implement report is
-condensed to its main sections (same facts and wording). The flow's own messages are in Spanish, so they appear
-as they are.
+condensed to its main sections (same facts and wording). The ledger, the report and the fix prompt come
+from one real run of the fully English flow: a stats feature with an agent that injects a defect.
 """
 import re
 import shutil
@@ -53,48 +53,89 @@ MONO = font("Mono", "Regular", 13)
 MONO_B = font("Mono", "SemiBold", 13)
 TITLE = font("Sans", "Medium", 12)
 
-GREEN = re.compile(r"\b(OK|PASS|DONE|done|pass|VERDE|válido)\b")
-RED = re.compile(r"\b(REVISAR|BLOCKER|bloqueado|blocker)\b|\[agentic guard\]|Manifiesto inválido")
+GREEN = re.compile(r"\b(OK|PASS|DONE|done|pass|GREEN|valid)\b")
+RED = re.compile(r"\b(REVIEW|BLOCKER|blocked|blocker)\b|\[agentic guard\]|Invalid manifest")
+
+LEDGER = """\
+$ python3 .claude/bin/agentic.py status
+# Flow ledger
+
+## Stages
+
+- baseline: OK (03:52)
+- acceptance: OK (03:52)
+- acceptance (red): OK (03:52)
+- wave 1: OK (03:54)
+- acceptance (green): OK (03:54)
+- verification: OK (03:54)
+- review: OK (03:55)
+- qa: OK (03:55)
+- docs: OK (03:56)
+- docs-check: OK (03:56)
+
+## Agents
+
+- [done]    WP-01 (sonnet) — stage 1 — mode workflow — started 03:52 — DONE
+- [done]    WP-02 (sonnet) — stage 1 — mode workflow — started 03:54 — DONE (fix)
+- [done]    AT (sonnet) — stage acceptance — mode workflow — started 03:52 — DONE
+- [pass]    REVIEW (sonnet) — stage review — mode workflow — started 03:55 — PASS
+- [done]    DOCS (sonnet) — stage docs — mode workflow — started 03:55 — DONE
+- [pass]    QA (sonnet) — stage qa — mode workflow — started 03:55 — PASS"""
+REPORT = """\
+> /implement
+
+## Result: OK
+
+### Work packages
+| WP    | Status | Files                                   |
+|-------|--------|-----------------------------------------|
+| WP-01 | DONE   | shortener/stats.py, tests/test_stats.py |
+| WP-02 | DONE   | shortener/cli.py, tests/test_cli.py     |
+
+### Verification
+- Build: passes.  Unit tests: 62 pass, up from 54 at baseline.
+- Acceptance: green. It was red before the code, as expected.
+
+### Review
+- Confirmed findings: none.  Low notice, WP-02: a spacing change in build_parser().
+
+### QA: PASS
+- Defect D1 (low): --ttl with more than 4300 digits raises an uncaught ValueError.
+  It comes from the earlier expiration feature, not from this design.
+
+### Fixes
+There was one fix cycle, on WP-02 (shortener/cli.py).
+
+### Documentation
+- README.md and CHANGELOG.md updated; docs/CODEMAP.md regenerated. docs-check passes (3 files).
+
+### Proposed commits
+1. Add stats command and list --limit
+2. Add QA tests for stats
+3. Document stats and --limit"""
+FIX = """\
+Fix WP-02 according to architecture.md. The code already exists. These are the
+defects the judges (reviewer and QA) attribute to your package, as JSON:
+
+[{"source": "reviewer", "severity": "high", "wp": "WP-02", "file": "shortener/cli.py", "line": 79,
+  "problem": "The stats command catches StorageError and replaces it with zeroed stats. Section 6.2 says storage errors must give 'error: storage: ...' and exit 3, as in every other command. This hides failures, and section 7 forbids hiding errors."},
+ {"source": "qa", "id": "D1", "severity": "high", "wp": "WP-02", "kind": "implementation",
+  "repro": "Write '{not json' to the db file and run `shortener --db f stats`. It prints four zero lines and exits 0. Expected stderr `error: storage: ...`, exit 3. Test: qa/test_qa_stats.py::test_d1_stats_corrupt_file_exits_3"}]"""
 
 SCREENS = {
-    "ledger": ("~/shortener — agentic.py status", """\
-$ python3 .claude/bin/agentic.py status
-# Ledger del flow
-
-## Etapas
-
-- línea base: OK (23:47)
-- acceptance: OK (23:47)
-- aceptación (red): OK (23:47)
-- ola 1: OK (23:51)
-- aceptación (green): OK (23:51)
-- verificación: OK (23:51)
-- review: OK (23:51)
-- qa: OK (23:52)
-- docs: OK (23:53)
-- docs-check: OK (23:53)
-
-## Agentes
-
-- [done]    WP-01 (sonnet) — etapa 1 — modo workflow — inicio 23:50 — DONE
-- [done]    WP-02 (sonnet) — etapa 1 — modo workflow — inicio 23:51 — DONE (fix)
-- [done]    AT (sonnet) — etapa acceptance — modo workflow — inicio 23:47 — DONE
-- [pass]    REVIEW (sonnet) — etapa review — modo workflow — inicio 23:51 — PASS
-- [done]    DOCS (sonnet) — etapa docs — modo workflow — inicio 23:52 — DONE
-- [pass]    QA (sonnet) — etapa qa — modo workflow — inicio 23:52 — PASS"""),
-    "hook": ("~/shortener — PreToolUse hook", """\
+    "hook": ("~/shop — PreToolUse hook", """\
 # WP-02 tries to write before claiming its package
-[agentic guard] Antes de nada, ejecuta `python3 .claude/bin/agentic.py claim <ID>` con tu WP-ID (o QA, AT, REVIEW, DOCS).
+[agentic guard] First of all, run `python3 .claude/bin/agentic.py claim <ID>` with your WP-ID (or QA, AT, REVIEW, DOCS).
 
-# WP-02, claimed, tries to write a file that belongs to WP-01
-[agentic guard] WP-02 no posee shortener/storage.py. Ficheros permitidos: shortener/cli.py, tests/test_cli.py. Si necesitas tocarlo, devuelve STATUS: BLOCKER (o, si eres QA, repórtalo como defecto).
+# WP-02, claimed, tries to write a file that belongs to another package
+[agentic guard] WP-02 does not own shortener/storage.py. Allowed files: shortener/cli.py, tests/test_cli.py. If you need to touch it, return STATUS: BLOCKER (or, if you are QA, report it as a defect).
 
 # WP-02 tries to commit
-[agentic guard] WP-02: comando bloqueado, no se pueden ejecutar operaciones de git que escriban (solo status, diff, log, show): git commit -m wip"""),
+[agentic guard] WP-02: command blocked, git operations that write are not allowed (only status, diff, log, show): git commit -m wip"""),
     "install": ("~/shop — agentic.py install", """\
 $ python3 ~/agentic-flow/.claude/bin/agentic.py install .
 agentic-flow 1.0.0 -> shop
-  nuevo: 23
+  new: 23
     .claude/agents/doc-updater.md
     .claude/agents/gatekeeper.md
     .claude/agents/implementer.md
@@ -102,60 +143,27 @@ agentic-flow 1.0.0 -> shop
     .claude/workflows/agentic-implement.js
   settings.json: allow Bash(python3 .claude/bin/agentic.py:*), allow Workflow(agentic-implement), deny Bash(git reset --hard:*), deny Bash(git clean:*), deny Bash(rm -rf:*), hook PreToolUse, enableWorkflows
   .gitignore: .claude/state/, .agentic-result.json
-  .claude/agentic.json: creado con los valores por defecto
-  reglas: common, typescript
-RESULTADO: OK
+  .claude/agentic.json: created with the defaults
+  rules: common, typescript
+RESULT: OK
 
 $ python3 ~/agentic-flow/.claude/bin/agentic.py install .
 agentic-flow 1.0.0 -> shop
-  igual: 23
-  settings.json: sin cambios
-  reglas: common, typescript
-RESULTADO: OK"""),
+  unchanged: 23
+  settings.json: unchanged
+  rules: common, typescript
+RESULT: OK"""),
     "validate": ("~/shop — agentic.py validate", """\
 $ python3 .claude/bin/agentic.py validate
-Manifiesto inválido:
-  Fichero con dos propietarios: src/cart.ts (WP-01) y src/ (WP-02).
+Invalid manifest:
+  File with two owners: src/cart.ts (WP-01) and src/ (WP-02).
 
 $ python3 .claude/bin/agentic.py validate
-Manifiesto inválido:
-  stack: no hay reglas para 'cobol'. Disponibles: csharp, go, java, kotlin, php, python, ruby, rust, swift, typescript. Si el lenguaje no está, quítalo de 'stack' y pon sus convenciones en la sección 7."""),
-    "report": ("~/shortener — /implement (condensed)", """\
-> /implement 1
-
-## Resultado: OK
-
-### Work packages
-| WP    | Estado | Ficheros                                    |
-|-------|--------|---------------------------------------------|
-| WP-01 | DONE   | shortener/stats.py, tests/test_stats.py     |
-| WP-02 | DONE   | shortener/cli.py                            |
-
-### Verificación
-- Build: OK.  Tests: 61 OK.  Aceptación: VERDE (53 tests).
-
-### QA: PASS
-- Cobertura: contratos 6.1 y 6.2 y AC-001 a AC-005; --limit inválido (salida 2), fichero corrupto (salida 3).
-
-### Correcciones
-Hubo 1 ciclo de corrección, en WP-02 (cli.py).
-
-### Documentación
-- README.md y CHANGELOG.md: stats, list --limit N y la salida 2 para --limit inválido.
-- docs/CODEMAP.md cambió (25 ficheros, 4 carpetas). docs-check: OK.
-
-### Commits propuestos (esperan tu aprobación)
-1. Estadísticas: módulo stats y compute (WP-01)
-2. CLI: subcomando stats y list --limit (WP-02)
-…"""),
-    "fix": ("~/shortener — fix prompt sent to WP-02 by the workflow", """\
-Corrige WP-02 según architecture.md. El código ya existe. Estos son los defectos que los jueces
-(revisor y QA) atribuyen a tu WP, en JSON:
-
-[{"source": "revisor", "severity": "alta", "wp": "WP-02", "file": "shortener/cli.py", "line": 71,
-  "problem": "El subcomando stats se traga StorageError y devuelve ceros con salida 0. Esto contradice la sección 6.2 (errores de almacenamiento: 'error: storage: ...' y salida 3) y las reglas comunes (no tragarse errores)."},
- {"source": "qa", "id": "D1", "severity": "alta", "wp": "WP-02", "kind": "implementation",
-  "repro": "Escribir '{no es json' en el --db y ejecutar `stats`: devuelve 0 con ceros, sin stderr, en vez de salida 3. Test: qa/test_qa_stats.py::test_d1_stats_con_fichero_corrupto_sale_3"}]"""),
+Invalid manifest:
+  stack: no rules for 'cobol'. Available: csharp, go, java, kotlin, php, python, ruby, rust, swift, typescript. If the language is not there, remove it from 'stack' and put its conventions in section 7."""),
+    "ledger": ("~/shortener — agentic.py status", LEDGER),
+    "report": ("~/shortener — /implement (condensed)", REPORT),
+    "fix": ("~/shortener — fix prompt sent to WP-02 by the workflow", FIX),
 }
 
 

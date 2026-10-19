@@ -41,7 +41,7 @@ Inside the session:
 
 - The command switches to the latest Opus by itself; no `/model` needed.
 - Answer the rounds of questions with the arrow keys and `Enter`.
-- You get `architecture.md`, the message `Manifiesto válido` ("manifest valid") and a request for approval.
+- You get `architecture.md`, the message `Manifest valid` and a request for approval.
 
 Read the document in your editor, then commit it:
 
@@ -130,7 +130,7 @@ To follow the session from your phone, turn on Remote Control inside Claude Code
 ## Check
 
 - `git status` shows only the packages' files, `acceptance/`, `qa/` and the documentation zone.
-- Each stage ends in `RESULTADO: OK`.
+- Each stage ends in `RESULT: OK`.
 - Run the project's own test suite yourself, with the command from section 3 of `architecture.md`.
 
 ## Troubleshooting

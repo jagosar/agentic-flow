@@ -68,15 +68,15 @@ Then:
 claude plugin update agentic-flow@agentic-flow
 ```
 
-Restart the session and run `/agentic-flow:init` again. Each of the flow's files ends in one of these states (the installer prints them in Spanish):
+Restart the session and run `/agentic-flow:init` again. Each of the flow's files ends in one of these states:
 
 | State | What happens |
 |---|---|
-| `nuevo` (new) | It did not exist: copied |
-| `actualizado` (updated) | Changed in the new version and untouched by you: replaced |
-| `igual` (unchanged) | Already up to date |
-| `modificado por ti (no se toca)` (modified by you, left alone) | You edited it since the last install: kept and listed. Compare it with the new version, or run again with `--force` to replace it |
-| `retirado` (removed) | The new version no longer ships it and you had not touched it: deleted |
+| new | It did not exist: copied |
+| updated | Changed in the new version and untouched by you: replaced |
+| unchanged | Already up to date |
+| modified by you (left alone) | You edited it since the last install: kept and listed. Compare it with the new version, or run again with `--force` to replace it |
+| removed | The new version no longer ships it and you had not touched it: deleted |
 
 The installer knows what you touched by comparing each file with the fingerprint in `.claude/agentic-install.json`. A file with no record (from a copy by hand, say) that differs from the new one counts as modified: it is not overwritten without `--force`.
 
@@ -110,4 +110,4 @@ claude --plugin-dir /path/to/agentic-flow
 | `/plugin install` cannot find the marketplace | The repo is private and git cannot authenticate. Set up your GitHub credentials for git and try again |
 | `/agentic-flow:init` does not appear | Plugins load when a session starts: restart it after installing or updating |
 | After `init`, `/architect` does not appear | Open a new session in the repo: project commands and agents load at startup |
-| `modificado por ti` on files you don't remember touching | The flow was copied by hand earlier, without a record. Check the difference and use `--force` if nothing of yours is there |
+| `modified by you` on files you don't remember touching | The flow was copied by hand earlier, without a record. Check the difference and use `--force` if nothing of yours is there |

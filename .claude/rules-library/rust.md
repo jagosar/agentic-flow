@@ -3,39 +3,39 @@ paths:
   - "**/*.rs"
   - "**/Cargo.toml"
 ---
-<!-- Adaptado de ECC (rules/rust), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
+<!-- Adapted from ECC (rules/rust), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->
 # Rust
 
-Amplía las [reglas comunes](common.md).
+Extends the [common rules](common.md).
 
-## Estilo
+## Style
 
-- `cargo fmt` y `cargo clippy -- -D warnings`.
-- `let` por defecto; `let mut` solo cuando hace falta mutar.
-- Presta (`&T`, `&str`, `&[T]`) por defecto; toma la propiedad solo para guardar o consumir. Nada de `clone()` para callar al borrow checker sin entender por qué.
-- Privado por defecto; `pub(crate)` para compartir dentro del crate y `pub` solo para el API público.
-- Newtypes y enums para que el sistema de tipos impida estados inválidos ("parse, don't validate").
+- `cargo fmt` and `cargo clippy -- -D warnings`.
+- `let` by default; `let mut` only when mutation is needed.
+- Borrow (`&T`, `&str`, `&[T]`) by default; take ownership only to store or consume. No `clone()` to quiet the borrow checker without understanding why.
+- Private by default; `pub(crate)` to share inside the crate and `pub` only for the public API.
+- Newtypes and enums so the type system rules out invalid states ("parse, don't validate").
 
-## Errores
+## Errors
 
-- `Result<T, E>` y `?`. Nunca `unwrap()` ni `expect()` en código de producción, salvo en estados de verdad imposibles, con el motivo en el mensaje.
-- Librerías: errores tipados con `thiserror`. Aplicaciones: `anyhow` con `.context(...)`.
+- `Result<T, E>` and `?`. Never `unwrap()` or `expect()` in production code, except in truly impossible states, with the reason in the message.
+- Libraries: typed errors with `thiserror`. Applications: `anyhow` with `.context(...)`.
 
 ## Tests
 
-- Módulo `#[cfg(test)] mod tests` para unitarios y `tests/` para integración.
-- `#[tokio::test]` para async, si el proyecto usa tokio; `rstest` y `proptest` si ya están en las dependencias.
-- Nombres que describen el comportamiento: `rechaza_pedido_sin_stock`.
+- A `#[cfg(test)] mod tests` module for unit tests and `tests/` for integration.
+- `#[tokio::test]` for async, if the project uses tokio; `rstest` and `proptest` if they are already dependencies.
+- Names that describe behaviour: `rejects_order_without_stock`.
 
-## Seguridad
+## Security
 
-- Cada bloque `unsafe` lleva un comentario `// SAFETY:` con la invariante que lo hace correcto. Sin `unsafe` por comodidad.
-- Consultas con parámetros enlazados (sqlx, diesel); nunca `format!` para SQL.
-- `cargo audit` cuando cambie `Cargo.lock`.
+- Every `unsafe` block carries a `// SAFETY:` comment with the invariant that makes it correct. No `unsafe` for convenience.
+- Queries with bound parameters (sqlx, diesel); never `format!` for SQL.
+- `cargo audit` when `Cargo.lock` changes.
 
-## Comandos habituales
+## Common commands
 
-| Fase de `verify` | Comando típico |
+| `verify` phase | Typical command |
 |---|---|
 | build | `cargo build --locked` |
 | types | `cargo check --all-targets` |
