@@ -9,7 +9,7 @@ Opus designs. Sonnet builds, in parallel. You make the two decisions that matter
 
 ## How it works
 
-1. **Design.** `/architect` (latest Opus) studies the repo, interviews you and writes `architecture.md`: exact contracts, acceptance criteria that can be checked by a command, and work packages that own disjoint files. A second Opus, which never saw the interview, reviews it. **You approve the design.**
+1. **Design.** `/architect` (latest Opus) studies the repo, interviews you, tells you which model it is running on and waits for your go-ahead (so you can switch to Opus first), then writes `architecture.md`: exact contracts, acceptance criteria that can be checked by a command, and work packages that own disjoint files. A second Opus, which never saw the interview, reviews it. **You approve the design.**
 2. **Tests first.** A test-author turns every criterion into an acceptance test before any code exists. The tests must fail. Nobody else may edit them.
 3. **Build in parallel.** One implementer per work package, all at once, each writing only its own files. The plan says which existing code to imitate, with `file:line`.
 4. **Verify and judge.** Build, types, lint and tests are compared against a baseline taken before anything changed, so a regression blocks and a pre-existing failure does not. A reviewer, an adversarial verifier and QA look for what the tests miss. Each real defect goes back to the package that owns it, at most twice.

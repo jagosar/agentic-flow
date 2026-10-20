@@ -16,7 +16,7 @@ Before you start, meet the [requirements](README.md#requirements) and [install t
 
 1. Open the app and choose the **Code** tab, at the top.
 2. Choose **Local** (or **WSL** on Windows), click **Select folder** and pick the repo.
-3. **Model:** the picker next to the send button does not matter for the flow. `/architect` switches to the latest Opus and `/implement` to the latest Sonnet.
+3. **Model:** `/architect` asks for the latest Opus and `/implement` for the latest Sonnet. Before writing `architecture.md`, `/architect` tells you which model it is running on and asks whether to go ahead; if it is not Opus, choose **Pause to switch model**, pick Opus in the picker next to the send button and reply `continue`.
 4. **Permission mode** (next to the send button):
    - **Manual** the first time, to see every step.
    - **Accept edits** once you know the flow.

@@ -24,7 +24,9 @@ flowchart TD
         C["Classify type and size"] -->|trivial| X(["Outside the flow: just ask for it"])
         C --> R["Research and reuse<br/>read earlier decisions"]
         R --> I["Interview"]
-        I --> D["architecture.md<br/>contracts + AC-NNN + manifest"]
+        I --> MG{"You confirm the model"}
+        MG -->|switch first| I
+        MG -->|go ahead| D["architecture.md<br/>contracts + AC-NNN + manifest"]
         D --> V{"validate"}
         V -->|errors| D
         V -->|ok| PR["plan-reviewer<br/>clean context"]
@@ -90,6 +92,8 @@ sequenceDiagram
     U->>AR: request
     AR->>U: questions, in rounds
     U-->>AR: answers
+    AR->>U: write it with this model?
+    U-->>AR: go ahead (or switch to Opus and continue)
     AR->>PR: Review architecture.md
     PR-->>AR: READY or FIX
     AR-->>U: summary and request for approval

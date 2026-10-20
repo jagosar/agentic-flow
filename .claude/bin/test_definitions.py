@@ -138,6 +138,14 @@ class CommandAndWorkflowTests(unittest.TestCase):
             with self.subTest(campo=field):
                 self.assertTrue(f"`{field}`" in doc or f'"{field}"' in doc, f"{field} no aparece en /architect")
 
+    def test_architect_confirms_model_before_writing(self):
+        doc = (COMMANDS_DIR / "architect.md").read_text(encoding="utf-8")
+        gate, writing = doc.find("## 2b. Confirm before writing"), doc.find("## 3. Writing architecture.md")
+        self.assertTrue(0 <= gate < writing, "the model gate must come before writing architecture.md")
+        for phrase in ("AskUserQuestion", "Pause to switch model", "Do not write the file", "No interaction"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, doc[gate:writing])
+
     def test_workflow_uses_existing_agents(self):
         src = WORKFLOW.read_text(encoding="utf-8")
         used = set(re.findall(r"agentType: '([\w-]+)'", src)) | {"implementer"}

@@ -39,8 +39,9 @@ Inside the session:
 /architect Move the payments module from REST to gRPC, keeping the public API
 ```
 
-- The command switches to the latest Opus by itself; no `/model` needed.
+- The command asks for the latest Opus by itself.
 - Answer the rounds of questions with the arrow keys and `Enter`.
+- Before writing `architecture.md`, it tells you which model it is running on and asks whether to go ahead. If it is not Opus, choose **Pause to switch model**, run `/model opus` and reply `continue`.
 - You get `architecture.md`, the message `Manifest valid` and a request for approval.
 
 Read the document in your editor, then commit it:

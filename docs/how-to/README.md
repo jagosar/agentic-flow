@@ -119,11 +119,11 @@ Check it:
 python3 .claude/bin/agentic.py validate
 ```
 
-In a project without a design yet, the expected answer is `No existe .../architecture.md. Lanza /architect primero.` ("run /architect first"). Any message about `model:` means a definition has been modified.
+In a project without a design yet, the expected answer is `.../architecture.md does not exist. Run /architect first.` Any message about `model:` means a definition has been modified.
 
 ## The working cycle
 
-1. **Design:** `/architect <request>`. Include the goal, the scope and any constraint you already know; the interview refines the rest.
+1. **Design:** `/architect <request>`. Include the goal, the scope and any constraint you already know; the interview refines the rest. Before writing `architecture.md`, it names the model it is running on and waits for your go-ahead, so you can switch to Opus first.
 2. **Read the plan:** especially section 6 (contracts) and section 8 (work packages and waves). If every wave has a single package, ask for "contracts first" to get parallelism.
 3. **Commit the design:**
 
