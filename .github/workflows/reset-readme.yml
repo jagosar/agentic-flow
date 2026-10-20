@@ -1,0 +1,39 @@
+# Only runs in repositories created from the template (never in the template itself). It replaces the
+# template's README with a minimal stub, because from then on the README belongs to the new software.
+# Idempotent: it acts only while README.md still carries the template marker, so it is a no-op afterwards.
+# It cannot delete itself: GITHUB_TOKEN may not modify files under .github/workflows.
+name: reset-readme
+on:
+  push:
+    branches: [main, master]
+    paths: ["README.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reset-readme
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    if: github.repository != 'jagosar/agentic-flow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Replace the template README with a stub
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          if ! grep -q '<!-- agentic-flow-template -->' README.md; then
+            echo "README already belongs to this project; nothing to do."
+            exit 0
+          fi
+          printf '# %s\n\nTODO: describe this project.\n\nBuilt with [agentic-flow](https://github.com/jagosar/agentic-flow): see `docs/how-it-works.md`.\n' "$REPO_NAME" > README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "Reset README from the agentic-flow template"
+          git push
