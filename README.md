@@ -101,11 +101,12 @@ Tested end to end with real agents:
 - **The fully English flow:** the whole pipeline (prompts, ledger, hook messages, reports) ran on a new feature: wave 0, a parallel wave, the fix cycle, QA and the documentation.
 - **A full cycle with an injected defect:** the reviewer and QA found it independently, the verifier upheld it, its package fixed it in one cycle, and the doc-updater brought README and CHANGELOG in line with the real CLI. About four minutes.
 - **A badly written acceptance test:** the implementer could not touch it, did not cheat, and reported the exact cause. The flow stopped, and resumed from the same wave once the test was fixed.
+- **The new pipeline pieces:** a full `/architect` and `/implement` run with the native workflow used the test-auditor, the Haiku gatekeeper and batched gatekeeper calls (`seq`). The `run-pipeline` fallback engine also ran end to end with the real `claude -p --json-schema` output.
 - **The plugin and the fallback mode:** `/agentic-flow:init` installed the flow in a TypeScript repo in a real session. The earlier fallback mode (one `agentic.py run-*` command per stage) also ran end to end.
 
 The flow tests itself with 149 Python tests and 36 workflow scenarios with simulated agents. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
 
-Not yet tested with real agents: the test-auditor, the Haiku gatekeeper, batched gatekeeper calls (`seq`), fix attempts that receive the previous diff, and the new `run-pipeline` fallback engine, including the exact shape of `claude -p --json-schema` output (`structured_report` accepts `structured_output` or JSON in `result`). They are covered by simulated agents and by a fake `claude`.
+Not confirmed with real agents: fix attempts that receive the previous attempt's diff (covered by simulated agents and by a fake `claude`).
 
 Not yet tested: the interactive interview in the UI, installing the plugin from the marketplace, and the VS Code, JetBrains, cloud and GitHub Actions setups.
 
