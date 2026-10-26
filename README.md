@@ -105,9 +105,9 @@ Tested end to end with real agents:
 - **The new pipeline pieces:** a full `/architect` and `/implement` run with the native workflow used the test-auditor, the Haiku gatekeeper and batched gatekeeper calls (`seq`). The `run-pipeline` fallback engine also ran end to end with the real `claude -p --json-schema` output.
 - **The plugin and the fallback mode:** `/agentic-flow:init` installed the flow in a TypeScript repo in a real session. The earlier fallback mode (one `agentic.py run-*` command per stage) also ran end to end.
 
-The flow tests itself with 149 Python tests and 36 workflow scenarios with simulated agents. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
+The flow tests itself with 172 Python tests and 38 workflow scenarios with simulated agents. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
 
-Not confirmed with real agents: fix attempts that receive the previous attempt's diff (covered by simulated agents and by a fake `claude`).
+Not confirmed with real agents: the briefs (each implementer and the test-author read a slice of `architecture.md`), the single JSON-schema runner behind the one-off `run-*` commands, the token telemetry (`usage.jsonl`) and fix attempts that receive the previous attempt's diff. They are covered by simulated agents and by a fake `claude`.
 
 Not yet tested: the interactive interview in the UI, installing the plugin from the marketplace, and the VS Code, JetBrains, cloud and GitHub Actions setups.
 

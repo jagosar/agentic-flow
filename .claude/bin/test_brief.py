@@ -75,8 +75,8 @@ class SlicerEdgeTests(unittest.TestCase):
 
 
 class RealPlanTests(unittest.TestCase):
-    def test_the_archived_design_is_sliced_and_shrinks(self):
-        text = (ROOT / "docs/architecture/0001-lean-agents-briefs.md").read_text(encoding="utf-8")
+    def test_a_real_plan_is_sliced_and_shrinks(self):
+        text = (Path(__file__).resolve().parent / "fixtures" / "lean-agents-plan.md").read_text(encoding="utf-8")
         manifest = json.loads(re.search(r"```json wp-manifest\n(.*?)\n```", text, re.S).group(1))
         full = len(text.split())
         for wp in manifest["work_packages"]:

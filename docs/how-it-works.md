@@ -108,7 +108,7 @@ sequenceDiagram
     O->>O: validate, sync-permissions, rules-sync
     O->>W: launch agentic-implement (background)
     O-->>U: started, follow it in /workflows
-    W->>G: pipeline-plan + baseline (the suite before any change)
+    W->>G: pipeline-plan + briefs + baseline (the suite before any change)
     W->>G: open-stage acceptance
     W->>AG: test-author
     AG-->>W: coverage of each criterion
@@ -165,8 +165,8 @@ States as they appear in the ledger (`agentic.py status`).
 stateDiagram-v2
     [*] --> pending: approved in architecture.md
     pending --> running: open-stage N and claim, or run-wave N (fallback)
-    running --> done: STATUS DONE and ownership check OK
-    running --> blocker: STATUS BLOCKER
+    running --> done: report DONE and ownership check OK
+    running --> blocker: report BLOCKER
     running --> error: foreign write, process failure
     running --> timeout: exceeds timeout_s
     running --> stopped: agentic.py stop
@@ -287,6 +287,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 ├── bin/
 │   ├── agentic.py          validate · pipeline-plan · open/close-stage · seq · verify · stack · rules-sync · codemap ·
 │   │                       docs-check · install · run-pipeline · run-* · status · stop · hook
+│   ├── brief.py            slices architecture.md into the briefs the agents read
 │   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
 │   ├── conformance.json    scenarios that both engines must resolve identically
 │   ├── test_agentic.py     tests of agentic.py, the hook and the installer
@@ -297,7 +298,9 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 ├── agentic.json            timeout_s · auth · max_fix_cycles
 ├── agentic-install.json    version and file fingerprints, when installed by the plugin
 └── state/                  (ignored by git)
-    ├── ledger.md           readable state
+    ├── ledger.md           readable state, with each agent's tokens and cost
+    ├── briefs/<ID>.md      the slice of architecture.md each WP and the test-author read
+    ├── usage.jsonl         tokens and cost of every agent run by agentic.py (fallback mode)
     ├── runs/<ID>.json      each agent's report
     ├── runs/<ID>.fix-N.diff  what a package changed in its fix attempt N, for the next one
     ├── pipeline.json       waves finished by run-pipeline, for --resume
@@ -321,6 +324,7 @@ acceptance/  qa/            acceptance and QA tests
 - **Fix attempt:** at most 2 per work package. From the second one on, the agent receives the defects the first attempt was given and the diff of what it changed (`runs/<ID>.fix-N.diff`), so it does not repeat the same fix.
 - **`seq`:** `agentic.py seq a + b + c`, several of the workflow's commands in one gatekeeper call, stopping at the first that fails.
 - **Manifest:** the `json wp-manifest` block in `architecture.md`, read by every guardrail.
+- **Brief:** the slice of `architecture.md` one agent needs, cut by headings with no model (`agentic.py briefs`, `.claude/state/briefs/<ID>.md`). An implementer gets the shared sections, its own criteria and its own package; the test-author gets the criteria and contracts. The judges (reviewer, QA, verifier) read the whole document. A plan without the `#### WP-NN` and `- AC-NNN` headings falls back to the whole document.
 - **Ledger:** `.claude/state/ledger.md`, the state of agents and stages, written by the script, not by the model.
 - **Ownership check (`check-wave`):** a comparison of file fingerprints before and after a stage, to catch writes outside a zone.
 - **Baseline:** build, types, lint and tests before any change (`.claude/state/baseline.json`). When verifying, a phase that passed and now fails is a **regression** (blocks); one that already failed is a **pre-existing failure** (reported, never blamed on a package).

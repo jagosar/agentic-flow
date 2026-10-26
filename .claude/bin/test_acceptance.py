@@ -334,7 +334,7 @@ class DefinitionTests(unittest.TestCase):
             self.assertIn(token, how)
         skip = {ROOT / "architecture.md"}
         for path in list(ROOT.glob("*.md")) + list((ROOT / "docs").rglob("*.md")) + list((ROOT / ".claude").rglob("*.md")):
-            if path in skip or "docs/architecture" in path.as_posix():
+            if path in skip or "fixtures" in path.parts:  # a fixture is a test input, not documentation
                 continue
             text = path.read_text(encoding="utf-8")
             for dead in ("wave-plan", "open-wave", "close-wave"):
