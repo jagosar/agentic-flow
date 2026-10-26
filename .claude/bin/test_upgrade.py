@@ -46,6 +46,16 @@ class ClassifyTests(unittest.TestCase):
                 self.assertEqual(upgrade.classify(*args), expected)
 
 
+class LeftoverTests(unittest.TestCase):
+    def test_a_partial_test_suite_is_completed_ci_and_plugin_files_are_not(self):
+        shipped = {".claude/bin/test_a.py", ".claude/bin/conformance.json", ".github/workflows/ci.yml", "plugin/commands/init.md",
+                   ".claude/bin/test_acceptance_x.py"}
+        self.assertEqual(upgrade.leftovers(shipped, {".claude/bin/test_a.py"}),
+                         {".claude/bin/test_a.py", ".claude/bin/conformance.json"})
+        self.assertEqual(upgrade.leftovers(shipped, {".github/workflows/ci.yml"}), {".github/workflows/ci.yml"})
+        self.assertEqual(upgrade.leftovers(shipped, set()), set())
+
+
 class NotesTests(unittest.TestCase):
     NOTES = {"1.2.0": ["two"], "1.10.0": ["ten"], "1.1.0": ["one"]}
 

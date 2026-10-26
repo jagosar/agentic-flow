@@ -947,7 +947,8 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
         return digest in history.get(rel, set()) or digest == previous.get(rel)
 
     # The flow everywhere; the template's leftovers (its tests, CI, plugin files) only where they already are.
-    sources = sorted(shipped(INSTALL_GLOBS) | {r for r in shipped(upgrade.EXTRA_GLOBS) if (target / r).is_file()})
+    extras = shipped(upgrade.EXTRA_GLOBS)
+    sources = sorted(shipped(INSTALL_GLOBS) | upgrade.leftovers(extras, {r for r in extras if (target / r).is_file()}))
     plan = {rel: upgrade.classify(sha256(target / rel) if (target / rel).is_file() else None, sha256(SOURCE_ROOT / rel),
                                   history.get(rel, set()) | {previous.get(rel)}, force) for rel in sources}
     removed = sorted(r for r in set(previous) | set(history)

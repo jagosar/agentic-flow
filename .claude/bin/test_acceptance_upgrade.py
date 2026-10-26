@@ -46,9 +46,7 @@ class Upgrade(unittest.TestCase):
         for rel in (".claude/agents", ".claude/commands", ".claude/workflows", ".claude/rules-library", "plugin/commands",
                     ".github/workflows"):
             shutil.copytree(ROOT / rel, src / rel, dirs_exist_ok=True)
-        (src / ".claude/bin").mkdir(parents=True, exist_ok=True)
-        for f in (ROOT / ".claude/bin").glob("*.py"):
-            shutil.copy(f, src / ".claude/bin" / f.name)
+        shutil.copytree(ROOT / ".claude/bin", src / ".claude/bin", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copy(ROOT / ".claude/settings.json", src / ".claude/settings.json")
         plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
         write(src, {".claude-plugin/plugin.json": json.dumps(dict(plugin, version="1.1.0"))})
@@ -122,6 +120,7 @@ class IntactAndEditedTests(Upgrade):
         self.assertTrue((t / ".claude/state/upgrade/.claude/bin/test_brief.py").exists())
         self.assertTrue((self.src / ".github/workflows/agentic-flow-ci.yml").exists(), "the source ships it")
         self.assertFalse((t / ".github/workflows/agentic-flow-ci.yml").exists(), "never added where absent")
+        self.assertTrue(self.same_as_source(t, ".claude/bin/conformance.json"), "a partial test suite is completed")
 
     def test_ac_004_removed_only_if_intact(self):
         self.history(self.src, {".claude/workflows/agentic-wave.js": ["OLD WAVE\n"], ".claude/commands/qa.md": ["OLD QA CMD\n"]})

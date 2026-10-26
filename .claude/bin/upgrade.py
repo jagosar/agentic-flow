@@ -29,6 +29,14 @@ NOTES = {
 }
 
 
+def leftovers(shipped, present):
+    """The template's leftovers to install: those already present, and the whole test suite of the flow (tests,
+    fixtures, conformance) when any part of it is present, because a partial suite breaks the target's CI. The
+    acceptance tests of each design check this repo's own docs, so they are only refreshed, never added."""
+    suite = {rel for rel in shipped if rel.startswith(".claude/bin/") and "/test_acceptance" not in rel}
+    return (set(present) | suite) if set(present) & suite else set(present)
+
+
 def git(cwd, *args, **kw):
     try:
         return subprocess.run(["git", *args], cwd=cwd, capture_output=True, **({"text": True} | kw))
