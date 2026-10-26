@@ -27,7 +27,8 @@ AGENTS = {
     "reviewer": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "Bash"}, "claim": "REVIEW", "status": "STATUS: PASS | FAIL"},
     "verifier": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
     "plan-reviewer": {"model": "opus", "tools": {"Read", "Glob", "Grep"}},
-    "gatekeeper": {"model": "sonnet", "tools": {"Bash"}},
+    "test-auditor": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
+    "gatekeeper": {"model": "haiku", "tools": {"Bash"}},
     "doc-updater": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "DOCS", "status": "STATUS: DONE | BLOCKER"},
 }
 COMMANDS = {"architect": "opus", "implement": "sonnet"}
@@ -82,7 +83,7 @@ class AgentDefinitionTests(unittest.TestCase):
                 self.assertEqual(tools, spec["tools"])
 
     def test_read_only_agents(self):
-        for name in ("reviewer", "verifier", "plan-reviewer", "gatekeeper"):
+        for name in ("reviewer", "verifier", "plan-reviewer", "gatekeeper", "test-auditor"):
             with self.subTest(agent=name):
                 tools = {t.strip() for t in frontmatter(AGENTS_DIR / f"{name}.md")[0]["tools"].split(",")}
                 self.assertFalse(tools & {"Write", "Edit", "MultiEdit", "NotebookEdit"})

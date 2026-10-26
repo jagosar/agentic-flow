@@ -10,33 +10,53 @@ const source = readFileSync(join(here, '..', 'workflows', 'agentic-implement.js'
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const script = new AsyncFunction('agent', 'parallel', 'phase', 'log', 'args', source)
 
-const PLAN = {
-  waves: [1, 2], acceptance: true, type: 'feature', verify: ['tests'], max_fix_cycles: 2, baseline: true,
-  work_packages: { 1: ['WP-01', 'WP-02'], 2: ['WP-03'] },
-  agents: { 'WP-01': 'implementer', 'WP-02': 'implementer', 'WP-03': 'implementer' },
-  wave_of: { 'WP-01': 1, 'WP-02': 1, 'WP-03': 2 },
-}
+const conformance = JSON.parse(readFileSync(join(here, 'conformance.json'), 'utf8'))
+const spec = JSON.parse(readFileSync(join(here, '..', 'workflows', 'pipeline-spec.json'), 'utf8'))
+const PLAN = conformance.plan
 
 // A configurable scenario: each key overrides the default behaviour (everything fine).
 async function simulate(scenario = {}, args = {}) {
   const calls = []
+  const schemas = {}
+  const executed = []
+  let gateCalls = 0
   let reviewRound = 0
   let qaRound = 0
+  let auditRound = 0
+  const respond = cmd => {
+    executed.push(cmd)
+    const forced = scenario.gate && scenario.gate(cmd)
+    if (forced) return forced
+    if (cmd === 'pipeline-plan') return { exit_code: 0, output: JSON.stringify({ ...PLAN, ...(scenario.plan || {}) }) }
+    if (cmd === 'verify') return { exit_code: 0, output: JSON.stringify({ ok: true, blocking: [], preexisting_failures: [], suspects: {}, phases: [{ name: 'tests', passed: true }] }) }
+    if (cmd === 'baseline') return { exit_code: 0, output: JSON.stringify({ phases: [{ name: 'tests', passed: true }], preexisting_failures: [] }) }
+    if (cmd === 'codemap') return { exit_code: 0, output: JSON.stringify({ path: 'docs/CODEMAP.md', files: 3, changed: true }) }
+    if (cmd === 'docs-check') return { exit_code: 0, output: JSON.stringify({ ok: true, checked: 2, broken: [] }) }
+    return { exit_code: 0, output: 'RESULTADO: OK' }
+  }
   const agent = async (prompt, opts) => {
     calls.push({ type: opts.agentType, label: opts.label, prompt })
+    schemas[opts.agentType] = opts.schema
     switch (opts.agentType) {
       case 'gatekeeper': {
+        gateCalls += 1
         const cmd = prompt.split('agentic.py ')[1].trim()
-        if (scenario.gate && scenario.gate(cmd)) return scenario.gate(cmd)
-        if (cmd === 'pipeline-plan') return { exit_code: 0, output: JSON.stringify({ ...PLAN, ...(scenario.plan || {}) }) }
-        if (cmd === 'verify') return { exit_code: 0, output: JSON.stringify({ ok: true, blocking: [], preexisting_failures: [], phases: [{ name: 'tests', passed: true }] }) }
-        if (cmd === 'baseline') return { exit_code: 0, output: JSON.stringify({ phases: [{ name: 'tests', passed: true }], preexisting_failures: [] }) }
-        if (cmd === 'codemap') return { exit_code: 0, output: JSON.stringify({ path: 'docs/CODEMAP.md', files: 3, changed: true }) }
-        if (cmd === 'docs-check') return { exit_code: 0, output: JSON.stringify({ ok: true, checked: 2, broken: [] }) }
-        return { exit_code: 0, output: 'RESULTADO: OK' }
+        if (!cmd.startsWith('seq ')) return respond(cmd)
+        if (scenario.garble) return { exit_code: 0, output: 'sorry, here is a summary instead' }
+        const steps = []
+        for (const sub of cmd.slice(4).split(' + ')) {
+          const r = respond(sub)
+          steps.push({ cmd: sub, exit_code: r.exit_code, output: r.output })
+          if (r.exit_code !== 0) break
+        }
+        const failed = steps.find(x => x.exit_code !== 0)
+        return { exit_code: failed ? failed.exit_code : 0, output: JSON.stringify({ ok: !failed, steps }) }
       }
       case 'test-author':
         return scenario.testAuthor || { status: 'DONE', coverage: [{ ac: 'AC-001', tests: ['test_ac_001'] }], blocker: null }
+      case 'test-auditor':
+        auditRound += 1
+        return scenario.audit ? scenario.audit(auditRound) : { status: 'PASS', findings: [] }
       case 'implementer': {
         const wp = opts.label.split(' ')[0]
         return { status: 'DONE', wp, files: [], checks: [], internal_decisions: [], blocker: null }
@@ -52,12 +72,12 @@ async function simulate(scenario = {}, args = {}) {
       case 'doc-updater':
         return scenario.docs || { status: 'DONE', files: ['README.md', 'CHANGELOG.md'], changes: ['usage of the new command'], unverified: [], blocker: null }
       default:
-        throw new Error(`agentType inesperado: ${opts.agentType}`)
+        throw new Error(`unexpected agentType: ${opts.agentType}`)
     }
   }
   const parallel = thunks => Promise.all(thunks.map(t => t()))
   const result = await script(agent, parallel, () => {}, () => {}, args)
-  return { result, calls, gates: calls.filter(c => c.type === 'gatekeeper').map(c => c.prompt.split('agentic.py ')[1].trim()) }
+  return { result, calls, schemas, gateCalls, gates: executed }
 }
 
 const grave = (wp, severity = 'high') => ({ severity, wp, file: 'src/a.py', line: 3, problem: 'p', evidence: 'e' })
@@ -165,9 +185,10 @@ test('baseline with a pre-existing failure: does not block; a command that canno
   assert.equal(broken.result.failed_stage, 'baseline')
 })
 
-test('without verify commands there is no baseline', async () => {
-  const { gates } = await simulate({ plan: { baseline: false } })
-  assert.ok(!gates.includes('baseline'))
+test('pipeline-plan and the baseline travel in one gatekeeper call', async () => {
+  const { calls } = await simulate()
+  const first = calls.find(c => c.type === 'gatekeeper')
+  assert.ok(first.prompt.endsWith('agentic.py seq pipeline-plan + baseline'))
 })
 
 test('start_wave: skips the baseline, wave 0 and earlier waves', async () => {
@@ -253,13 +274,212 @@ test('absolute paths in the doc-updater report: count as changed', async () => {
 test('language rules: reach the agents that write or judge code', async () => {
   const rules = ['.claude/rules/agentic/common.md', '.claude/rules/agentic/python.md']
   const { calls } = await simulate({ plan: { ...DOCS_PLAN, rules } })
-  for (const type of ['test-author', 'implementer', 'reviewer', 'qa', 'doc-updater']) {
+  for (const type of ['test-author', 'test-auditor', 'implementer', 'reviewer', 'qa', 'doc-updater']) {
     const call = calls.find(c => c.type === type)
     assert.ok(call.prompt.includes(rules.join(', ')), `${type} does not receive the rules`)
   }
   assert.ok(!calls.find(c => c.type === 'gatekeeper').prompt.includes('Rules'), 'the gatekeeper does not need them')
   const none = await simulate({ plan: { rules: [] } })
   assert.ok(!none.calls.find(c => c.type === 'implementer').prompt.includes('Rules'))
+})
+
+
+test('gatekeeper calls are batched: close-stage travels with the next open-stage, and verify with the last wave', async () => {
+  const { gates, gateCalls } = await simulate()
+  assert.equal(gateCalls, 8, `a run with two waves needs 8 gatekeeper calls, not one per command (${gates.length} commands)`)
+  assert.deepEqual(gates, [
+    'pipeline-plan', 'baseline', 'open-stage acceptance', 'close-stage acceptance AT=done --expect red', 'open-stage 1',
+    'close-stage 1 WP-01=done WP-02=done', 'open-stage 2',
+    'close-stage 2 WP-03=done', 'verify', 'open-stage review',
+    'close-stage review REVIEW=pass', 'open-stage qa', 'close-stage qa QA=pass',
+  ])
+})
+
+test('a garbled gatekeeper reply is never retried and stops the run', async () => {
+  const { result, gateCalls } = await simulate({ garble: true })
+  assert.equal(result.failed_stage, 'prepare')
+  assert.equal(gateCalls, 1, 'close-stage and open-stage change state: repeating them is not safe')
+})
+
+test('a stage that fails stops the batch: nothing after it runs', async () => {
+  const { gates } = await simulate({ gate: cmd => (cmd.startsWith('close-stage 2 ') ? { exit_code: 3, output: 'OUTSIDE OWNERSHIP' } : null) })
+  assert.ok(!gates.includes('verify'), 'verify must not run after a failed close-stage')
+  assert.ok(!gates.includes('open-stage review'))
+})
+
+const suspectsOf = (wp, extra = {}) => ({
+  ok: false, blocking: ['tests'], preexisting_failures: [], suspects: { [wp]: { phases: ['tests'], files: ['src/b/x.py'], acs: ['AC-002'], ...extra } },
+  phases: [{ name: 'tests', passed: false, status: 'fails', tail: ['FAILED src/b/x.py test_ac_002'] }],
+})
+
+test('verification that fails on a package: that package is fixed, then verification runs again', async () => {
+  let verifies = 0
+  const { result, calls, gates } = await simulate({
+    gate: cmd => {
+      if (cmd !== 'verify') return null
+      verifies += 1
+      return verifies === 1 ? { exit_code: 3, output: JSON.stringify(suspectsOf('WP-02')) } : null
+    },
+  })
+  assert.equal(result.result, 'OK')
+  assert.equal(result.fix_cycles, 1)
+  const fix = calls.find(c => c.label === 'WP-02 (fix)')
+  assert.ok(fix, 'WP-02 receives the failure')
+  assert.ok(fix.prompt.includes('verification fails (tests) on AC-002') && fix.prompt.includes('FAILED src/b/x.py'), 'with the evidence')
+  assert.ok(!calls.some(c => c.type === 'reviewer') || gates.indexOf('verify') < gates.indexOf('close-stage review REVIEW=pass'), 'review only after verification passes')
+  assert.equal(verifies, 2)
+  assert.ok(gates.includes('close-stage 1 WP-02=done --fix'))
+})
+
+test('verification that fails with no owner: stops, as there is nobody to fix it', async () => {
+  const { result } = await simulate({ gate: cmd => (cmd === 'verify' ? { exit_code: 3, output: JSON.stringify({ ok: false, suspects: {}, phases: [] }) } : null) })
+  assert.equal(result.failed_stage, 'verification')
+})
+
+test('verification that never gets fixed: capped per package and left pending', async () => {
+  const { result, calls } = await simulate({ gate: cmd => (cmd === 'verify' ? { exit_code: 3, output: JSON.stringify(suspectsOf('WP-01')) } : null) })
+  assert.equal(result.result, 'REVIEW')
+  assert.equal(calls.filter(c => c.label === 'WP-01 (fix)').length, 2)
+  assert.ok(result.pending.some(p => p.type === 'fix limit reached' && p.wp === 'WP-01'))
+})
+
+test('the second fix attempt gets the first one\'s defects and its diff; the first does not', async () => {
+  const defect = { id: 'D1', severity: 'high', wp: 'WP-03', kind: 'implementation', section: '6.2', repro: 'x' }
+  const { calls } = await simulate({ qa: () => ({ status: 'FAIL', plan: [], defects: [defect], gaps: [] }) })
+  const fixes = calls.filter(c => c.label === 'WP-03 (fix)')
+  assert.equal(fixes.length, 2)
+  assert.ok(!fixes[0].prompt.includes('.diff') && !fixes[0].prompt.includes('attempt'))
+  assert.ok(fixes[1].prompt.includes('.claude/state/runs/WP-03.fix-1.diff'))
+  assert.ok(fixes[1].prompt.includes('attempt 2 of 2') && fixes[1].prompt.includes('"id":"D1"') && fixes[1].prompt.includes('internal_decisions'))
+})
+
+test('the fix limit is per package: one that is used up does not stop another that is still fixable', async () => {
+  const d = (id, wp) => ({ id, severity: 'high', wp, kind: 'implementation', section: '6', repro: 'x' })
+  const { result, calls } = await simulate({
+    qa: round => ({ status: 'FAIL', plan: [], defects: round === 1 ? [d('A', 'WP-01'), d('B', 'WP-03')] : round === 2 ? [d('A', 'WP-01')] : round === 3 ? [d('A', 'WP-01'), d('C', 'WP-03')] : [d('C', 'WP-03')], gaps: [] }),
+  })
+  assert.equal(calls.filter(c => c.label === 'WP-01 (fix)').length, 2, 'WP-01 stops at its limit')
+  assert.equal(calls.filter(c => c.label === 'WP-03 (fix)').length, 2, 'WP-03 keeps its own count')
+  assert.ok(result.pending.some(p => p.type === 'fix limit reached'))
+  assert.equal(result.result, 'REVIEW')
+})
+
+test('the review and QA stages are closed with ownership: a write there stops the run', async () => {
+  const review = await simulate({ gate: cmd => (cmd.startsWith('close-stage review') ? { exit_code: 3, output: 'OUTSIDE OWNERSHIP' } : null) })
+  assert.equal(review.result.failed_stage, 'review')
+  assert.ok(!review.calls.some(c => c.type === 'qa'), 'QA does not run after a violation')
+  const qa = await simulate({ gate: cmd => (cmd.startsWith('close-stage qa') ? { exit_code: 3, output: 'OUTSIDE OWNERSHIP' } : null) })
+  assert.equal(qa.result.failed_stage, 'qa')
+  assert.notEqual(qa.result.result, 'OK')
+})
+
+test('test-auditor: a weak test sends the test-author back once, red again, and then the waves start', async () => {
+  const weak = { severity: 'high', wp: 'AT', file: 'acceptance/test_a.py', problem: 'assert x is not None', evidence: 'an empty stub passes' }
+  const { result, calls, gates } = await simulate({ audit: round => (round === 1 ? { status: 'FAIL', findings: [weak] } : { status: 'PASS', findings: [] }) })
+  assert.equal(result.result, 'OK')
+  assert.equal(calls.filter(c => c.type === 'test-author').length, 2)
+  const revision = calls.find(c => c.label === 'test-author (revision)')
+  assert.ok(revision.prompt.includes('assert x is not None') && revision.prompt.includes('empty or trivial implementation'))
+  assert.equal(gates.filter(g => g === 'open-stage acceptance').length, 2, 'the acceptance stage is reopened')
+  assert.equal(gates.filter(g => g.startsWith('close-stage acceptance')).length, 2, 'and red is demanded again')
+  assert.ok(gates.indexOf('open-stage 1') > gates.lastIndexOf('close-stage acceptance AT=done --expect red'), 'no implementer before the tests are good')
+  assert.equal(result.test_audit.rounds, 2)
+})
+
+test('test-auditor: tests that are still weak after the revision stop wave 0; advisory findings do not', async () => {
+  const weak = { severity: 'critical', wp: 'AT', file: 'acceptance/test_a.py', problem: 'p', evidence: 'e' }
+  const stuck = await simulate({ audit: () => ({ status: 'FAIL', findings: [weak] }) })
+  assert.equal(stuck.result.failed_stage, 'wave 0')
+  assert.equal(stuck.calls.filter(c => c.type === 'implementer').length, 0)
+  const minor = await simulate({ audit: () => ({ status: 'PASS', findings: [{ ...weak, severity: 'low' }] }) })
+  assert.equal(minor.result.result, 'OK')
+  assert.equal(minor.calls.filter(c => c.type === 'test-author').length, 1)
+  assert.equal(minor.result.test_audit.advisory.length, 1)
+})
+
+test('test-auditor: without a report the run stops; in a refactor it is not used', async () => {
+  const none = await simulate({ audit: () => null })
+  assert.equal(none.result.failed_stage, 'wave 0')
+  const refactor = await simulate({ plan: { type: 'refactor' } })
+  assert.ok(!refactor.calls.some(c => c.type === 'test-auditor'))
+})
+
+
+// ---------- conformance with the fallback engine ----------
+// The scenarios of conformance.json are described declaratively so that pipeline.py can run them too.
+// `node test_workflow.mjs --dump` prints what this engine did in each one; test_pipeline.py compares it with its own.
+const pickRound = (list, round) => list[Math.min(round, list.length) - 1]
+function fromDecl(d) {
+  let verifies = 0
+  const text = o => (typeof o === 'string' ? o : JSON.stringify(o))
+  return {
+    plan: d.plan,
+    gate: cmd => {
+      for (const f of d.gate_fail || []) if (cmd.startsWith(f.prefix)) return { exit_code: f.exit_code, output: text(f.output) }
+      if (cmd === 'verify' && d.verify) {
+        const v = pickRound(d.verify, verifies + 1)
+        verifies += 1
+        if (v) return { exit_code: v.exit_code, output: text(v.output) }
+      }
+      return null
+    },
+    testAuthor: d.test_author,
+    audit: d.audit ? round => pickRound(d.audit, round) : undefined,
+    review: d.review ? round => pickRound(d.review, round) : undefined,
+    qa: d.qa ? round => pickRound(d.qa, round) : undefined,
+    verifier: d.verifier,
+    docs: d.docs,
+  }
+}
+const summarize = ({ result, calls, gates, gateCalls }) => {
+  const seen = {}
+  const prompts = {}
+  const agents = []
+  for (const c of calls.filter(x => x.type !== 'gatekeeper')) {
+    const key = `${c.type}:${c.label}`
+    seen[key] = (seen[key] || 0) + 1
+    prompts[`${key}#${seen[key]}`] = c.prompt
+    agents.push(key)
+  }
+  return {
+    result: result.result, failed_stage: result.failed_stage ?? null, fix_cycles: result.fix_cycles,
+    pending: (result.pending || []).map(p => p.type).sort(), gates, gate_calls: gateCalls, agents: agents.sort(), prompts,
+  }
+}
+if (process.argv.includes('--dump')) {
+  const out = {}
+  for (const d of conformance.scenarios) out[d.name] = summarize(await simulate(fromDecl(d), d.args || {}))
+  console.log(JSON.stringify(out))
+  process.exit(0)
+}
+
+test('the schemas of the workflow are the ones in pipeline-spec.json', async () => {
+  const { schemas } = await simulate({ plan: { docs: true, codemap: 'docs/CODEMAP.md' } })
+  for (const type of ['gatekeeper', 'test-author', 'test-auditor', 'implementer', 'reviewer', 'verifier', 'qa', 'doc-updater']) {
+    // the verifier only runs with a serious finding
+    if (type === 'verifier') continue
+    assert.deepEqual(schemas[type], spec.schemas[type], `${type}: the schema drifted from pipeline-spec.json`)
+  }
+  const grave = { severity: 'high', wp: 'WP-01', file: 'src/a.py', line: 3, problem: 'p', evidence: 'e' }
+  const withFinding = await simulate({ review: () => ({ status: 'FAIL', findings: [grave] }), verifier: { is_real: false, confidence: 0.9, reasoning: 'r' } })
+  assert.deepEqual(withFinding.schemas.verifier, spec.schemas.verifier)
+})
+
+test('the constants of the workflow are the ones in pipeline-spec.json', async () => {
+  const source = readFileSync(join(here, '..', 'workflows', 'agentic-implement.js'), 'utf8')
+  assert.ok(source.includes(`const REFUTE_CONFIDENCE = ${spec.constants.refute_confidence}`))
+  for (const sev of spec.constants.blocking) assert.ok(source.includes(`'${sev}'`))
+  assert.deepEqual(spec.constants.blocking, ['critical', 'high'])
+  assert.equal(spec.constants.audit_rounds, 2, 'the workflow allows one revision of the acceptance tests')
+})
+
+test('every conformance scenario ends as described in its name', async () => {
+  const byName = Object.fromEntries(conformance.scenarios.map(d => [d.name, d]))
+  const run1 = async name => summarize(await simulate(fromDecl(byName[name]), byName[name].args || {}))
+  assert.equal((await run1('happy path')).result, 'OK')
+  assert.equal((await run1('verification fails on a package: it is fixed and verified again')).fix_cycles, 1)
+  assert.equal((await run1('the test-auditor returns nothing')).failed_stage, 'wave 0')
+  assert.equal((await run1('the fix limit is per package')).result, 'REVIEW')
 })
 
 let failed = 0

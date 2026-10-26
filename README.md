@@ -59,13 +59,14 @@ Then open `claude` in the project, accept the trust prompt, and:
 | `agentic-implement` | script | The native workflow: tests first, waves, verification, review, QA, fixes, docs |
 | `test-author` | latest Sonnet | Writes the acceptance tests from the criteria, before the code |
 | `implementer` | latest Sonnet | Builds one work package, in parallel with the rest of its wave |
+| `test-auditor` | latest Sonnet | Read-only; checks the acceptance tests would not pass against an empty implementation |
 | `reviewer` · `verifier` | latest Sonnet | Read-only review; the verifier tries to refute every serious finding |
 | `qa` | latest Sonnet | Exploratory testing beyond the acceptance criteria |
 | `doc-updater` | latest Sonnet | Updates README, CHANGELOG and guides, only inside its zone |
-| `gatekeeper` | latest Sonnet | Runs the deterministic steps of `agentic.py` for the workflow |
+| `gatekeeper` | latest Haiku | Runs the deterministic steps of `agentic.py` for the workflow, several per call |
 | `agentic.py` | — | The guardrail hook, the deterministic steps, the ledger and the installer |
 
-Models are set by alias (`opus`, `sonnet`), which always resolve to the newest version your Claude Code knows. `validate` fails if anyone pins another model.
+Models are set by alias (`opus`, `sonnet`, and `haiku` for the gatekeeper only), which always resolve to the newest version your Claude Code knows. `validate` fails if anyone pins another model.
 
 ## Guardrails
 
@@ -100,9 +101,11 @@ Tested end to end with real agents:
 - **The fully English flow:** the whole pipeline (prompts, ledger, hook messages, reports) ran on a new feature: wave 0, a parallel wave, the fix cycle, QA and the documentation.
 - **A full cycle with an injected defect:** the reviewer and QA found it independently, the verifier upheld it, its package fixed it in one cycle, and the doc-updater brought README and CHANGELOG in line with the real CLI. About four minutes.
 - **A badly written acceptance test:** the implementer could not touch it, did not cheat, and reported the exact cause. The flow stopped, and resumed from the same wave once the test was fixed.
-- **The plugin and the fallback mode:** `/agentic-flow:init` installed the flow in a TypeScript repo in a real session. The fallback mode without workflows also ran end to end.
+- **The plugin and the fallback mode:** `/agentic-flow:init` installed the flow in a TypeScript repo in a real session. The earlier fallback mode (one `agentic.py run-*` command per stage) also ran end to end.
 
-The flow tests itself with 130 Python tests and 21 workflow scenarios with simulated agents. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
+The flow tests itself with 149 Python tests and 36 workflow scenarios with simulated agents. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
+
+Not yet tested with real agents: the test-auditor, the Haiku gatekeeper, batched gatekeeper calls (`seq`), fix attempts that receive the previous diff, and the new `run-pipeline` fallback engine, including the exact shape of `claude -p --json-schema` output (`structured_report` accepts `structured_output` or JSON in `result`). They are covered by simulated agents and by a fake `claude`.
 
 Not yet tested: the interactive interview in the UI, installing the plugin from the marketplace, and the VS Code, JetBrains, cloud and GitHub Actions setups.
 

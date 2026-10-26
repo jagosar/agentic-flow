@@ -19,7 +19,7 @@ You have not seen the conversation in which `architecture.md` was designed, and 
 2. **Contracts (section 6):** does everything that crosses from one WP to another have an exact signature (types, errors, date formats, nulls, units)?
 3. **Ownership:** does each file have a single owner? Is any essential file without an owner (`__init__.py`, configuration, migrations, shared fixtures)?
 4. **Waves:** is any dependency by implementation where a signature would do, so parallelism is lost for no reason? Or the reverse: is something consumed by signature that cannot be simulated?
-5. **Acceptance criteria (AC-NNN):** is each one observable and does it have its "must not"? Can it be checked with a command rather than an opinion? Does `acceptance.command` exist and will it work with the stack of section 3?
+5. **Acceptance criteria (AC-NNN):** is each one observable and does it have its "must not"? Can it be checked with a command rather than an opinion? Does `acceptance.command` exist and will it work with the stack of section 3? Does every WP list in `acs` the criteria it answers for, and does every AC belong to some WP? (`verify` uses `acs` to send a failing criterion back to its package.)
 6. **Commands:** do the build and test commands of sections 3 and 9 work as written? For example, discovery paths or packages that are not importable.
 7. **Risks (section 11):** does any of them block a WP without saying so?
 8. **Reuse:** is something reinvented that the standard library or an existing dependency already solves?
