@@ -726,6 +726,16 @@ class InstallTests(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPT), "install", str(self.dir), *flags], capture_output=True,
                               text=True, env=self.env)
 
+    def test_flags_and_usage(self):
+        self.assertEqual(self.install("--allow-dirty").returncode, 0)
+        r = self.install("--everything")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("--allow-dirty", r.stderr)
+        r = subprocess.run([sys.executable, str(SCRIPT), "flow-history", "extra"], capture_output=True, text=True,
+                           env=self.env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Uso: flow-history", r.stderr)
+
     def test_installs_the_flow_and_keeps_project_configuration(self):
         r = self.install()
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -36,8 +36,10 @@ Subcommands:
   rules-sync          Installs in .claude/rules/agentic/ the common rules and those of each language of the project.
   codemap [PATH]      Generates the code map (files and public symbols) without going through the model.
   docs-check          Checks links, anchors and paths cited in the documentation. JSON.
-  install [DIR] [--force] [--dry-run]
-                      Installs or updates the flow in another repo (used by the plugin). Leaves what you modified alone.
+  install [DIR] [--force] [--dry-run] [--allow-dirty]
+                      Installs or upgrades the flow in another repo (used by the plugin). Replaces only intact files,
+                      keeps edited ones (new version in .claude/state/upgrade/), refuses over uncommitted changes or a run.
+  flow-history        Maintainers: writes .claude/flow-history.json, every content the flow ever shipped, from git.
   claim ID            Binds the current subagent to a WP or to QA (recorded by the hook).
   status              Shows the ledger: the state of every agent and stage.
   mark ID ESTADO [NOTA]
@@ -112,7 +114,7 @@ SYMBOL_RES = {
     (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
 }
 # What `install` puts in another repo: the flow, without the flow's own tests.
-INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/agents/*.md", ".claude/commands/*.md",
+INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
                  ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
 INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
@@ -923,9 +925,11 @@ def merge_settings(dst, src):
     return data, added
 
 
-def install(target, force=False, dry_run=False):
-    """Copies the flow to TARGET. On an update it only replaces files you have not modified (it knows from the
-    previous install's record); the others are left alone and listed, unless --force."""
+def install(target, force=False, dry_run=False, allow_dirty=False):
+    """Copies the flow to TARGET, or upgrades it. A flow file is replaced only if it is intact: its content is one the
+    flow shipped (flow-history.json) or the previous install recorded. Edited ones are kept, with the new version in
+    .claude/state/upgrade/, unless --force. It refuses to write over uncommitted changes or a run in progress."""
+    upgrade = sibling("upgrade")
     target = target.resolve()
     if target == SOURCE_ROOT:
         die("install: the target is the flow itself. Run it from the repo where you want to install it.")
@@ -933,35 +937,50 @@ def install(target, force=False, dry_run=False):
         die(f"install: the folder {target} does not exist")
     record_path = target / INSTALL_RECORD
     record = json.loads(record_path.read_text(encoding="utf-8")) if record_path.exists() else {}
-    previous = record.get("files", {})
-    sources = sorted({p.relative_to(SOURCE_ROOT).as_posix() for g in INSTALL_GLOBS for p in SOURCE_ROOT.glob(g)
-                      if p.is_file()})
-    report = {"new": [], "updated": [], "unchanged": [], "modified by you (left alone)": [], "removed": []}
+    previous, history = record.get("files", {}), upgrade.load_history(SOURCE_ROOT)
+
+    def shipped(globs):
+        return {p.relative_to(SOURCE_ROOT).as_posix() for g in globs for p in SOURCE_ROOT.glob(g) if p.is_file()}
+
+    def intact(rel):
+        digest = sha256(target / rel)
+        return digest in history.get(rel, set()) or digest == previous.get(rel)
+
+    # The flow everywhere; the template's leftovers (its tests, CI, plugin files) only where they already are.
+    sources = sorted(shipped(INSTALL_GLOBS) | {r for r in shipped(upgrade.EXTRA_GLOBS) if (target / r).is_file()})
+    plan = {rel: upgrade.classify(sha256(target / rel) if (target / rel).is_file() else None, sha256(SOURCE_ROOT / rel),
+                                  history.get(rel, set()) | {previous.get(rel)}, force) for rel in sources}
+    removed = sorted(r for r in set(previous) | set(history)
+                     if not (SOURCE_ROOT / r).exists() and (target / r).is_file() and intact(r))
+    guarded = [r for r in sources if (target / r).exists()] + removed + [
+        ".claude/settings.json", ".gitignore", ".claude/agentic.json", INSTALL_RECORD]
+    problems = upgrade.guard_problems(target, guarded)
+    if not dry_run:
+        if "not a git repository" in problems:
+            die(f"install: {target} is not a git repository: the flow needs git to undo an upgrade and to check what "
+                "each agent changes (git init).")
+        blocking = [p for p in problems if not (allow_dirty and p.startswith("uncommitted: "))]
+        if blocking:
+            print("install: nothing was written:", *blocking, sep="\n  ", file=sys.stderr)
+            print("Commit or stash your changes (or use --allow-dirty), and stop any run, then try again.", file=sys.stderr)
+            sys.exit(3)
+    report = {"new": [], "updated": [], "unchanged": [], "modified by you (left alone)": [], "removed": removed}
     new_record = {}
     for rel in sources:
-        src, dst = SOURCE_ROOT / rel, target / rel
-        new_hash = sha256(src)
-        if not dst.exists():
-            kind = "new"
-        elif sha256(dst) == new_hash:
-            kind = "unchanged"
-        elif force or previous.get(rel) == sha256(dst):
-            kind = "updated"
-        else:
+        kind, src, dst = plan[rel], SOURCE_ROOT / rel, target / rel
+        if kind == "kept":
             report["modified by you (left alone)"].append(rel)
             new_record[rel] = previous.get(rel, "")
-            continue
-        report[kind].append(rel)
-        new_record[rel] = new_hash
+            dst = target / ".claude" / "state" / "upgrade" / rel  # the new version, beside the user's
+        else:
+            report[kind].append(rel)
+            new_record[rel] = sha256(src)
         if kind != "unchanged" and not dry_run:
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(src.read_bytes())
-    for rel, old_hash in previous.items():
-        dst = target / rel
-        if rel not in new_record and dst.exists() and sha256(dst) == old_hash:
-            report["removed"].append(rel)
-            if not dry_run:
-                dst.unlink()
+    if not dry_run:
+        for rel in removed:
+            (target / rel).unlink()
     settings, added = merge_settings(target / ".claude" / "settings.json",
                                      json.loads((SOURCE_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8")))
     gitignore = target / ".gitignore"
@@ -979,7 +998,8 @@ def install(target, force=False, dry_run=False):
             (target / ".claude" / "agentic.json").write_text(json.dumps(DEFAULT_CONFIG, indent=2) + "\n", encoding="utf-8")
         record_path.write_text(json.dumps({"version": flow_version(), "files": new_record}, indent=2) + "\n",
                                encoding="utf-8")
-    print(f"agentic-flow {flow_version()} -> {target}" + (" (dry run: nothing is written)" if dry_run else ""))
+    print(f"agentic-flow {record.get('version', 'unknown')} -> {flow_version()} -> {target}"
+          + (" (dry run: nothing is written)" if dry_run else ""))
     for kind, files in report.items():
         if files:
             print(f"  {kind}: {len(files)}" + ("".join(f"\n    {f}" for f in files) if kind != "unchanged" else ""))
@@ -997,7 +1017,19 @@ def install(target, force=False, dry_run=False):
         else:
             print(f"  rules: could not be installed ({(r.stderr.strip().splitlines() or ['no detail'])[-1]})")
     if report["modified by you (left alone)"]:
-        print("Some of the flow's files have been modified by you: they were kept. Compare them with the new version or repeat with --force.")
+        print("kept files: " + ("run without --dry-run to get their new versions in .claude/state/upgrade/" if dry_run else
+              "new versions in .claude/state/upgrade/ (compare with: diff -ru .claude/state/upgrade/.claude .claude)"))
+    notes = upgrade.notes_between(record.get("version"), flow_version())
+    if notes:
+        print("upgrade notes:", *notes, sep="\n  - ")
+    if dry_run:
+        for problem in problems:
+            print(f"warning: {problem}")
+    elif (target / "architecture.md").exists():
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "validate"], cwd=target, capture_output=True,
+                           text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+        errors = [line.strip() for line in r.stderr.splitlines() if line.strip() and line.strip() != "Invalid manifest:"]
+        print("validate: OK" if r.returncode == 0 else f"validate: FAILED: {(errors or ['no detail'])[0]}")
     print("RESULT: OK")
 
 
@@ -1776,10 +1808,22 @@ def main():
         docs_check(manifest)
     elif cmd == "install":
         flags = {a for a in args if a.startswith("--")}
-        if flags - {"--force", "--dry-run"}:
-            die("Uso: install [DIR] [--force] [--dry-run]")
+        if flags - {"--force", "--dry-run", "--allow-dirty"}:
+            die("Uso: install [DIR] [--force] [--dry-run] [--allow-dirty]")
         dirs = [a for a in args if not a.startswith("--")]
-        install(Path(dirs[0] if dirs else os.getcwd()), force="--force" in flags, dry_run="--dry-run" in flags)
+        install(Path(dirs[0] if dirs else os.getcwd()), force="--force" in flags, dry_run="--dry-run" in flags,
+                allow_dirty="--allow-dirty" in flags)
+    elif cmd == "flow-history":
+        if args:
+            die("Uso: flow-history")
+        upgrade = sibling("upgrade")
+        try:
+            data = upgrade.build_history(SOURCE_ROOT, INSTALL_GLOBS + upgrade.EXTRA_GLOBS)
+        except ValueError as e:
+            die(f"flow-history: {e}")
+        (SOURCE_ROOT / ".claude" / "flow-history.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        print(json.dumps({"paths": len(data["files"]), "hashes": sum(len(h) for h in data["files"].values()),
+                          "generated_from": data["generated_from"]}))
     elif cmd == "run-acceptance":
         run_acceptance(require_valid())
     elif cmd == "run-review":
