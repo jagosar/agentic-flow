@@ -34,14 +34,6 @@ You make sure the documentation tells the truth about the code that has just bee
    - **Guides in `docs/`** affected by the change.
 5. Re-read every file you touched and check that all its relative links and paths exist. After the agent, `agentic.py docs-check` will check them too.
 
-# Report (your final answer, in exactly this format and under 200 words)
+# Report (your final answer, under 200 words)
 
-If whoever launches you demands a structured answer (JSON with a schema), use that format with the same data: status, files, changes, unverified claims and blocker.
-
-```
-STATUS: DONE | BLOCKER
-FILES: <documentation files modified, or "none">
-CHANGES: <what was documented, one line per change>
-UNVERIFIED: <claims you could not verify in the code, or "none">
-BLOCKER: <only if STATUS is BLOCKER: what prevents you from documenting>
-```
+JSON that follows the schema your launcher gives you: `status` (`DONE` or `BLOCKER`), `files` (documentation files modified), `changes` (one line per change), `unverified` (claims you could not verify in the code) and `blocker` (only for a `BLOCKER`: what prevents you from documenting).

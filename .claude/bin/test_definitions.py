@@ -21,15 +21,15 @@ AGENTIC = CLAUDE / "bin" / "agentic.py"
 WRITE_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
 # Each agent's contract: model (alias), exact tools, the ID it claims its zone with, and its report.
 AGENTS = {
-    "implementer": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "<WP-ID>", "status": "STATUS: DONE | BLOCKER"},
-    "test-author": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "AT", "status": "STATUS: DONE | BLOCKER"},
-    "qa": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "QA", "status": "STATUS: PASS | FAIL | BLOCKER"},
-    "reviewer": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "Bash"}, "claim": "REVIEW", "status": "STATUS: PASS | FAIL"},
+    "implementer": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "<WP-ID>"},
+    "test-author": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "AT"},
+    "qa": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "QA"},
+    "reviewer": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "Bash"}, "claim": "REVIEW"},
     "verifier": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
     "plan-reviewer": {"model": "opus", "tools": {"Read", "Glob", "Grep"}},
     "test-auditor": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
     "gatekeeper": {"model": "haiku", "tools": {"Bash"}},
-    "doc-updater": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "DOCS", "status": "STATUS: DONE | BLOCKER"},
+    "doc-updater": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "DOCS"},
 }
 COMMANDS = {"architect": "opus", "implement": "sonnet"}
 # Manifest fields agentic.py understands: all must be documented in /architect.
@@ -102,15 +102,19 @@ class AgentDefinitionTests(unittest.TestCase):
                 body = frontmatter(AGENTS_DIR / f"{name}.md")[1]
                 self.assertIn(f"python3 .claude/bin/agentic.py claim {spec['claim']}", body)
 
-    def test_report_format_and_json_note(self):
-        for name, spec in AGENTS.items():
-            if "status" not in spec:
-                continue
+    def test_report_is_json_by_schema(self):
+        for name in ("implementer", "test-author", "test-auditor", "qa", "reviewer", "doc-updater"):
             with self.subTest(agent=name):
                 body = frontmatter(AGENTS_DIR / f"{name}.md")[1]
-                self.assertIn(spec["status"], body)
-                self.assertIn("JSON with a schema", body, "it must accept the workflow's structured format")
-                self.assertRegex(body, r"under \d+ words")
+                self.assertNotIn("STATUS:", body, "the text report format is gone: the launchers use a JSON schema")
+                report = body[body.index("# Report"):]
+                self.assertIn("schema", report)
+                self.assertRegex(report, r"under \d+ words")
+
+    def test_agents_that_get_a_brief_read_it(self):
+        for name in ("implementer", "test-author", "test-auditor"):
+            with self.subTest(agent=name):
+                self.assertIn("brief", frontmatter(AGENTS_DIR / f"{name}.md")[1])
 
     def test_qa_classifies_defects(self):
         body = (AGENTS_DIR / "qa.md").read_text(encoding="utf-8")

@@ -68,14 +68,6 @@ Common false positives you must not report:
 - functions with more than one clear responsibility;
 - breaches of section 7.
 
-# Report (final answer, in this format and under 300 words)
+# Report (final answer, under 300 words)
 
-```
-STATUS: PASS | FAIL
-FINDINGS: <each one: severity (critical/high/medium/low) · WP · file:line · problem · proof or scenario>
-NO FINDINGS IN: <areas reviewed and clean>
-```
-
-`FAIL` only if there is a critical or high finding with proof.
-
-If whoever launches you demands a structured answer (JSON with a schema), use that format with the same data.
+JSON that follows the schema your launcher gives you: `status` (`FAIL` only if there is a critical or high finding with proof, else `PASS`) and `findings`, each with `severity`, `wp`, `file`, `line`, `problem` and `evidence` (the proof or scenario).

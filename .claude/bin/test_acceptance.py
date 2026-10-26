@@ -299,8 +299,9 @@ class PromptTests(unittest.TestCase):
 
 
 def section(text, heading):
-    m = re.search(rf"^# {heading}\n(.*?)(?=^# |\Z)", text, re.S | re.M)
-    return m.group(1) if m else ""
+    """The section whose heading starts with `# <heading>`, heading line included (it carries the word cap)."""
+    m = re.search(rf"^# {heading}.*?(?=^# |\Z)", text, re.S | re.M)
+    return m.group(0) if m else ""
 
 
 class DefinitionTests(unittest.TestCase):

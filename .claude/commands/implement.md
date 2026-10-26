@@ -73,6 +73,8 @@ python3 .claude/bin/agentic.py run-pipeline            # or: --start-wave N  |  
 
 Launch it with Bash **in the background** (`run_in_background: true`), end the turn and continue when the notification arrives. It prints its progress, ends in `RESULT: OK` or `RESULT: REVIEW` and saves the JSON of the run to `.claude/state/runs/workflow-result.json`: that is the file you present in step 3. `--resume` continues after the last wave that finished; `python3 .claude/bin/agentic.py stop` stops it.
 
+In this mode `agentic.py status` also shows the tokens and cost of every agent (`.claude/state/usage.jsonl`). The agents read their briefs (`.claude/state/briefs/`, written by `agentic.py briefs`), not the whole `architecture.md`.
+
 The one-off commands (`run-acceptance`, `run-wave N [WP...] [--fix]`, `run-review`, `run-qa`, `run-docs`, `verify`, `acceptance --expect red|green`) are still there for working by hand, stage by stage.
 
 # Rules
