@@ -42,11 +42,12 @@ The workflow returns a JSON. Save it first, because it is the full record of the
 1. Write it as it is with the Write tool to `.agentic-result.json`, at the repo root.
 2. Run `python3 .claude/bin/agentic.py save-result .agentic-result.json`, which moves it to `.claude/state/runs/workflow-result.json`.
 
-Do not write it directly into `.claude/`, which is a protected path, and do not pass it through a heredoc, because Bash's safety filter blocks it.
+Do not write it directly into `.claude/`, which is a protected path, and do not pass it through a heredoc, because Bash's safety filter blocks it. (In the fallback mode the engine has already saved the same JSON there: read it and skip these two steps.)
 
 Then present it like this:
 
 - **Status:** `result` (`OK` or `REVIEW`) and, if it failed, `failed_stage` and `detail`.
+- **Acceptance tests (`test_audit`):** whether the test-auditor found weak tests and the test-author had to revise them.
 - **WPs:** a table with WP, status, files and checks, taken from `work_packages`.
 - **Verification:** each phase of `verification.phases`, with acceptance green.
 - **Review:**
@@ -54,29 +55,25 @@ Then present it like this:
   - findings refuted by the verifier (and why);
   - medium and low notices.
 - **QA:** status, plan, defects and coverage gaps.
-- **Fixes:** `fix_cycles` and which WPs were fixed.
+- **Fixes:** `fix_cycles` and which WPs were fixed. A failed verification also goes to a fix cycle when `verification.suspects` names the package that owns the failure.
 - **Documentation (`docs`, if there was any):** files the doc-updater updated, whether the code map changed, and the result of `docs-check`.
 - **Pending (`pending`):** each item with its type.
   - **Design:** goes to `/architect`.
-  - **Fix limit reached, or no WP:** the user decides.
+  - **Fix limit reached (per WP), or no WP:** the user decides.
 
 If `result` is `OK`, propose the commit messages (one per logical block, in the format of section 7) and **wait for the user's approval**. Do not commit or push without it.
 
 # 4. Fallback mode (no workflows)
 
-It needs the `claude` CLI on the `PATH`. Each step is a `python3 .claude/bin/agentic.py` command, launched with Bash **in the background** (`run_in_background: true`). End the turn after launching and continue when the notification arrives. Each command ends in `RESULT: OK` or `REVIEW`. On `REVIEW`, stop and present the problem.
+It needs the `claude` CLI on the `PATH`. It is one command that runs the same pipeline as the workflow (wave 0 with its test audit, the waves, verification, review with adversarial verification, QA, fixes, documentation), with one `claude -p` process per agent and the same schemas, prompts and limits:
 
-1. **Wave 0:**
-   - `run-acceptance`, then `acceptance --expect red`.
-   - In a refactor, only `acceptance --expect green`, as the baseline.
-2. **Waves:** `run-wave N` for each wave, in order.
-3. **Verification:** `verify`.
-4. **Review and QA:** `run-review` and `run-qa`.
-5. **Fixes:**
-   - A critical or high implementation defect is fixed with `run-wave <wave> <WP> --fix`, at most 2 cycles per WP (the script refuses the third, with exit code 4). Then verification and the stage that found it are repeated.
-   - A design defect goes to `/architect`.
-6. **Documentation** (only if the manifest has `docs` and everything above is OK): `codemap`, `run-docs` and `docs-check`.
-7. **Wrap-up:** the same report and the same human gate as in step 3.
+```
+python3 .claude/bin/agentic.py run-pipeline            # or: --start-wave N  |  --resume
+```
+
+Launch it with Bash **in the background** (`run_in_background: true`), end the turn and continue when the notification arrives. It prints its progress, ends in `RESULT: OK` or `RESULT: REVIEW` and saves the JSON of the run to `.claude/state/runs/workflow-result.json`: that is the file you present in step 3. `--resume` continues after the last wave that finished; `python3 .claude/bin/agentic.py stop` stops it.
+
+The one-off commands (`run-acceptance`, `run-wave N [WP...] [--fix]`, `run-review`, `run-qa`, `run-docs`, `verify`, `acceptance --expect red|green`) are still there for working by hand, stage by stage.
 
 # Rules
 

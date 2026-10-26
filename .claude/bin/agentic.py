@@ -12,8 +12,14 @@ Subcommands:
   open-stage L        Snapshot of stage L (a wave, acceptance, review, qa, docs) and its owners, as JSON.
   close-stage L ID=estado... [--expect red|green] [--fix]
                       Ownership + ledger states (+ acceptance) (+ fix count), in one call.
+  run-pipeline [--start-wave N] [--resume]
+                      The whole pipeline (wave 0, waves, verification, review, QA, fixes, docs) with one `claude -p` per
+                      agent: the fallback mode and CI. Same stages and limits as the native workflow.
+  seq CMD [ARGS] + CMD [ARGS] ...
+                      Runs several of the commands above in order, stopping at the first that fails; one JSON line out.
   baseline            Baseline: the verify phases BEFORE touching anything (separates regressions from existing failures).
-  verify              Build/types/lint/tests phases + green acceptance, compared with the baseline. JSON.
+  verify              Build/types/lint/tests phases + green acceptance, compared with the baseline. JSON, with the
+                      work packages that own what a failure mentions ("suspects").
   sync-permissions    Adds to .claude/settings.local.json the permissions the agents need.
   save-result [FILE]
                       Saves the workflow JSON in .claude/state/runs/workflow-result.json (from FILE, which it
@@ -55,6 +61,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -107,8 +114,8 @@ SYMBOL_RES = {
     (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
 }
 # What `install` puts in another repo: the flow, without the flow's own tests.
-INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/agents/*.md", ".claude/commands/*.md",
-                 ".claude/workflows/*.js", ".claude/rules-library/*.md"]
+INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/pipeline.py", ".claude/agents/*.md", ".claude/commands/*.md",
+                 ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
 INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
 VERIFY_PHASES = ("build", "types", "lint", "tests")
@@ -123,6 +130,9 @@ WORKER_MODEL = "sonnet"
 # The architect always uses the latest Opus (alias `opus`, in /architect's frontmatter).
 # The launcher (/implement) also runs on the latest Sonnet, from its frontmatter.
 ARCHITECT_MODEL = "opus"
+# The only exception to the worker model: the gatekeeper just relays a command and its output, so the fastest model
+# does it. Nothing that reads or writes code may use it.
+AGENT_MODEL_OVERRIDES = {"gatekeeper": "haiku"}
 DEFAULT_CONFIG = {
     "timeout_s": 1800,
     # "subscription": agents use your Claude session (subscription) even if an API key is in the environment.
@@ -137,6 +147,7 @@ DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".r
                   "node_modules/", ".coverage", "coverage/", ".nyc_output/", ".DS_Store", ".tsbuildinfo"]
 
 MANIFEST_RE = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
+AC_RE = re.compile(r"AC-\d+")
 CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")
 STATUS_RE = re.compile(r"STATUS:\s*(DONE|BLOCKER|PASS|FAIL)")
 # A write subcommand in the same command as `git`, even with options in front (`git -C . commit`)
@@ -328,6 +339,9 @@ def validate(manifest):
             if key not in wp:
                 errors.append(f"{wp['id']}: missing field '{key}'.")
         errors += mirror_errors(wp)
+        acs = wp.get("acs", [])
+        if not isinstance(acs, list) or any(not isinstance(a, str) or not AC_RE.fullmatch(a) for a in acs):
+            errors.append(f"{wp['id']}: 'acs' must be a list of criteria such as [\"AC-001\"].")
         if "config_edit" in wp and not isinstance(wp["config_edit"], bool):
             errors.append(f"{wp['id']}: 'config_edit' must be true or false.")
         if not isinstance(wp.get("wave", 0), int):
@@ -410,7 +424,7 @@ def frontmatter_model(path):
 def agent_model_errors(manifest):
     """Orchestrated agents on the latest Sonnet and the architect on the latest Opus, declared by alias."""
     errors = []
-    names = {"implementer", "qa", "test-author", "reviewer", "gatekeeper", "verifier"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
+    names = {"implementer", "qa", "test-author", "test-auditor", "reviewer", "gatekeeper", "verifier"} | {wp.get("agent", "implementer") for wp in wps(manifest).values()}
     if docs_entity(manifest):
         names.add("doc-updater")
     for name in sorted(names):
@@ -419,9 +433,10 @@ def agent_model_errors(manifest):
             errors.append(f"Agent '{name}': {f.relative_to(ROOT)} does not exist.")
             continue
         model = frontmatter_model(f)
-        if model != WORKER_MODEL:
-            errors.append(f"Agent '{name}': its frontmatter must say 'model: {WORKER_MODEL}' (the latest Sonnet), "
-                          f"not '{model}'.")
+        expected = AGENT_MODEL_OVERRIDES.get(name, WORKER_MODEL)
+        if model != expected:
+            errors.append(f"Agent '{name}': its frontmatter must say 'model: {expected}' "
+                          f"(the latest {expected.capitalize()}), not '{model}'.")
     plan_reviewer = ROOT / ".claude" / "agents" / "plan-reviewer.md"
     if plan_reviewer.exists() and frontmatter_model(plan_reviewer) != ARCHITECT_MODEL:
         errors.append(f"Agent 'plan-reviewer': its frontmatter must say 'model: {ARCHITECT_MODEL}' (the latest Opus), "
@@ -496,9 +511,32 @@ def stage_owners(manifest, label):
     return [wp for wp in wps(manifest).values() if wp["wave"] == int(label)]
 
 
+def git_tree():
+    """Hash of a tree holding the whole working state (tracked, modified and new files), built in a temporary index so
+    that the real one is left alone. None if this is not a git repo."""
+    try:
+        git_index = subprocess.run(["git", "rev-parse", "--git-path", "index"], cwd=ROOT, capture_output=True,
+                                   text=True, check=True).stdout.strip()
+        tmp = STATE / "tree.idx"
+        tmp.unlink(missing_ok=True)
+        if (ROOT / git_index).exists():
+            shutil.copyfile(ROOT / git_index, tmp)
+        env = dict(os.environ, GIT_INDEX_FILE=str(tmp))
+        subprocess.run(["git", "add", "-A"], cwd=ROOT, env=env, capture_output=True, check=True)
+        tree = subprocess.run(["git", "write-tree"], cwd=ROOT, env=env, capture_output=True, text=True,
+                              check=True).stdout.strip()
+        tmp.unlink(missing_ok=True)
+        return tree
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+
+
 def snapshot(label):
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / f"snapshot-{label}.json").write_text(json.dumps(digest()))
+    tree = git_tree()
+    if tree:  # what a fix attempt changed is later diffed against this
+        (STATE / f"tree-{label}.txt").write_text(tree)
     CLAIMS.unlink(missing_ok=True)  # every stage starts with no claims
     ledger_stage(label, "in progress")
     print(f"Snapshot of stage {label} saved.")
@@ -929,24 +967,28 @@ def install(target, force=False, dry_run=False):
     print("RESULT: OK")
 
 
-def run_command(cmd, timeout=900):
-    """Runs a manifest command without a shell. Returns (code, last lines of output)."""
+def run_command(cmd, timeout=900, scan=None):
+    """Runs a manifest command without a shell. Returns (code, last lines of output). With a list in `scan`, the
+    last 200 lines are appended to it, for attributing a failure to the packages that own what it mentions."""
     try:
         r = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=timeout,
                            env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)))
-        return r.returncode, (r.stdout + r.stderr).strip().splitlines()[-8:]
+        lines = (r.stdout + r.stderr).strip().splitlines()
+        if scan is not None:
+            scan.extend(lines[-200:])
+        return r.returncode, lines[-8:]
     except FileNotFoundError:
         return 127, [f"command not found: {cmd}"]
     except subprocess.TimeoutExpired:
         return 124, [f"the command exceeded {timeout // 60} minutes"]
 
 
-def acceptance_check(manifest, expect, quiet=False):
+def acceptance_check(manifest, expect, quiet=False, scan=None):
     """red: they must fail (wave 0). green: they must pass (after the waves). Returns (ok, verdict)."""
     cmd = at_entity(manifest)["command"]
     if not cmd:
         die("The manifest has no 'acceptance' section.")
-    code, tail = run_command(cmd)
+    code, tail = run_command(cmd, scan=scan)
     if not quiet:
         print(f"$ {cmd}  ->  exit {code}")
         for line in tail:
@@ -971,6 +1013,168 @@ def acceptance(manifest, expect):
 
 
 # ---------- native workflow commands (run by the gatekeeper agent) ----------
+
+SEQ_OUTPUT_CAP = 12_000
+SEQ_COMMANDS = {"pipeline-plan", "baseline", "open-stage", "close-stage", "verify", "codemap", "docs-check",
+                "acceptance"}
+
+
+def run_steps(groups):
+    """Runs each command (an argv list) as its own process, in order, and stops at the first that fails.
+    Returns (ok, [{"cmd", "exit_code", "output"}])."""
+    results, ok = [], True
+    for g in groups:
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), *g], cwd=ROOT, capture_output=True, text=True,
+                           env=dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT)))
+        out = (r.stdout + r.stderr).strip()
+        results.append({"cmd": " ".join(g), "exit_code": r.returncode,
+                        "output": out if len(out) <= SEQ_OUTPUT_CAP else "[truncated]\n" + out[-SEQ_OUTPUT_CAP:]})
+        if r.returncode != 0:
+            ok = False
+            break
+    return ok, results
+
+
+def seq(steps):
+    """seq CMD ARGS + CMD ARGS ...: runs several of the workflow's commands one after another and stops at the first
+    that fails. One call, one JSON line: {"ok", "steps": [{"cmd", "exit_code", "output"}]}. It saves the workflow's
+    gatekeeper round trips; each step still runs as its own process, exactly as if it had been called alone."""
+    groups, current = [], []
+    for token in steps:
+        if token == "+":
+            groups.append(current)
+            current = []
+        else:
+            current.append(token)
+    groups.append(current)
+    if any(not g or g[0] not in SEQ_COMMANDS for g in groups):
+        die(f"Uso: seq CMD [ARGS] + CMD [ARGS] ...  (commands: {', '.join(sorted(SEQ_COMMANDS))})")
+    ok, results = run_steps(groups)
+    print(json.dumps({"ok": ok, "steps": results}, ensure_ascii=False))
+    sys.exit(0 if ok else next(x["exit_code"] for x in results if x["exit_code"] != 0))
+
+
+# ---------- the whole pipeline, without a workflow (fallback mode and CI) ----------
+
+PIPELINE_STATE = STATE / "pipeline.json"
+PIPELINE_SPEC = ROOT / ".claude" / "workflows" / "pipeline-spec.json"
+READ_ONLY_AGENTS = {"verifier", "test-auditor"}  # no zone of their own: they run as the read-only REVIEW entity
+
+
+def pipeline_tools(manifest, agent_type):
+    """The tools each kind of agent may use (the same sets the one-off run-* commands give them)."""
+    bash = manifest.get("allow_bash", [])
+    if agent_type in READ_ONLY_AGENTS:
+        return ["Read", "Glob", "Grep"]
+    if agent_type == "reviewer":
+        return REVIEW_TOOLS + bash
+    if agent_type == "doc-updater":
+        return BASE_TOOLS + ["Bash(git diff:*)", "Bash(git status:*)", "Bash(git log:*)"]
+    if agent_type == "test-author":
+        return BASE_TOOLS + bash + at_entity(manifest)["allow_bash"]
+    if agent_type == "qa":
+        return BASE_TOOLS + bash + qa_entity(manifest)["allow_bash"]
+    allowed = BASE_TOOLS + bash  # implementers, and the custom agents a WP declares
+    cmd = at_entity(manifest)["command"]
+    return allowed + [f"Bash({cmd}:*)", f"Bash({cmd})"] if cmd else allowed
+
+
+def structured_report(path, schema):
+    """The structured answer of a `claude -p --output-format json --json-schema` run, or None. The CLI puts it in
+    `structured_output`; older output may carry it as JSON text in `result`, so both are accepted."""
+    try:
+        data = json.loads(path.read_text())
+    except (ValueError, OSError):
+        return None
+    report = data.get("structured_output")
+    if report is None:
+        result = data.get("result")
+        report = result if isinstance(result, dict) else pipeline_module().lines_json(result) if isinstance(result, str) else None
+    if isinstance(report, str):
+        try:
+            report = json.loads(report)
+        except ValueError:
+            report = None
+    if not isinstance(report, dict) or any(k not in report for k in schema.get("required", [])):
+        return None
+    return report
+
+
+def pipeline_module():
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import pipeline
+    return pipeline
+
+
+def run_pipeline(manifest, args):
+    """run-pipeline [--start-wave N] [--resume]: the agentic-implement pipeline with one `claude -p` per agent. The
+    same stages, prompts, schemas and limits as the native workflow; it only changes who runs the agents."""
+    flags = {a for a in args if a == "--resume"}
+    rest = [a for a in args if a not in flags]
+    start_wave = None
+    if rest[:1] == ["--start-wave"] and len(rest) == 2 and rest[1].isdigit():
+        start_wave = int(rest[1])
+    elif rest:
+        die("Uso: run-pipeline [--start-wave N] [--resume]")
+    if "--resume" in flags and start_wave is None and PIPELINE_STATE.exists():
+        done = json.loads(PIPELINE_STATE.read_text()).get("completed_waves", [])
+        start_wave = max(done) + 1 if done else None
+    if not PIPELINE_SPEC.exists():
+        die(f"{PIPELINE_SPEC.relative_to(ROOT)} does not exist: reinstall the flow (/agentic-flow:init).")
+    pipeline = pipeline_module()
+    spec = json.loads(PIPELINE_SPEC.read_text(encoding="utf-8"))
+    cfg = load_config()
+    STATE.mkdir(parents=True, exist_ok=True)
+    (STATE / "runs").mkdir(parents=True, exist_ok=True)
+    counter = iter(range(1, 10 ** 6))
+    completed = []
+
+    def gate(cmds, label):
+        ok, results = run_steps([shlex.split(c) for c in cmds])
+        return {"steps": results}
+
+    def agent(prompt, agent_type, label, ident):
+        schema = spec["schemas"][agent_type]
+        n = next(counter)
+        out_path = STATE / "runs" / f"{(ident or agent_type)}-{n}.json"
+        cmd = ["claude", "-p", prompt, "--agent", agent_type, "--model", WORKER_MODEL, "--output-format", "json",
+               "--json-schema", json.dumps(schema), "--permission-mode", "acceptEdits", "--strict-mcp-config",
+               "--allowedTools", *pipeline_tools(manifest, agent_type), "Bash(python3 .claude/bin/agentic.py claim:*)"]
+        env = child_env(cfg, AGENTIC_WP=ident or "REVIEW", CLAUDE_PROJECT_DIR=str(ROOT))
+        tracked = agent_type not in READ_ONLY_AGENTS and ident in entities(manifest)
+        with open(out_path, "w") as out, open(out_path.with_suffix(".log"), "w") as err:
+            proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                                    start_new_session=True)  # its own group: stop and timeout kill it whole
+            if tracked:
+                ledger_update(ident, state="running", stage=stage_of(ident), mode="fallback", pid=proc.pid,
+                              started=now_hm(), note="")
+            try:
+                proc.wait(timeout=cfg["timeout_s"])
+            except subprocess.TimeoutExpired:
+                kill_group(proc.pid)
+                proc.wait()
+                print(f"{label}: TIMEOUT ({cfg['timeout_s']}s)", flush=True)
+                return None
+        if tracked and ledger_read().get(ident, {}).get("state") == "stopped":
+            raise pipeline.Halted()
+        report = structured_report(out_path, schema)
+        print(f"{label}: {report.get('status', 'done') if report else 'NO REPORT'}", flush=True)
+        return report
+
+    def wave_done(wave):
+        completed.append(wave)
+        PIPELINE_STATE.write_text(json.dumps({"completed_waves": sorted(set(completed))}))
+
+    engine = pipeline.Pipeline(spec, gate, agent, log=lambda m: print(m, flush=True), start_wave=start_wave,
+                               phase=lambda t: print(f"== {t}", flush=True), wave_done=wave_done)
+    result = engine.execute()
+    out = STATE / "runs" / "workflow-result.json"
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"result": result["result"], "failed_stage": result.get("failed_stage"),
+                      "detail": result.get("detail"), "saved": str(out.relative_to(ROOT))}, ensure_ascii=False))
+    print("RESULT:", "OK" if result["result"] == "OK" else "REVIEW")
+    sys.exit(0 if result["result"] == "OK" else 3)
+
 
 def architecture_type():
     m = TYPE_RE.search(ARCH.read_text(encoding="utf-8")) if ARCH.exists() else None
@@ -1030,6 +1234,8 @@ def close_stage(manifest, label, items):
     for jid, state in marks:
         extra = {"fix_count": ledger.get(jid, {}).get("fix_count", 0) + 1} if fix else {}
         ledger_update(jid, state=state, stage=stage_of(jid), pid=None, note=state.upper() + (" (fix)" if fix else ""), **extra)
+    if fix:
+        write_fix_diffs(manifest, label, [(jid, ledger.get(jid, {}).get("fix_count", 0) + 1) for jid, _ in marks])
     ok = check_stage(manifest, label) and all(state in ("done", "pass") for _, state in marks)
     if expect:
         acc_ok, verdict = acceptance_check(manifest, expect, quiet=True)
@@ -1040,6 +1246,32 @@ def close_stage(manifest, label, items):
     sys.exit(0 if ok else 3)
 
 
+MAX_DIFF_BYTES = 200_000
+
+
+def write_fix_diffs(manifest, label, attempts):
+    """What each package changed in this fix attempt, as `runs/<ID>.fix-<N>.diff`: the next attempt reads it to avoid
+    repeating a fix that did not work. attempts: [(ID, N)]."""
+    tree_file = STATE / f"tree-{label}.txt"
+    after = git_tree()
+    if not tree_file.exists() or not after:
+        return
+    before = tree_file.read_text().strip()
+    table = wps(manifest)
+    runs = STATE / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    for jid, n in attempts:
+        files = table.get(jid, {}).get("files", [])
+        if not files:
+            continue
+        r = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", before, after, "--", *files], cwd=ROOT,
+                           capture_output=True, text=True)
+        text = r.stdout
+        if len(text) > MAX_DIFF_BYTES:
+            text = text[:MAX_DIFF_BYTES] + "\n[diff truncated]\n"
+        (runs / f"{jid}.fix-{n}.diff").write_text(text or "(this attempt changed no file)\n", encoding="utf-8")
+
+
 def run_phases(manifest):
     cfg = manifest.get("verify", {})
     phases = []
@@ -1047,14 +1279,36 @@ def run_phases(manifest):
         if name not in cfg:
             phases.append({"name": name, "skipped": True})
             continue
-        code, tail = run_command(cfg[name])
-        phases.append({"name": name, "command": cfg[name], "exit": code, "passed": code == 0, "tail": tail})
+        scan = []
+        code, tail = run_command(cfg[name], scan=scan)
+        phases.append({"name": name, "command": cfg[name], "exit": code, "passed": code == 0, "tail": tail, "_scan": scan})
     return phases
 
 
+def attribute(manifest, lines):
+    """Maps the output of a failure to the work packages that own what it mentions: a file of theirs (by path) or one
+    of their criteria (AC-NNN in a test name, through the WP's "acs"). Deterministic; no model."""
+    text = "\n".join(lines)
+    seen = {f"AC-{int(n):03d}" for n in re.findall(r"(?<![A-Za-z])AC[-_ ]?(\d+)", text, re.I)}
+    found = {}
+    for wid, wp in sorted(wps(manifest).items()):
+        files = [f for f in wp.get("files", []) if f in text]
+        acs = [a for a in wp.get("acs", []) if f"AC-{int(a[3:]):03d}" in seen]
+        if files or acs:
+            found[wid] = {"files": files, "acs": acs}
+    return found
+
+
 def baseline(manifest):
-    """Baseline: the state of the verify phases BEFORE touching anything. Separates regressions from existing failures."""
+    """Baseline: the state of the verify phases BEFORE touching anything. Separates regressions from existing failures.
+    Without verify commands there is nothing to measure: it does nothing (the workflow always asks for it)."""
+    if not manifest.get("verify"):
+        BASELINE.unlink(missing_ok=True)
+        print(json.dumps({"phases": [], "preexisting_failures": [], "skipped": True}))
+        sys.exit(0)
     phases = run_phases(manifest)
+    for ph in phases:
+        ph.pop("_scan", None)
     STATE.mkdir(parents=True, exist_ok=True)
     BASELINE.write_text(json.dumps({"phases": phases}, ensure_ascii=False, indent=2))
     failing = [p["name"] for p in phases if p.get("passed") is False]
@@ -1081,15 +1335,25 @@ def verify(manifest):
         else:
             ph["status"] = "regression" if was else "fails"
     if at_entity(manifest)["command"]:
-        acc_ok, verdict = acceptance_check(manifest, "green", quiet=True)
+        scan = []
+        acc_ok, verdict = acceptance_check(manifest, "green", quiet=True, scan=scan)
         phases.append({"name": "acceptance", "command": at_entity(manifest)["command"], "passed": acc_ok,
-                       "verdict": verdict, "status": "ok" if acc_ok else "fails"})
+                       "verdict": verdict, "status": "ok" if acc_ok else "fails", "_scan": scan})
     blocking = [p["name"] for p in phases if p.get("status") in ("regression", "fails")]
+    suspects = {}
+    for ph in phases:
+        scan = ph.pop("_scan", [])
+        if ph.get("status") in ("regression", "fails"):
+            for wid, info in attribute(manifest, scan).items():
+                entry = suspects.setdefault(wid, {"phases": [], "files": [], "acs": []})
+                entry["phases"].append(ph["name"])
+                entry["files"] = sorted(set(entry["files"]) | set(info["files"]))
+                entry["acs"] = sorted(set(entry["acs"]) | set(info["acs"]))
     preexisting = [p["name"] for p in phases if p.get("status") == "pre-existing failure"]
     ok = not blocking
     ledger_stage("verification", "OK" if ok else "REVIEW: " + ", ".join(blocking))
-    print(json.dumps({"ok": ok, "blocking": blocking, "preexisting_failures": preexisting, "phases": phases},
-                     ensure_ascii=False))
+    print(json.dumps({"ok": ok, "blocking": blocking, "preexisting_failures": preexisting, "suspects": suspects,
+                      "phases": phases}, ensure_ascii=False))
     sys.exit(0 if ok else 3)
 
 
@@ -1444,6 +1708,10 @@ def main():
         if not args:
             die("Uso: close-stage N|acceptance|review|qa ID=estado... [--expect red|green] [--fix]")
         close_stage(require_valid(), stage_label(args[0]), args[1:])
+    elif cmd == "seq":
+        seq(args)
+    elif cmd == "run-pipeline":
+        run_pipeline(require_valid(), args)
     elif cmd == "verify":
         verify(require_valid())
     elif cmd == "baseline":

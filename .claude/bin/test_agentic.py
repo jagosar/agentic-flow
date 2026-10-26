@@ -412,6 +412,80 @@ class PipelineCommandTests(Base):
         self.assertEqual(len(json.loads(local.read_text())["permissions"]["allow"]), len(allow), "idempotente")
 
 
+class AttributionTests(Base):
+    """verify names the work packages behind a failure; seq batches commands; fixes leave a diff for the next attempt."""
+    manifest = dict(MANIFEST, verify={"tests": "python3 fail.py"},
+                    work_packages=[dict(wp, acs=["AC-00%d" % (i + 1)]) for i, wp in enumerate(MANIFEST["work_packages"])])
+
+    def setUp(self):
+        super().setUp()
+        self.repo.write("acc.py", "import sys\nsys.exit(0)\n")
+        self.repo.write("fail.py", "print('FAILED src/b/impl.py:4 test_ac_002_x')\nraise SystemExit(1)\n")
+
+    def test_verify_names_the_suspects_by_path_and_by_criterion(self):
+        r = self.repo.run("verify")
+        self.assertEqual(r.returncode, 3)
+        suspects = json.loads(r.stdout)["suspects"]
+        self.assertEqual(sorted(suspects), ["WP-02"])
+        self.assertEqual(suspects["WP-02"]["files"], ["src/b/"])
+        self.assertEqual(suspects["WP-02"]["acs"], ["AC-002"])
+        self.assertEqual(suspects["WP-02"]["phases"], ["tests"])
+
+    def test_failure_without_an_owner_has_no_suspects(self):
+        self.repo.write("fail.py", "print('boom')\nraise SystemExit(1)\n")
+        self.assertEqual(json.loads(self.repo.run("verify").stdout)["suspects"], {})
+
+    def test_acceptance_failure_is_attributed_through_acs(self):
+        self.repo.write("acc.py", "print('FAILED acceptance/test_ac_003_y')\nraise SystemExit(1)\n")
+        self.repo.write("fail.py", "raise SystemExit(0)\n")
+        suspects = json.loads(self.repo.run("verify").stdout)["suspects"]
+        self.assertEqual(list(suspects), ["WP-03"])
+
+    def test_bad_acs_rejected(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        import agentic
+        m = json.loads(json.dumps(self.manifest))
+        m["work_packages"][0]["acs"] = ["criterion 1"]
+        self.assertTrue(any("acs" in e for e in agentic.validate(m)))
+
+    def test_fix_leaves_a_diff_only_with_that_wps_files(self):
+        self.repo.write("src/b/x.py", "v1\n")
+        self.repo.write("src/a.py", "a1\n")
+        self.repo.run("open-stage", "1")
+        self.repo.write("src/b/x.py", "v2\n")
+        self.repo.write("src/a.py", "a2\n")  # WP-01's, but this attempt only closes WP-02
+        r = self.repo.run("close-stage", "1", "WP-02=done", "--fix")
+        diff = (self.repo.dir / ".claude/state/runs/WP-02.fix-1.diff").read_text()
+        self.assertIn("-v1", diff)
+        self.assertIn("+v2", diff)
+        self.assertNotIn("a2", diff)
+        self.assertFalse((self.repo.dir / ".claude/state/runs/WP-01.fix-1.diff").exists(), r.stdout)
+
+    def test_seq_runs_in_order_and_stops_at_the_first_failure(self):
+        r = self.repo.run("seq", "open-stage", "1", "+", "close-stage", "1", "WP-01=done", "WP-02=done", "+", "verify")
+        out = json.loads(r.stdout)
+        self.assertEqual([s["cmd"].split()[0] for s in out["steps"]], ["open-stage", "close-stage", "verify"])
+        self.assertFalse(out["ok"])
+        self.assertEqual(r.returncode, 3)
+        self.assertEqual(out["steps"][1]["exit_code"], 0)
+        r = self.repo.run("seq", "open-stage", "1", "+", "close-stage", "1", "WP-01=blocker", "+", "verify")
+        out = json.loads(r.stdout)
+        self.assertEqual(len(out["steps"]), 2, "verify is not reached after a failed close-stage")
+
+    def test_seq_only_accepts_the_workflows_commands(self):
+        self.assertEqual(self.repo.run("seq", "install", "+", "verify").returncode, 1)
+        self.assertEqual(self.repo.run("seq", "verify", "+").returncode, 1)
+
+    def test_gatekeeper_may_be_haiku_but_nobody_else(self):
+        r = self.repo.run("validate")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        path = self.repo.dir / ".claude/agents/implementer.md"
+        path.write_text(path.read_text().replace("model: sonnet", "model: haiku"))
+        r = self.repo.run("validate")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("implementer", r.stdout + r.stderr)
+
+
 class BrownfieldTests(Base):
     """PRP-style plan (validated mirror references) and the regression baseline."""
     manifest = dict(MANIFEST, verify={"tests": "python3 t.py", "lint": "python3 l.py"})

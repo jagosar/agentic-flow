@@ -1,7 +1,7 @@
 ---
 name: gatekeeper
 description: Runs the flow's deterministic steps (agentic.py) on behalf of a workflow and returns the result as it is. It interprets and modifies nothing.
-model: sonnet
+model: haiku
 tools: Bash
 ---
 

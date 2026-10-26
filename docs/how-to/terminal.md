@@ -80,11 +80,13 @@ If a stage stops on a blocker, fix the cause and resume from that wave:
 
 ## 4. Without the launcher: stage by stage
 
-With an approved `architecture.md`, every stage can run from the shell (this is the fallback mode, which needs the `claude` CLI). Each command exits `0` when all is well and `3` when something needs review.
+With an approved `architecture.md`, the whole pipeline can run from the shell (this is the fallback mode, which needs the `claude` CLI). It exits `0` when all is well and `3` when something needs review, and saves the result in `.claude/state/runs/workflow-result.json`:
 
 ```bash
-python3 .claude/bin/agentic.py validate
+python3 .claude/bin/agentic.py validate && python3 .claude/bin/agentic.py run-pipeline
 ```
+
+If it stops (a usage limit, `agentic.py stop`), `run-pipeline --resume` continues after the last wave that finished. Every stage can also be run by hand, which is useful to debug one. Each command exits `0` when all is well and `3` when something needs review.
 
 ```bash
 python3 .claude/bin/agentic.py run-acceptance && python3 .claude/bin/agentic.py acceptance --expect red

@@ -28,6 +28,7 @@
 | Test-author | `.claude/agents/test-author.md` | latest Sonnet | Writes the acceptance tests from the criteria, before the code | Implement |
 | Implementer | `.claude/agents/implementer.md` | latest Sonnet | Builds one work package with its unit tests | Touch other packages' files or the acceptance tests |
 | Reviewer | `.claude/agents/reviewer.md` | latest Sonnet | Reviews quality and security, reporting only what it can prove | Write anything |
+| Test-auditor | `.claude/agents/test-auditor.md` | latest Sonnet | Checks the acceptance tests would fail against an empty or trivial implementation | Write anything |
 | Verifier | `.claude/agents/verifier.md` | latest Sonnet | Tries to refute each serious finding | Write anything |
 | QA | `.claude/agents/qa.md` | latest Sonnet | Exploratory tests in `qa/`, beyond the criteria | Fix production code |
 | Doc-updater | `.claude/agents/doc-updater.md` | latest Sonnet | Updates README, CHANGELOG and guides once the code is accepted | Leave its `docs` zone, touch the code map or the decision archive |
@@ -39,12 +40,12 @@
 - **Ceremony scaled to the change.** A trivial change skips the flow. A fix starts with a test that reproduces the bug. A refactor requires the suite to be green before and after.
 - **People decide what is right; the machine measures.** You have two gates: the design and the commit. Fix loops have a limit.
 
-Models are set by alias and cannot be changed: `validate` fails if any piece declares another one. Each alias points to the newest model your Claude Code knows, so keep Claude Code up to date.
+Models are set by alias and cannot be changed: `validate` fails if any piece declares another one (the gatekeeper uses `haiku`, everything else `sonnet` or `opus`). Each alias points to the newest model your Claude Code knows, so keep Claude Code up to date.
 
 ### Two ways to run
 
 - **Native workflow (default).** `/implement` launches the `agentic-implement` workflow (`.claude/workflows/`), a Claude Code script that runs the whole pipeline deterministically in the background: agents in parallel, schema-validated reports and adversarial review. Follow it with `/workflows`. On Pro, enable **Dynamic workflows** in `/config`; the template already sets `"enableWorkflows": true`.
-- **Fallback mode.** Without workflows, `/implement` uses `agentic.py run-*`, which starts one `claude -p` process per package. It needs the `claude` CLI on the `PATH`.
+- **Fallback mode.** Without workflows, `/implement` runs `agentic.py run-pipeline`: the same pipeline, with the same schemas, prompts and limits, starting one `claude -p` process per agent. It needs the `claude` CLI on the `PATH`. It is also the engine for CI.
 
 `/implement` picks automatically. To force the fallback: `/implement fallback`. Both are diagrammed in [How it works § 6](../how-it-works.md#6-native-workflow-and-fallback-mode).
 
@@ -203,7 +204,9 @@ python3 .claude/bin/agentic.py status                  # the ledger: every agent
 python3 .claude/bin/agentic.py stop                    # stops every running agent
 python3 .claude/bin/agentic.py stop WP-02              # stops one
 python3 .claude/bin/agentic.py mark WP-02 blocker note # annotates by hand
-# Fallback mode, stage by stage:
+# Fallback mode: the whole pipeline (or --start-wave N, or --resume after the last finished wave):
+python3 .claude/bin/agentic.py run-pipeline
+# ...or stage by stage:
 python3 .claude/bin/agentic.py run-acceptance          # wave 0: the test-author writes the acceptance tests
 python3 .claude/bin/agentic.py acceptance --expect red # they must fail before the code
 python3 .claude/bin/agentic.py run-wave 1              # wave 1 in parallel
@@ -217,7 +220,8 @@ python3 .claude/bin/agentic.py check-wave 1            # ownership check
 ```
 
 - **Exit codes:** `0` all good, `1` usage error or invalid manifest, `3` needs review, `4` the fix-cycle limit was reached.
-- **Each agent's report** (fallback mode): `.claude/state/runs/<ID>.json` (field `result`) and `<ID>.log`.
+- **Each agent's report** (fallback mode): `.claude/state/runs/<ID>.json` (field `structured_output`, or `result` in the one-off `run-*` commands) and `<ID>.log`. `run-pipeline` saves the run's result in `.claude/state/runs/workflow-result.json`.
+- **What a fix attempt changed:** `.claude/state/runs/<ID>.fix-N.diff`, which the next attempt reads.
 
 ## Troubleshooting
 
@@ -227,7 +231,7 @@ The messages below are quoted as the flow prints them (the first words are enoug
 |---|---|---|
 | `does not support this model; version X or newer is required` | An old CLI for a new model | `claude update`. With npm: `npm install -g @anthropic-ai/claude-code@latest` (with nvm, use nvm's npm) |
 | `Ignoring 1 permissions.allow entry ... not been trusted` | The folder is not trusted | Open `claude` in it once and accept the prompt |
-| `Invalid manifest: ... model: sonnet` or `opus` | Someone pinned another model in an agent or command | Restore `model: sonnet` (working agents and `/implement`) or `model: opus` (`/architect`, `plan-reviewer`) |
+| `Invalid manifest: ... model: sonnet` or `opus` | Someone pinned another model in an agent or command | Restore `model: sonnet` (working agents and `/implement`), `model: haiku` (only the `gatekeeper`) or `model: opus` (`/architect`, `plan-reviewer`) |
 | `File with two owners` | Two zones overlap in the manifest | Fix the manifest with `/architect`; see the example below |
 | `RESULT: REVIEW` without a `STATUS` | The child process failed (usage limit, network, auth) | Read `.claude/state/runs/<ID>.log` |
 | `TIMEOUT` | The stage exceeded `timeout_s` | Raise `timeout_s` or split the package |
@@ -260,7 +264,7 @@ python3 -m unittest discover -s .claude/bin -p "test_*.py"
 node .claude/bin/test_workflow.mjs
 ```
 
-130 Python tests and 21 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+149 Python tests and 36 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 

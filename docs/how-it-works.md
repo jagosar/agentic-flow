@@ -40,7 +40,9 @@ flowchart TD
         BL["Baseline<br/>state of the suite before any change"] --> AT
         AT["Wave 0: test-author<br/>writes the acceptance tests"] --> RED{"acceptance<br/>--expect red"}
         RED -->|already pass| STOP1(["Stop: the tests prove nothing"])
-        RED -->|red| W1["Wave 1: implementers in parallel"]
+        RED -->|red| AUD["test-auditor<br/>would an empty stub pass?"]
+        AUD -->|"weak: one revision"| AT
+        AUD -->|solid| W1["Wave 1: implementers in parallel"]
         W1 --> CW1{"ownership check"}
         CW1 --> W2["Wave N: implementers"]
         W2 --> CWN{"ownership check"}
@@ -55,10 +57,12 @@ flowchart TD
     end
 
     CWN --> VF
-    GREEN -->|fails| FIX
+    VF -->|"a phase fails: the WP that owns it"| FIX
+    VF -->|"fails, nobody owns it"| H
+    GREEN -->|"fails: the WP of that AC"| FIX
     RV -->|critical or high| FIX
     QA -->|implementation defect| FIX["fix cycle for that WP"]
-    FIX -->|at most 2 per WP| VF
+    FIX -->|"at most 2 attempts per WP"| VF
     FIX -->|limit reached| H(["You or /architect decide"])
     QA -->|design defect| H
     QA -->|PASS| DOCQ{"docs section?"}
@@ -76,7 +80,7 @@ flowchart TD
 
 ## 2. One run, step by step
 
-`/implement` validates and launches the native workflow `agentic-implement`, which runs in the background. The script decides what comes next; the deterministic steps are run by the `gatekeeper` agent through `agentic.py`. Dashed arrows are replies, each one validated against a JSON Schema.
+`/implement` validates and launches the native workflow `agentic-implement`, which runs in the background. The script decides what comes next; the deterministic steps are run by the `gatekeeper` agent through `agentic.py`, several at a time (`agentic.py seq a + b + c` stops at the first that fails), so a run with two waves and no docs section needs 8 gatekeeper calls instead of 13 (9 instead of 17 with docs). Dashed arrows are replies, each one validated against a JSON Schema.
 
 ```mermaid
 sequenceDiagram
@@ -86,7 +90,7 @@ sequenceDiagram
     participant PR as plan-reviewer (Opus)
     participant O as /implement (Sonnet)
     participant W as workflow agentic-implement
-    participant G as gatekeeper
+    participant G as gatekeeper (Haiku)
     participant AG as agents (Sonnet)
 
     U->>AR: request
@@ -104,38 +108,41 @@ sequenceDiagram
     O->>O: validate, sync-permissions, rules-sync
     O->>W: launch agentic-implement (background)
     O-->>U: started, follow it in /workflows
-    W->>G: pipeline-plan
-    W->>G: baseline (the suite before any change)
+    W->>G: pipeline-plan + baseline (the suite before any change)
     W->>G: open-stage acceptance
     W->>AG: test-author
     AG-->>W: coverage of each criterion
     W->>G: close-stage acceptance --expect red
+    W->>AG: test-auditor (read-only)
+    AG-->>W: weak tests? one revision, red again
+    W->>G: open-stage 1
     loop each wave
-        W->>G: open-stage N
         par one implementer per WP
             W->>AG: Implement WP-NN
         end
         AG-->>W: reports (status, files, checks)
-        W->>G: close-stage N (ownership + ledger)
+        W->>G: close-stage N + open-stage N+1 (ownership + ledger)
     end
-    W->>G: verify (phases against the baseline + acceptance)
+    Note over W,G: the last wave's close-stage also carries verify (phases against the baseline + acceptance) and open-stage review
     W->>AG: reviewer
     AG-->>W: findings
     par one verifier per serious finding
         W->>AG: try to refute it
     end
+    W->>G: close-stage review + open-stage qa
     W->>AG: qa
     AG-->>W: defects (implementation or design)
-    opt implementation defects (at most 2 cycles)
-        W->>AG: Fix WP-NN, with its defects
-        W->>G: verify, then review and QA again
+    opt a defect, or a failed verification that a WP owns (at most 2 attempts per WP)
+        W->>G: close-stage qa + open-stage N
+        W->>AG: Fix WP-NN, with its defects (and the first attempt's diff from the second one on)
+        W->>G: close-stage N --fix + verify + open-stage review
+        Note over W,AG: then review and QA again
     end
     opt docs section and accepted code
-        W->>G: codemap (deterministic)
-        W->>G: open-stage docs
+        W->>G: close-stage qa + codemap + open-stage docs
         W->>AG: doc-updater
         AG-->>W: files, changes, unverified claims
-        W->>G: close-stage docs, docs-check
+        W->>G: close-stage docs + docs-check
     end
     W-->>O: JSON result
     O-->>U: report and proposed commits
@@ -215,13 +222,16 @@ On top of the hook, closing each stage compares the fingerprint of every file be
 | plan-reviewer | latest Opus | nothing | nothing | write |
 | Launcher (`/implement`) | latest Sonnet | nothing (the ledger, through the script) | `agentic.py`, the Workflow tool | write code or tests, commit without your approval |
 | Workflow `agentic-implement` | n/a (script) | nothing: it has no shell or disk | agents only | skip the script's order or limits |
-| gatekeeper | latest Sonnet | nothing directly (`agentic.py` writes state) | only `python3 .claude/bin/agentic.py …` | run any other command |
+| gatekeeper | latest Haiku | nothing directly (`agentic.py` writes state) | only `python3 .claude/bin/agentic.py …` | run any other command |
 | verifier | latest Sonnet | nothing | nothing (reads only) | write |
+| test-auditor | latest Sonnet | nothing | nothing (reads only) | write |
 | test-author (`AT`) | latest Sonnet | `acceptance.files` (default `acceptance/`) | `allow_bash` + the acceptance command | write production code |
 | implementer (`WP-NN`) | latest Sonnet | its package's `files` | `allow_bash` + the acceptance command | touch other files, `acceptance/`, git, dependencies |
 | reviewer (`REVIEW`) | latest Sonnet | nothing | `git diff/status/log` + `allow_bash` | write |
 | qa (`QA`) | latest Sonnet | `qa.files` (default `qa/`) | `allow_bash` | write production code |
 | doc-updater (`DOCS`) | latest Sonnet | `docs.files` (default `README.md`, `CHANGELOG.md`, `docs/`) | `git diff/status/log` | write code, tests, the codemap, `docs/architecture/` |
+
+The gatekeeper is the only agent that may use Haiku (`validate` rejects it anywhere else): it relays a command and its output, and never reads or writes code. The workflow does not trust what it relays blindly: a reply that is not the expected JSON stops the run, and the state-changing steps are never retried.
 
 For every agent of the flow: no secrets, no `--no-verify`, no relaxing existing configuration, no disabling tests. Nobody may own `architecture.md`, `.claude/` or `docs/architecture/`, and the hook blocks writes to them (and to the codemap) even when a zone includes them by prefix, such as `docs/`.
 
@@ -235,7 +245,7 @@ flowchart LR
     C -->|yes| A["Fallback mode"]
     C -->|no| X(["Enable Dynamic workflows<br/>or install the CLI"])
     W --> W1["deterministic script, in the background<br/>agents via parallel() and JSON Schema<br/>identity: claim + agent_id<br/>stopped from /workflows"]
-    A --> A1["agentic.py run-* in the background<br/>one claude -p process per WP<br/>identity: AGENTIC_WP<br/>stop kills the process group"]
+    A --> A1["agentic.py run-pipeline in the background<br/>one claude -p process per agent<br/>identity: AGENTIC_WP<br/>stop kills the process group"]
     W1 --> L[("ledger.md")]
     A1 --> L
 ```
@@ -244,11 +254,13 @@ flowchart LR
 |---|---|---|
 | Requirement | Dynamic workflows enabled (on Pro, in `/config`, or `"enableWorkflows": true`) | The `claude` CLI on the `PATH` |
 | Where it works | CLI, Desktop, IDEs, `claude -p` and the cloud | Wherever the CLI is: terminal, Desktop, IDEs |
-| Orchestration | The script, deterministically | The launcher, following `/implement`'s instructions |
-| Reports | JSON validated against a schema | Text with `STATUS:`, read by a regex |
-| Review | Adversarial verification of every serious finding | No adversarial verification |
-| Usage limit on Pro | The run pauses and resumes by itself (interactive sessions) | Running agents fail; relaunch by hand |
-| Following it | `/workflows` and the ledger | The ledger |
+| Orchestration | The script, deterministically | `pipeline.py`, deterministically: the same stages, limits and prompts |
+| Reports | JSON validated against a schema | JSON validated against the same schema (`--json-schema`) |
+| Test audit, review | Test-auditor; adversarial verification of every serious finding | The same |
+| Usage limit on Pro | The run pauses and resumes by itself (interactive sessions) | Running agents fail; `run-pipeline --resume` continues after the last finished wave |
+| Following it | `/workflows` and the ledger | The progress it prints and the ledger |
+
+The two engines are kept identical on purpose. The schemas, prompts and limits live in `.claude/workflows/pipeline-spec.json`; the workflow script cannot read the disk, so it carries copies, and the tests fail if they differ. The scenarios in `.claude/bin/conformance.json` run through both engines (the script with simulated agents, `pipeline.py` with a simulated world) and must produce the same gate commands, the same agent calls with the same prompts, and the same result. If Dynamic workflows disappear or change, the fallback engine, which is also what CI uses, is not affected.
 
 ## 7. Files and state
 
@@ -259,22 +271,27 @@ flowchart LR
 │   └── implement.md        /implement   (latest Sonnet)
 ├── agents/
 │   ├── plan-reviewer.md    latest Opus, read-only
-│   ├── gatekeeper.md       runs agentic.py for the workflow
+│   ├── gatekeeper.md       runs agentic.py for the workflow (latest Haiku)
 │   ├── verifier.md         tries to refute serious findings, read-only
 │   ├── test-author.md      wave 0
+│   ├── test-auditor.md     checks the wave 0 tests are not weak, read-only
 │   ├── implementer.md      one work package
 │   ├── reviewer.md         read-only
 │   ├── qa.md               exploratory
 │   └── doc-updater.md      living documentation, docs zone
 ├── workflows/
-│   └── agentic-implement.js   the whole pipeline as a native workflow
+│   ├── agentic-implement.js   the whole pipeline as a native workflow
+│   └── pipeline-spec.json     schemas, prompts and limits shared with the fallback engine
 ├── rules-library/          common rules and 10 languages (source)
 ├── rules/agentic/          installed by rules-sync; Claude Code loads .claude/rules/
 ├── bin/
-│   ├── agentic.py          validate · pipeline-plan · open/close-stage · verify · stack · rules-sync · codemap ·
-│   │                       docs-check · install · run-* · status · stop · hook
+│   ├── agentic.py          validate · pipeline-plan · open/close-stage · seq · verify · stack · rules-sync · codemap ·
+│   │                       docs-check · install · run-pipeline · run-* · status · stop · hook
+│   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
+│   ├── conformance.json    scenarios that both engines must resolve identically
 │   ├── test_agentic.py     tests of agentic.py, the hook and the installer
 │   ├── test_definitions.py tests of the definitions: agents, rules, plugin, CI and documentation
+│   ├── test_pipeline.py    tests of the Python engine and of its parity with the workflow
 │   └── test_workflow.mjs   tests of the workflow logic with simulated agents
 ├── settings.json           PreToolUse hook + permissions
 ├── agentic.json            timeout_s · auth · max_fix_cycles
@@ -282,7 +299,10 @@ flowchart LR
 └── state/                  (ignored by git)
     ├── ledger.md           readable state
     ├── runs/<ID>.json      each agent's report
-    └── snapshot-*.json     fingerprints for the ownership check
+    ├── runs/<ID>.fix-N.diff  what a package changed in its fix attempt N, for the next one
+    ├── pipeline.json       waves finished by run-pipeline, for --resume
+    ├── snapshot-*.json     fingerprints for the ownership check
+    └── tree-*.txt          git tree before each stage, to diff a fix attempt
 architecture.md             the current contract
 docs/architecture/          approved designs + decision index
 docs/CODEMAP.md             code map, generated (with a docs section)
@@ -296,6 +316,10 @@ acceptance/  qa/            acceptance and QA tests
 - **Wave:** a group of packages that run in parallel. A wave depends only on earlier waves.
 - **AC-NNN:** an observable acceptance criterion, with its "must not" and its automatic check.
 - **Wave 0:** the test-author turns the criteria into tests before any code exists.
+- **`acs`:** the criteria a work package answers for, in the manifest. With them (and with the file paths a failure mentions), `verify` names the packages behind a failure (`suspects`), which go to a fix cycle instead of stopping the run.
+- **Test audit:** after wave 0, the test-auditor looks for tests that would pass against an empty or trivial implementation. A critical or high finding sends the test-author back once; if the tests are still weak, the run stops.
+- **Fix attempt:** at most 2 per work package. From the second one on, the agent receives the defects the first attempt was given and the diff of what it changed (`runs/<ID>.fix-N.diff`), so it does not repeat the same fix.
+- **`seq`:** `agentic.py seq a + b + c`, several of the workflow's commands in one gatekeeper call, stopping at the first that fails.
 - **Manifest:** the `json wp-manifest` block in `architecture.md`, read by every guardrail.
 - **Ledger:** `.claude/state/ledger.md`, the state of agents and stages, written by the script, not by the model.
 - **Ownership check (`check-wave`):** a comparison of file fingerprints before and after a stage, to catch writes outside a zone.
