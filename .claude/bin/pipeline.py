@@ -35,6 +35,11 @@ def render(template, **values):
     return out
 
 
+def brief(ident):
+    """Where `agentic.py briefs` writes the slice of architecture.md an agent reads."""
+    return f".claude/state/briefs/{ident}.md"
+
+
 def threaded(thunks):
     if not thunks:
         return []
@@ -147,17 +152,19 @@ class Pipeline:
 
     def _execute(self):
         self.phase("Prepare")
-        first = self.seq(["pipeline-plan"] if self.start_wave is not None else ["pipeline-plan", "baseline"], "prepare")
+        first = self.seq(["pipeline-plan", "briefs"] + ([] if self.start_wave is not None else ["baseline"]), "prepare")
         plan_step = self.step(first, 0)
         self.plan = lines_json(plan_step["output"]) if self.ok(plan_step) else None
         if not self.plan:
             return self.stop("prepare", "pipeline-plan failed: the manifest is not valid", gate=plan_step)
+        if not self.ok(self.step(first, 1)):
+            return self.stop("prepare", "briefs failed", gate=self.step(first, 1))
         plan = self.plan
         self.rules = (f" Rules you must follow (language and common): {', '.join(plan['rules'])}."
                       if plan.get("rules") else "")
         if self.start_wave is None:
             self.phase("Baseline")
-            base = self.step(first, 1)
+            base = self.step(first, 2)
             self.run["baseline"] = lines_json(base["output"]) if base else None
             if not self.ok(base):
                 return self.stop("baseline", "a verify command could not be run (it does not exist or timed out)", gate=base)
@@ -187,7 +194,7 @@ class Pipeline:
         open_ = self.step(self.seq(["open-stage acceptance"], "open-stage acceptance"), 0)
         if not self.ok(open_):
             return self.stop("wave 0", "the acceptance stage could not be opened", gate=open_)
-        prompt = render(self.prompts["test_author"], rules=self.rules)
+        prompt = render(self.prompts["test_author"], brief=brief("AT"), rules=self.rules)
         round_ = 0
         while True:
             label = "test-author (revision)" if round_ else "test-author"
@@ -205,7 +212,7 @@ class Pipeline:
                 return self.stop("wave 0", "the test-author returned no usable report", test_author=at)
             # Red is not enough: a test can fail only because the code does not exist yet and still pass an empty stub.
             audit = self.call("test-auditor", "test-auditor (revision)" if round_ else "test-auditor",
-                              render(self.prompts["test_auditor"], coverage=compact(at.get("coverage")),
+                              render(self.prompts["test_auditor"], brief=brief("AT"), coverage=compact(at.get("coverage")),
                                      rules=self.rules), "REVIEW")
             if not audit:
                 return self.stop("wave 0", "the test-auditor returned no report")
@@ -220,7 +227,7 @@ class Pipeline:
             reopen = self.step(self.seq(["open-stage acceptance"], "open-stage acceptance"), 0)
             if not self.ok(reopen):
                 return self.stop("wave 0", "the acceptance stage could not be reopened", gate=reopen)
-            prompt = render(self.prompts["test_author_revision"], weak=compact(weak), rules=self.rules)
+            prompt = render(self.prompts["test_author_revision"], brief=brief("AT"), weak=compact(weak), rules=self.rules)
             round_ += 1
 
     def launch_wave(self, wave, wp_ids, defects_by_wp):
@@ -229,7 +236,7 @@ class Pipeline:
         def thunk(wp):
             def go():
                 if not defects_by_wp:
-                    prompt = render(self.prompts["implement"], wp=wp, rules=self.rules)
+                    prompt = render(self.prompts["implement"], wp=wp, brief=brief(wp), rules=self.rules)
                 else:
                     attempt = self.fix_count.get(wp, 0) + 1
                     retry = ""
@@ -239,7 +246,7 @@ class Pipeline:
                         retry = render(self.prompts["fix_retry"], attempt=attempt, max=plan["max_fix_cycles"],
                                        previous=compact(previous),
                                        diff=f".claude/state/runs/{wp}.fix-{attempt - 1}.diff")
-                    prompt = render(self.prompts["fix"], wp=wp, defects=compact(defects_by_wp[wp]),
+                    prompt = render(self.prompts["fix"], wp=wp, brief=brief(wp), defects=compact(defects_by_wp[wp]),
                                     retry=retry, rules=self.rules)
                 return self.call(plan["agents"].get(wp) or "implementer", f"{wp} (fix)" if defects_by_wp else wp, prompt, wp)
             return go

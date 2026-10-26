@@ -17,6 +17,8 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "agentic.py"
 AGENTS_DIR = SCRIPT.parents[1] / "agents"
+WORKFLOWS_DIR = SCRIPT.parents[1] / "workflows"
+FINDING = {"severity": "high", "wp": "WP-02", "file": "src/b/x.py", "problem": "p", "evidence": "e"}
 
 MANIFEST = {
     "allow_bash": ["Bash(python3 -m unittest:*)"],
@@ -32,14 +34,17 @@ MANIFEST = {
 FAKE_CLAUDE = textwrap.dedent("""\
     #!/usr/bin/env python3
     import json, os, sys, time
+    argv = sys.argv[1:]
     wp = os.environ["AGENTIC_WP"]
     with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".args"), "w") as f:
-        json.dump(sys.argv[1:], f)
+        json.dump(argv, f)
     with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".env"), "w") as f:
         json.dump({k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}, f)
     time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
     status = os.environ.get("FAKE_STATUS", "DONE" if wp != "QA" else "PASS")
-    print(json.dumps({"result": "STATUS: " + status + "\\nWP: " + wp}))
+    required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
+    values = {"status": status, "wp": wp, "blocker": None}
+    print(json.dumps({"structured_output": {k: values.get(k, []) for k in required}}))
 """)
 
 
@@ -49,6 +54,7 @@ class Repo:
         body = raw_manifest if raw_manifest is not None else json.dumps(manifest, indent=2)
         (self.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{body}\n```\n")
         shutil.copytree(AGENTS_DIR, self.dir / ".claude" / "agents")
+        shutil.copytree(WORKFLOWS_DIR, self.dir / ".claude" / "workflows")
         subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
         self.env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.dir))
         self.env.pop("AGENTIC_WP", None)
@@ -308,31 +314,10 @@ class ContentGuardTests(Base):
 class WorkflowCommandTests(Base):
     """Deterministic commands the native workflow uses through the gatekeeper agent."""
 
-    def test_open_wave_snapshot_and_json(self):
+    def test_open_stage_resets_the_previous_stages_claims(self):
         self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="old"))
-        r = self.repo.run("open-wave", "1")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(json.loads(r.stdout), {"wave": 1, "work_packages": ["WP-01", "WP-02"]}, "only JSON on stdout")
-        self.assertTrue((self.repo.dir / ".claude/state/snapshot-1.json").exists())
-        self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="new")), 0,
-                         "open-wave resets the previous stage's claims")
-        self.assertEqual(self.repo.run("open-wave", "9").returncode, 3)
-
-    def test_close_wave(self):
-        self.repo.run("open-wave", "1")
-        self.repo.write("src/a.py")
-        r = self.repo.run("close-wave", "1", "WP-01=done", "WP-02=done")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        st = self.repo.run("status").stdout
-        self.assertIn("wave 1: OK", st)
-        self.assertIn("[done]", st)
-        self.repo.run("open-wave", "1")
-        self.assertEqual(self.repo.run("close-wave", "1", "WP-01=done", "WP-02=blocker").returncode, 3)
-        self.assertIn("wave 1: REVIEW", self.repo.run("status").stdout)
-        self.repo.run("open-wave", "1")
-        self.repo.write("README.md")
-        self.assertEqual(self.repo.run("close-wave", "1", "WP-01=done", "WP-02=done").returncode, 3, "escritura ajena")
-        self.assertEqual(self.repo.run("close-wave", "1", "WP-77=done").returncode, 1)
+        self.assertEqual(self.repo.run("open-stage", "1").returncode, 0)
+        self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="new")), 0)
 
 
 class PipelineCommandTests(Base):
@@ -1021,11 +1006,11 @@ class LauncherTests(Base):
     def test_fix_only_when_requested(self):
         runs = self.repo.dir / ".claude/state/runs"
         runs.mkdir(parents=True, exist_ok=True)
-        (runs / "QA.json").write_text(json.dumps({"result": "STATUS: FAIL"}))
+        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": [FINDING]}}))
         self.repo.run("run-wave", "1", "WP-02")
-        self.assertNotIn("QA.json", self.prompt_of("WP-02"), "without --fix it must not use an old QA report")
+        self.assertNotIn('"problem"', self.prompt_of("WP-02"), "without --fix it must not use an old report")
         self.repo.run("run-wave", "1", "WP-02", "--fix")
-        self.assertIn("QA.json", self.prompt_of("WP-02"))
+        self.assertIn('"problem":"p"', self.prompt_of("WP-02"))
 
     def test_fix_without_report_fails(self):
         r = self.repo.run("run-wave", "1", "WP-01", "--fix")
@@ -1108,10 +1093,11 @@ class LauncherTests(Base):
     def test_fix_limit(self):
         runs = self.repo.dir / ".claude/state/runs"
         runs.mkdir(parents=True, exist_ok=True)
-        (runs / "REVIEW.json").write_text(json.dumps({"result": "STATUS: FAIL"}))
+        findings = [FINDING, dict(FINDING, wp="WP-01")]
+        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": findings}}))
         for _ in range(2):
             self.assertEqual(self.repo.run("run-wave", "1", "WP-02", "--fix").returncode, 0)
-            self.assertIn("REVIEW.json", self.prompt_of("WP-02"))
+            self.assertTrue(self.prompt_of("WP-02").startswith("Fix WP-02."))
         r = self.repo.run("run-wave", "1", "WP-02", "--fix")
         self.assertEqual(r.returncode, 4)
         self.assertIn("used up", r.stderr)

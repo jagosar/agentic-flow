@@ -200,7 +200,8 @@ python3 .claude/bin/agentic.py rules-sync              # installs the stack's ru
 python3 .claude/bin/agentic.py codemap                 # deterministic code map in docs/CODEMAP.md
 python3 .claude/bin/agentic.py docs-check              # links, anchors and paths in the documentation
 python3 .claude/bin/agentic.py install ../other-repo   # installs or updates the flow in another repo
-python3 .claude/bin/agentic.py status                  # the ledger: every agent and stage
+python3 .claude/bin/agentic.py briefs                  # writes each agent's slice of architecture.md in .claude/state/briefs/
+python3 .claude/bin/agentic.py status                  # the ledger: every agent and stage, with tokens and cost
 python3 .claude/bin/agentic.py stop                    # stops every running agent
 python3 .claude/bin/agentic.py stop WP-02              # stops one
 python3 .claude/bin/agentic.py mark WP-02 blocker note # annotates by hand
@@ -220,7 +221,7 @@ python3 .claude/bin/agentic.py check-wave 1            # ownership check
 ```
 
 - **Exit codes:** `0` all good, `1` usage error or invalid manifest, `3` needs review, `4` the fix-cycle limit was reached.
-- **Each agent's report** (fallback mode): `.claude/state/runs/<ID>.json` (field `structured_output`, or `result` in the one-off `run-*` commands) and `<ID>.log`. `run-pipeline` saves the run's result in `.claude/state/runs/workflow-result.json`.
+- **Each agent's report** (fallback mode): `.claude/state/runs/<ID>.json` (field `structured_output`) and `<ID>.log`. `run-pipeline` saves the run's result in `.claude/state/runs/workflow-result.json`.
 - **What a fix attempt changed:** `.claude/state/runs/<ID>.fix-N.diff`, which the next attempt reads.
 
 ## Troubleshooting
@@ -233,7 +234,7 @@ The messages below are quoted as the flow prints them (the first words are enoug
 | `Ignoring 1 permissions.allow entry ... not been trusted` | The folder is not trusted | Open `claude` in it once and accept the prompt |
 | `Invalid manifest: ... model: sonnet` or `opus` | Someone pinned another model in an agent or command | Restore `model: sonnet` (working agents and `/implement`), `model: haiku` (only the `gatekeeper`) or `model: opus` (`/architect`, `plan-reviewer`) |
 | `File with two owners` | Two zones overlap in the manifest | Fix the manifest with `/architect`; see the example below |
-| `RESULT: REVIEW` without a `STATUS` | The child process failed (usage limit, network, auth) | Read `.claude/state/runs/<ID>.log` |
+| `RESULT: REVIEW` with `NO REPORT` | The child process failed (usage limit, network, auth) | Read `.claude/state/runs/<ID>.log` |
 | `TIMEOUT` | The stage exceeded `timeout_s` | Raise `timeout_s` or split the package |
 | `OUTSIDE OWNERSHIP` | An agent wrote outside its zone, or a build artefact is not ignored | Check `git diff`. For an artefact (`dist/`…), add it to `ignore` in the manifest |
 | `[agentic guard] ... does not own ...` | The hook did its job | If the file should belong to that package, fix the manifest with `/architect` |
@@ -264,7 +265,7 @@ python3 -m unittest discover -s .claude/bin -p "test_*.py"
 node .claude/bin/test_workflow.mjs
 ```
 
-149 Python tests and 36 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+172 Python tests and 38 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 

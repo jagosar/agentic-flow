@@ -166,13 +166,13 @@ test('a design defect: not fixed in a loop, returned as pending', async () => {
 test('refactor: no test-author, the existing suite is the baseline', async () => {
   const { calls, gates } = await simulate({ plan: { type: 'refactor' } })
   assert.ok(!calls.some(c => c.type === 'test-author'))
-  assert.equal(gates[1], 'baseline')
-  assert.equal(gates[2], 'acceptance --expect green')
+  assert.equal(gates[2], 'baseline')
+  assert.equal(gates[3], 'acceptance --expect green')
 })
 
 test('baseline: goes before wave 0 and its result is saved', async () => {
   const { result, gates } = await simulate()
-  assert.equal(gates[1], 'baseline')
+  assert.equal(gates[2], 'baseline')
   assert.ok(gates.indexOf('baseline') < gates.indexOf('open-stage acceptance'))
   assert.deepEqual(result.baseline.preexisting_failures, [])
 })
@@ -185,10 +185,10 @@ test('baseline with a pre-existing failure: does not block; a command that canno
   assert.equal(broken.result.failed_stage, 'baseline')
 })
 
-test('pipeline-plan and the baseline travel in one gatekeeper call', async () => {
+test('pipeline-plan, the briefs and the baseline travel in one gatekeeper call', async () => {
   const { calls } = await simulate()
   const first = calls.find(c => c.type === 'gatekeeper')
-  assert.ok(first.prompt.endsWith('agentic.py seq pipeline-plan + baseline'))
+  assert.ok(first.prompt.endsWith('agentic.py seq pipeline-plan + briefs + baseline'))
 })
 
 test('start_wave: skips the baseline, wave 0 and earlier waves', async () => {
@@ -288,11 +288,28 @@ test('gatekeeper calls are batched: close-stage travels with the next open-stage
   const { gates, gateCalls } = await simulate()
   assert.equal(gateCalls, 8, `a run with two waves needs 8 gatekeeper calls, not one per command (${gates.length} commands)`)
   assert.deepEqual(gates, [
-    'pipeline-plan', 'baseline', 'open-stage acceptance', 'close-stage acceptance AT=done --expect red', 'open-stage 1',
+    'pipeline-plan', 'briefs', 'baseline', 'open-stage acceptance', 'close-stage acceptance AT=done --expect red', 'open-stage 1',
     'close-stage 1 WP-01=done WP-02=done', 'open-stage 2',
     'close-stage 2 WP-03=done', 'verify', 'open-stage review',
     'close-stage review REVIEW=pass', 'open-stage qa', 'close-stage qa QA=pass',
   ])
+})
+
+test('briefs that cannot be written stop the run before anything starts', async () => {
+  const { result, calls } = await simulate({ gate: cmd => (cmd === 'briefs' ? { exit_code: 1, output: 'boom' } : null) })
+  assert.equal(result.failed_stage, 'prepare')
+  assert.equal(result.detail, 'briefs failed')
+  assert.equal(calls.filter(c => c.type !== 'gatekeeper').length, 0)
+})
+
+test('agents read their brief, the judges the whole document', async () => {
+  const { calls } = await simulate({ review: round => (round === 1 ? { status: 'FAIL', findings: [grave('WP-02')] } : { status: 'PASS', findings: [] }), plan: { docs: true, codemap: 'docs/CODEMAP.md' } })
+  const prompt = type => calls.find(c => c.type === type).prompt
+  assert.ok(prompt('implementer').includes('.claude/state/briefs/WP-01.md'))
+  assert.ok(prompt('test-author').includes('.claude/state/briefs/AT.md'))
+  assert.ok(prompt('test-auditor').includes('.claude/state/briefs/AT.md'))
+  assert.ok(calls.find(c => c.label === 'WP-02 (fix)').prompt.includes('.claude/state/briefs/WP-02.md'))
+  for (const type of ['reviewer', 'qa', 'verifier', 'doc-updater']) assert.ok(!prompt(type).includes('briefs/'), type)
 })
 
 test('a garbled gatekeeper reply is never retried and stops the run', async () => {

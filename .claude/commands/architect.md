@@ -148,7 +148,7 @@ Style, naming, error handling, logging, commit format, what is forbidden. The ag
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-One block per criterion:
+One block per criterion, starting with exactly `- AC-NNN · <title>` (the briefs are cut at those lines):
 - AC-001 · <title>
   - Scenario: <starting state>
   - Action: <what happens, through which contract of section 6>
@@ -159,8 +159,8 @@ One block per criterion:
 No vague words ("correctly", "fast"): everything must be checkable with a command.
 
 ### Work packages
-For each WP:
-- ID, wave, goal.
+For each WP, a heading `#### WP-NN · <goal>` (what lets `agentic.py briefs` give each implementer only its own slice), followed by:
+- Wave.
 - Files it owns.
 - Contracts it implements and consumes (by signature or by implementation).
 - ACs it answers for.

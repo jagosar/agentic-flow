@@ -136,6 +136,9 @@ class ConformanceTests(unittest.TestCase):
     def test_the_spec_has_everything_the_agents_are_asked_for(self):
         for name in ("test-author", "test-auditor", "implementer", "reviewer", "verifier", "qa", "doc-updater", "gatekeeper"):
             self.assertIn(name, SPEC["schemas"])
+        for name, text in SPEC["prompts"].items():
+            if name in ("implement", "fix", "test_author", "test_author_revision", "test_auditor"):
+                self.assertIn("{brief}", text, f"{name} must point to the agent's brief")
         for name in ("implement", "fix", "fix_retry", "test_author", "test_author_revision", "test_auditor", "reviewer",
                      "verifier", "qa", "doc_updater"):
             self.assertIn(name, SPEC["prompts"])
@@ -234,8 +237,6 @@ class RunPipelineEndToEndTests(unittest.TestCase):
         self.repo.env.update(PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}", FAKE_LOG_DIR=str(self.logs))
         # red until the three packages exist
         self.repo.write("acc.py", "import os, sys\nsys.exit(0 if all(os.path.exists(p) for p in ('src/a.py', 'src/b/x.py', 'src/c.py')) else 1)\n")
-        (self.repo.dir / ".claude" / "workflows").mkdir(parents=True)
-        shutil.copy(WORKFLOWS / "pipeline-spec.json", self.repo.dir / ".claude" / "workflows" / "pipeline-spec.json")
         subprocess.run(["git", "add", "-A"], cwd=self.repo.dir, check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"], cwd=self.repo.dir, check=True)
 

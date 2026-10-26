@@ -15,7 +15,7 @@ The test-author wrote the acceptance tests and they are red. Red only proves tha
 
 # Process
 
-1. Read `architecture.md` (sections 6 and 8: contracts and acceptance criteria) and the test files in the acceptance zone. The test-author's coverage (criterion → tests) comes in your prompt.
+1. Read the brief named in your prompt (contracts and acceptance criteria) and the test files in the acceptance zone. Open `architecture.md` only if the brief points to something it lacks. The test-author's coverage (criterion → tests) comes in your prompt.
 2. For each AC-NNN, imagine the cheapest implementation that is wrong: a stub that returns nothing, `None`, `{}`, `[]`, a constant, the first example in the criterion, or code that swallows errors. Would some test of that criterion fail against it? If not, the criterion is not really tested.
 3. Check the rest of the checklist:
    - Does every criterion have at least one test, with its ID in the name?
@@ -32,9 +32,4 @@ The test-author wrote the acceptance tests and they are red. Red only proves tha
 
 # Report (final answer, under 300 words)
 
-```
-STATUS: PASS | FAIL
-FINDINGS: <one per line: severity · AT · file:line · what the stub that passes looks like · what to assert instead>
-```
-
-`FAIL` if there is any critical or high finding. If whoever launches you demands a structured answer (JSON with a schema), use that format with the same data: `wp` is `AT`, `problem` says why the test is weak and `evidence` shows the trivial implementation that would pass it.
+JSON that follows the schema your launcher gives you: `status` (`FAIL` if there is any critical or high finding, else `PASS`) and `findings`, each with `severity`, `wp` (`AT`), `file`, `line`, `problem` (why the test is weak) and `evidence` (the trivial implementation that would pass it).
