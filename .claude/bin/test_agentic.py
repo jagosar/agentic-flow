@@ -17,6 +17,8 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "agentic.py"
 AGENTS_DIR = SCRIPT.parents[1] / "agents"
+WORKFLOWS_DIR = SCRIPT.parents[1] / "workflows"
+FINDING = {"severity": "high", "wp": "WP-02", "file": "src/b/x.py", "problem": "p", "evidence": "e"}
 
 MANIFEST = {
     "allow_bash": ["Bash(python3 -m unittest:*)"],
@@ -32,14 +34,17 @@ MANIFEST = {
 FAKE_CLAUDE = textwrap.dedent("""\
     #!/usr/bin/env python3
     import json, os, sys, time
+    argv = sys.argv[1:]
     wp = os.environ["AGENTIC_WP"]
     with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".args"), "w") as f:
-        json.dump(sys.argv[1:], f)
+        json.dump(argv, f)
     with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".env"), "w") as f:
         json.dump({k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}, f)
     time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
     status = os.environ.get("FAKE_STATUS", "DONE" if wp != "QA" else "PASS")
-    print(json.dumps({"result": "STATUS: " + status + "\\nWP: " + wp}))
+    required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
+    values = {"status": status, "wp": wp, "blocker": None}
+    print(json.dumps({"structured_output": {k: values.get(k, []) for k in required}}))
 """)
 
 
@@ -49,6 +54,7 @@ class Repo:
         body = raw_manifest if raw_manifest is not None else json.dumps(manifest, indent=2)
         (self.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{body}\n```\n")
         shutil.copytree(AGENTS_DIR, self.dir / ".claude" / "agents")
+        shutil.copytree(WORKFLOWS_DIR, self.dir / ".claude" / "workflows")
         subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
         self.env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.dir))
         self.env.pop("AGENTIC_WP", None)
@@ -308,601 +314,10 @@ class ContentGuardTests(Base):
 class WorkflowCommandTests(Base):
     """Deterministic commands the native workflow uses through the gatekeeper agent."""
 
-    def test_open_wave_snapshot_and_json(self):
+    def test_open_stage_resets_the_previous_stages_claims(self):
         self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="old"))
-        r = self.repo.run("open-wave", "1")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(json.loads(r.stdout), {"wave": 1, "work_packages": ["WP-01", "WP-02"]}, "only JSON on stdout")
-        self.assertTrue((self.repo.dir / ".claude/state/snapshot-1.json").exists())
-        self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="new")), 0,
-                         "open-wave resets the previous stage's claims")
-        self.assertEqual(self.repo.run("open-wave", "9").returncode, 3)
-
-    def test_close_wave(self):
-        self.repo.run("open-wave", "1")
-        self.repo.write("src/a.py")
-        r = self.repo.run("close-wave", "1", "WP-01=done", "WP-02=done")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        st = self.repo.run("status").stdout
-        self.assertIn("wave 1: OK", st)
-        self.assertIn("[done]", st)
-        self.repo.run("open-wave", "1")
-        self.assertEqual(self.repo.run("close-wave", "1", "WP-01=done", "WP-02=blocker").returncode, 3)
-        self.assertIn("wave 1: REVIEW", self.repo.run("status").stdout)
-        self.repo.run("open-wave", "1")
-        self.repo.write("README.md")
-        self.assertEqual(self.repo.run("close-wave", "1", "WP-01=done", "WP-02=done").returncode, 3, "escritura ajena")
-        self.assertEqual(self.repo.run("close-wave", "1", "WP-77=done").returncode, 1)
-
-
-class PipelineCommandTests(Base):
-    """Commands the agentic-implement workflow uses (run by the gatekeeper)."""
-    manifest = dict(MANIFEST, verify={"tests": "python3 ok.py", "lint": "python3 lint.py"})
-
-    def setUp(self):
-        super().setUp()
-        self.repo.write("ok.py", "print('tests ok')\n")
-        self.repo.write("lint.py", "import sys\nsys.exit(0)\n")
-        self.repo.write("acc.py", "import sys\nsys.exit(0)\n")
-
-    def test_pipeline_plan(self):
-        (self.repo.dir / "architecture.md").write_text(
-            "# A\nType: fix · Size: small\n\n```json wp-manifest\n" + json.dumps(self.manifest) + "\n```\n")
-        r = self.repo.run("pipeline-plan")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        plan = json.loads(r.stdout)
-        self.assertEqual(plan["waves"], [1, 2])
-        self.assertEqual(plan["work_packages"]["1"], ["WP-01", "WP-02"])
-        self.assertEqual(plan["type"], "fix")
-        self.assertTrue(plan["acceptance"])
-        self.assertEqual(plan["max_fix_cycles"], 2)
-        self.assertEqual(plan["wave_of"]["WP-03"], 2)
-        self.assertEqual(plan["agents"]["WP-01"], "implementer")
-
-    def test_open_and_close_stage_with_labels(self):
-        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(1)\n")  # before the snapshot: it belongs to nobody
-        r = self.repo.run("open-stage", "acceptance")
-        self.assertEqual(json.loads(r.stdout), {"stage": "acceptance", "owners": ["AT"]})
-        self.repo.write("acceptance/test_ac_001.py")
-        r = self.repo.run("close-stage", "acceptance", "AT=done", "--expect", "red")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("RED", r.stdout)
-        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(0)\n")
-        self.repo.run("open-stage", "acceptance")
-        self.assertEqual(self.repo.run("close-stage", "acceptance", "AT=done", "--expect", "red").returncode, 3,
-                         "if they already pass without code, wave 0 fails")
-        self.assertEqual(self.repo.run("open-stage", "inventada").returncode, 1)
-
-    def test_close_stage_fix_counts_cycles(self):
-        for _ in range(2):
-            self.repo.run("open-stage", "1")
-            self.repo.run("close-stage", "1", "WP-02=done", "--fix")
-        ledger = json.loads((self.repo.dir / ".claude/state/ledger.json").read_text())
-        self.assertEqual(ledger["WP-02"]["fix_count"], 2)
-
-    def test_verify_json(self):
-        r = self.repo.run("verify")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        out = json.loads(r.stdout)
-        names = [p["name"] for p in out["phases"]]
-        self.assertEqual(names, ["build", "types", "lint", "tests", "acceptance"])
-        self.assertTrue(out["phases"][0]["skipped"])
-        self.repo.write("lint.py", "import sys\nsys.exit(2)\n")
-        r = self.repo.run("verify")
-        self.assertEqual(r.returncode, 3)
-        self.assertFalse(json.loads(r.stdout)["ok"])
-
-    def test_verify_malformed(self):
-        m = dict(self.manifest, verify={"deploy": "x"})
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
-        self.assertEqual(self.repo.run("validate").returncode, 1)
-
-    def test_sync_permissions(self):
-        local = self.repo.dir / ".claude/settings.local.json"
-        local.write_text(json.dumps({"permissions": {"allow": ["Read"]}, "otra": 1}))
-        r = self.repo.run("sync-permissions")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        data = json.loads(local.read_text())
-        allow = data["permissions"]["allow"]
-        for rule in ["Read", "Workflow(agentic-implement)", "Bash(python3 -m unittest:*)", "Bash(python3 acc.py)",
-                     "Bash(python3 ok.py:*)"]:
-            self.assertIn(rule, allow)
-        self.assertEqual(data["otra"], 1, "keeps the rest of the file")
-        self.repo.run("sync-permissions")
-        self.assertEqual(len(json.loads(local.read_text())["permissions"]["allow"]), len(allow), "idempotente")
-
-
-class AttributionTests(Base):
-    """verify names the work packages behind a failure; seq batches commands; fixes leave a diff for the next attempt."""
-    manifest = dict(MANIFEST, verify={"tests": "python3 fail.py"},
-                    work_packages=[dict(wp, acs=["AC-00%d" % (i + 1)]) for i, wp in enumerate(MANIFEST["work_packages"])])
-
-    def setUp(self):
-        super().setUp()
-        self.repo.write("acc.py", "import sys\nsys.exit(0)\n")
-        self.repo.write("fail.py", "print('FAILED src/b/impl.py:4 test_ac_002_x')\nraise SystemExit(1)\n")
-
-    def test_verify_names_the_suspects_by_path_and_by_criterion(self):
-        r = self.repo.run("verify")
-        self.assertEqual(r.returncode, 3)
-        suspects = json.loads(r.stdout)["suspects"]
-        self.assertEqual(sorted(suspects), ["WP-02"])
-        self.assertEqual(suspects["WP-02"]["files"], ["src/b/"])
-        self.assertEqual(suspects["WP-02"]["acs"], ["AC-002"])
-        self.assertEqual(suspects["WP-02"]["phases"], ["tests"])
-
-    def test_failure_without_an_owner_has_no_suspects(self):
-        self.repo.write("fail.py", "print('boom')\nraise SystemExit(1)\n")
-        self.assertEqual(json.loads(self.repo.run("verify").stdout)["suspects"], {})
-
-    def test_acceptance_failure_is_attributed_through_acs(self):
-        self.repo.write("acc.py", "print('FAILED acceptance/test_ac_003_y')\nraise SystemExit(1)\n")
-        self.repo.write("fail.py", "raise SystemExit(0)\n")
-        suspects = json.loads(self.repo.run("verify").stdout)["suspects"]
-        self.assertEqual(list(suspects), ["WP-03"])
-
-    def test_bad_acs_rejected(self):
-        sys.path.insert(0, str(SCRIPT.parent))
-        import agentic
-        m = json.loads(json.dumps(self.manifest))
-        m["work_packages"][0]["acs"] = ["criterion 1"]
-        self.assertTrue(any("acs" in e for e in agentic.validate(m)))
-
-    def test_fix_leaves_a_diff_only_with_that_wps_files(self):
-        self.repo.write("src/b/x.py", "v1\n")
-        self.repo.write("src/a.py", "a1\n")
-        self.repo.run("open-stage", "1")
-        self.repo.write("src/b/x.py", "v2\n")
-        self.repo.write("src/a.py", "a2\n")  # WP-01's, but this attempt only closes WP-02
-        r = self.repo.run("close-stage", "1", "WP-02=done", "--fix")
-        diff = (self.repo.dir / ".claude/state/runs/WP-02.fix-1.diff").read_text()
-        self.assertIn("-v1", diff)
-        self.assertIn("+v2", diff)
-        self.assertNotIn("a2", diff)
-        self.assertFalse((self.repo.dir / ".claude/state/runs/WP-01.fix-1.diff").exists(), r.stdout)
-
-    def test_seq_runs_in_order_and_stops_at_the_first_failure(self):
-        r = self.repo.run("seq", "open-stage", "1", "+", "close-stage", "1", "WP-01=done", "WP-02=done", "+", "verify")
-        out = json.loads(r.stdout)
-        self.assertEqual([s["cmd"].split()[0] for s in out["steps"]], ["open-stage", "close-stage", "verify"])
-        self.assertFalse(out["ok"])
-        self.assertEqual(r.returncode, 3)
-        self.assertEqual(out["steps"][1]["exit_code"], 0)
-        r = self.repo.run("seq", "open-stage", "1", "+", "close-stage", "1", "WP-01=blocker", "+", "verify")
-        out = json.loads(r.stdout)
-        self.assertEqual(len(out["steps"]), 2, "verify is not reached after a failed close-stage")
-
-    def test_seq_only_accepts_the_workflows_commands(self):
-        self.assertEqual(self.repo.run("seq", "install", "+", "verify").returncode, 1)
-        self.assertEqual(self.repo.run("seq", "verify", "+").returncode, 1)
-
-    def test_gatekeeper_may_be_haiku_but_nobody_else(self):
-        r = self.repo.run("validate")
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        path = self.repo.dir / ".claude/agents/implementer.md"
-        path.write_text(path.read_text().replace("model: sonnet", "model: haiku"))
-        r = self.repo.run("validate")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("implementer", r.stdout + r.stderr)
-
-
-class BrownfieldTests(Base):
-    """PRP-style plan (validated mirror references) and the regression baseline."""
-    manifest = dict(MANIFEST, verify={"tests": "python3 t.py", "lint": "python3 l.py"})
-
-    def set_manifest(self, m):
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
-
-    def test_mirror_validated(self):
-        self.repo.write("legacy/orders.py", "\n".join(f"linea {i}" for i in range(1, 41)))
-        cases = {
-            "legacy/orders.py": 0, "legacy/orders.py:5": 0, "legacy/orders.py:1-40": 0,
-            "legacy/orders.py:30-41": 1, "legacy/invented.py": 1, "legacy/orders.py:abc": 1, "../outside.py": 1,
-            "legacy/orders.py:20-10": 1,
-        }
-        for ref, expected in cases.items():
-            with self.subTest(ref=ref):
-                m = json.loads(json.dumps(self.manifest))
-                m["work_packages"][0]["mirror"] = [ref]
-                self.set_manifest(m)
-                r = self.repo.run("validate")
-                self.assertEqual(r.returncode, expected, r.stderr)
-
-    def scripts(self, tests, lint):
-        self.repo.write("t.py", f"import sys\nsys.exit({tests})\n")
-        self.repo.write("l.py", f"import sys\nsys.exit({lint})\n")
-        self.repo.write("acc.py", "import sys\nsys.exit(0)\n")
-
-    def test_regression_versus_existing_failure(self):
-        self.scripts(tests=0, lint=1)  # before touching anything: lint already fails
-        r = self.repo.run("baseline")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(json.loads(r.stdout)["preexisting_failures"], ["lint"])
-        out = json.loads(self.repo.run("verify").stdout)
-        self.assertTrue(out["ok"], "a pre-existing failure does not block")
-        self.assertEqual(out["preexisting_failures"], ["lint"])
-        self.scripts(tests=1, lint=1)  # now the tests, which passed, fail
-        r = self.repo.run("verify")
-        self.assertEqual(r.returncode, 3)
-        out = json.loads(r.stdout)
-        self.assertEqual(out["blocking"], ["tests"])
-        status = {p["name"]: p.get("status") for p in out["phases"]}
-        self.assertEqual(status["tests"], "regression")
-        self.assertEqual(status["lint"], "pre-existing failure")
-        self.assertIn("baseline: with existing failures: lint", self.repo.run("status").stdout)
-
-    def test_without_baseline_a_failure_blocks(self):
-        self.scripts(tests=0, lint=1)
-        r = self.repo.run("verify")
-        self.assertEqual(r.returncode, 3)
-        self.assertEqual(json.loads(r.stdout)["blocking"], ["lint"])
-
-    def test_baseline_with_nonexistent_command_fails(self):
-        m = dict(self.manifest, verify={"tests": "command-that-does-not-exist"})
-        self.set_manifest(m)
-        self.assertEqual(self.repo.run("baseline").returncode, 1)
-
-    def test_save_result(self):
-        payload = {"result": "OK", "qa": {"status": "PASS"}, "note": "ñandú"}
-        r = self.repo.run("save-result", stdin=json.dumps(payload))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        saved = json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text())
-        self.assertEqual(saved, payload)
-        self.assertEqual(self.repo.run("save-result", stdin="not json").returncode, 1)
-        (self.repo.dir / ".agentic-result.json").write_text(json.dumps({"result": "REVIEW"}))
-        r = self.repo.run("save-result", ".agentic-result.json")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertFalse((self.repo.dir / ".agentic-result.json").exists(), "the temporary file is deleted")
-        self.assertEqual(json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text())["result"], "REVIEW")
-        self.repo.write("src/x.json", "{}")
-        self.assertEqual(self.repo.run("save-result", "src/x.json").returncode, 1, "only from the root")
-
-    def test_ledger_order(self):
-        self.scripts(0, 0)
-        self.repo.run("baseline")
-        self.repo.run("open-stage", "1")
-        self.repo.run("close-stage", "1", "WP-01=done", "WP-02=done")
-        self.repo.run("verify")
-        st = self.repo.run("status").stdout
-        self.assertLess(st.index("baseline"), st.index("wave 1"))
-        self.assertLess(st.index("wave 1"), st.index("verification"))
-
-    def test_pipeline_plan_reports_baseline(self):
-        self.scripts(0, 0)
-        self.assertTrue(json.loads(self.repo.run("pipeline-plan").stdout)["baseline"])
-
-
-class RulesTests(Base):
-    """Stack detection and per-language rules (rules-sync)."""
-
-    def setUp(self):
-        super().setUp()
-        shutil.copytree(SCRIPT.parents[1] / "rules-library", self.repo.dir / ".claude" / "rules-library")
-
-    def set_manifest(self, m):
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
-
-    def installed(self):
-        return sorted(p.stem for p in (self.repo.dir / ".claude/rules/agentic").glob("*.md"))
-
-    def test_detects_by_files_and_extensions_ignoring_dependencies(self):
-        self.repo.write("api/go.mod", "module x")
-        self.repo.write("web/src/app.tsx", "export const A = 1")
-        self.repo.write("node_modules/dep/index.rb", "puts 1")  # dependencias: no cuentan
-        self.repo.write(".claude/bin/tool.py", "x = 1")  # the flow itself: does not count
-        detected = json.loads(self.repo.run("stack").stdout)["detected"]
-        self.assertEqual(sorted(detected), ["go", "typescript"])
-        self.assertEqual(detected["go"]["markers"], ["api/go.mod"])
-
-    def test_rules_sync_installs_common_declared_and_detected_and_removes_the_rest(self):
-        self.set_manifest(dict(MANIFEST, stack=["rust"]))
-        self.repo.write("src/a.py", "def f(): pass")
-        out = json.loads(self.repo.run("rules-sync").stdout)
-        self.assertEqual(self.installed(), ["common", "python", "rust"])
-        self.assertEqual(out["detected"], ["python"])
-        (self.repo.dir / "src/a.py").unlink()
-        self.set_manifest(dict(MANIFEST, stack=["go"]))
-        out = json.loads(self.repo.run("rules-sync").stdout)
-        self.assertEqual(self.installed(), ["common", "go"])
-        self.assertEqual(sorted(out["removed"]), ["python", "rust"])
-        lib = (self.repo.dir / ".claude/rules-library/go.md").read_text()
-        self.assertEqual((self.repo.dir / ".claude/rules/agentic/go.md").read_text(), lib, "copia exacta: paths: arriba")
-
-    def test_validate_rejects_a_stack_without_rules(self):
-        self.set_manifest(dict(MANIFEST, stack=["cobol"]))
-        r = self.repo.run("validate")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("no rules for 'cobol'", r.stderr)
-        self.set_manifest(dict(MANIFEST, stack="python"))
-        self.assertEqual(self.repo.run("validate").returncode, 1)
-
-    def test_pipeline_plan_lists_installed_rules(self):
-        self.set_manifest(dict(MANIFEST, stack=["python"]))
-        self.assertEqual(json.loads(self.repo.run("pipeline-plan").stdout)["rules"], [])
-        self.repo.run("rules-sync")
-        self.assertEqual(json.loads(self.repo.run("pipeline-plan").stdout)["rules"],
-                         [".claude/rules/agentic/common.md", ".claude/rules/agentic/python.md"])
-
-
-class CustomAgentTests(Base):
-    """A custom agent declared in a WP's "agent" must also claim before writing."""
-    manifest = dict(MANIFEST, work_packages=[dict(MANIFEST["work_packages"][0], agent="implementer-rapido")]
-                    + MANIFEST["work_packages"][1:])
-
-    def test_custom_agent_without_claim_is_blocked(self):
-        payload = dict(write_payload("src/a.py", agent_id="x1"), agent_type="implementer-rapido")
-        self.assertEqual(self.repo.hook(payload), 2)
-        self.repo.hook(dict(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="x1"),
-                            agent_type="implementer-rapido"))
-        self.assertEqual(self.repo.hook(payload), 0)
-
-
-class LivingDocsTests(Base):
-    """Living documentation: the DOCS zone, the deterministic code map and docs-check."""
-    manifest = dict(MANIFEST, docs={"files": ["README.md", "CHANGELOG.md", "docs/"]})
-
-    def set_manifest(self, m):
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
-
-    def test_validate_docs_zone(self):
-        self.assertEqual(self.repo.run("validate").returncode, 0)
-        m = json.loads(json.dumps(self.manifest))
-        m["work_packages"][0]["files"].append("README.md")
-        self.set_manifest(m)
-        r = self.repo.run("validate")
-        self.assertIn("two owners", r.stderr)
-        m = dict(MANIFEST, docs={"files": ["README.md"], "codemap": "src/b/MAP.md"})
-        self.set_manifest(m)
-        self.assertIn("is generated by agentic.py", self.repo.run("validate").stderr)
-        self.set_manifest(dict(MANIFEST, docs={"files": ["README.md"], "codemap": "docs/architecture/MAP.md"}))
-        self.assertEqual(self.repo.run("validate").returncode, 1)
-        self.set_manifest(dict(MANIFEST, docs={"files": ["README.md"], "codemap": None}))
-        self.assertEqual(self.repo.run("validate").returncode, 0)
-
-    def test_hook_docs_zone_and_paths_nobody_writes(self):
-        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim DOCS", agent_id="d1"))
-        doc = lambda path: dict(write_payload(path, agent_id="d1"), agent_type="doc-updater")
-        self.assertEqual(self.repo.hook(doc("README.md")), 0)
-        self.assertEqual(self.repo.hook(doc("docs/guide.md")), 0)
-        for path in ("src/a.py", "docs/CODEMAP.md", "docs/architecture/0001-x.md", "architecture.md"):
-            with self.subTest(path=path):
-                self.assertEqual(self.repo.hook(doc(path)), 2)
-
-    def test_doc_updater_without_claim_is_blocked(self):
-        payload = dict(write_payload("README.md", agent_id="d2"), agent_type="doc-updater")
-        self.assertEqual(self.repo.hook(payload), 2)
-
-    def test_codemap_deterministic_with_public_symbols(self):
-        self.repo.write("src/a.py", "def publica():\n    pass\n\ndef _privada():\n    pass\n\nclass Modelo:\n    pass\n")
-        self.repo.write("web/x.ts", "export function hola(): void {}\nconst interna = 1\nexport interface Opciones {}\n")
-        self.repo.write("srv/main.go", "package main\nfunc Arranca() {}\nfunc interno() {}\nfunc (s *S) Metodo() {}\n")
-        first = json.loads(self.repo.run("codemap").stdout)
-        self.assertEqual(first["path"], "docs/CODEMAP.md")
-        self.assertTrue(first["changed"])
-        text = (self.repo.dir / "docs/CODEMAP.md").read_text()
-        for sym in ("`publica`", "`Modelo`", "`hola`", "`Opciones`", "`Arranca`", "`Metodo`"):
-            self.assertIn(sym, text)
-        for hidden in ("_privada", "interna", "interno"):
-            self.assertNotIn(hidden, text)
-        self.assertFalse(json.loads(self.repo.run("codemap").stdout)["changed"], "no code changes, no diff")
-
-    def test_docs_check_links_anchors_and_paths(self):
-        self.repo.write("src/a.py", "x = 1")
-        self.repo.write("docs/guide.md", "# Guide\n\n## Quick start\n")
-        self.repo.write("README.md", "[ok](docs/guide.md#quick-start) and `src/a.py`\n```\n`src/no.py` in a block\n```\n")
-        r = self.repo.run("docs-check")
-        self.assertEqual(r.returncode, 0, r.stdout)
-        self.repo.write("README.md", "[roto](docs/nada.md) [ancla](docs/guide.md#nada) `src/falta.py` `http/v1/x`\n")
-        r = self.repo.run("docs-check")
-        self.assertEqual(r.returncode, 3)
-        kinds = sorted(b["kind"] for b in json.loads(r.stdout)["broken"])
-        self.assertEqual(kinds, ["anchor", "link", "path"], "`http/v1/x` is not a folder of the repo: it does not count")
-
-    def test_docs_check_ignores_the_decision_archive(self):
-        self.repo.write("docs/architecture/0001-x.md", "[old](../../src/deleted.py)\n")
-        self.assertEqual(self.repo.run("docs-check").returncode, 0)
-
-    def test_pipeline_plan_and_docs_stage(self):
-        plan = json.loads(self.repo.run("pipeline-plan").stdout)
-        self.assertTrue(plan["docs"])
-        self.assertEqual(plan["codemap"], "docs/CODEMAP.md")
-        r = self.repo.run("open-stage", "docs")
-        self.assertEqual(json.loads(r.stdout)["owners"], ["DOCS"])
-        self.repo.write("README.md", "# new")
-        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 0)
-        self.repo.run("open-stage", "docs")
-        self.repo.write("src/a.py", "x = 2")
-        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3, "outside its zone")
-
-    def test_no_docs_section_means_no_stage(self):
-        self.set_manifest(MANIFEST)
-        self.assertFalse(json.loads(self.repo.run("pipeline-plan").stdout)["docs"])
-        self.assertEqual(self.repo.run("open-stage", "docs").returncode, 3)
-
-
-class InstallTests(unittest.TestCase):
-    """install: what the plugin does when installing or updating the flow in another repo."""
-
-    def setUp(self):
-        self.dir = Path(tempfile.mkdtemp(prefix="agentic-install-"))
-        subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
-        (self.dir / ".claude").mkdir()
-        (self.dir / ".claude/settings.json").write_text(json.dumps(
-            {"permissions": {"allow": ["Bash(make test)"]}, "hooks": {"PostToolUse": []}, "model": "sonnet"}))
-        (self.dir / ".gitignore").write_text("dist/\n")
-        (self.dir / "main.py").write_text("print(1)\n")
-        self.env = dict(os.environ)
-        self.env.pop("CLAUDE_PROJECT_DIR", None)
-
-    def tearDown(self):
-        shutil.rmtree(self.dir, ignore_errors=True)
-
-    def install(self, *flags):
-        return subprocess.run([sys.executable, str(SCRIPT), "install", str(self.dir), *flags], capture_output=True,
-                              text=True, env=self.env)
-
-    def test_installs_the_flow_and_keeps_project_configuration(self):
-        r = self.install()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        for rel in (".claude/bin/agentic.py", ".claude/agents/implementer.md", ".claude/commands/architect.md",
-                    ".claude/workflows/agentic-implement.js", ".claude/rules-library/common.md",
-                    ".claude/rules/agentic/python.md", ".claude/agentic.json", ".claude/agentic-install.json"):
-            self.assertTrue((self.dir / rel).exists(), rel)
-        self.assertFalse((self.dir / ".claude/bin/test_agentic.py").exists(), "the flow's tests are not installed")
-        settings = json.loads((self.dir / ".claude/settings.json").read_text())
-        self.assertEqual(settings["model"], "sonnet")
-        self.assertIn("Bash(make test)", settings["permissions"]["allow"])
-        self.assertIn("Workflow(agentic-implement)", settings["permissions"]["allow"])
-        self.assertIn("Bash(rm -rf:*)", settings["permissions"]["deny"])
-        self.assertTrue(settings["enableWorkflows"])
-        self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
-        self.assertIn(".claude/state/", (self.dir / ".gitignore").read_text().splitlines())
-        self.assertTrue((self.dir / ".gitignore").read_text().startswith("dist/\n"))
-
-    def test_reinstalling_is_idempotent(self):
-        self.install()
-        before = {p: p.read_bytes() for p in self.dir.rglob("*") if p.is_file() and ".git/" not in p.as_posix()}
-        r = self.install()
-        self.assertIn("settings.json: unchanged", r.stdout)
-        after = {p: p.read_bytes() for p in self.dir.rglob("*") if p.is_file() and ".git/" not in p.as_posix()}
-        self.assertEqual(before, after)
-
-    def test_update_does_not_overwrite_your_changes_except_with_force(self):
-        self.install()
-        mine = self.dir / ".claude/agents/reviewer.md"
-        mine.write_text(mine.read_text() + "\nTeam rule of our own.\n")
-        stale = self.dir / ".claude/agents/implementer.md"
-        stale.write_text("old version, untouched")
-        record = json.loads((self.dir / ".claude/agentic-install.json").read_text())
-        record["files"][".claude/agents/implementer.md"] = hashlib.sha256(b"old version, untouched").hexdigest()
-        (self.dir / ".claude/agentic-install.json").write_text(json.dumps(record))
-        r = self.install()
-        self.assertIn("modified by you (left alone): 1", r.stdout)
-        self.assertIn("Team rule of our own.", mine.read_text())
-        self.assertNotEqual(stale.read_text(), "old version, untouched", "what was not modified gets updated")
-        self.assertIn("modified by you", self.install().stdout, "still protected on the next update")
-        self.install("--force")
-        self.assertNotIn("Team rule of our own.", mine.read_text())
-
-    def test_old_copy_without_record_is_kept_and_rules_are_installed(self):
-        old = self.dir / ".claude/bin/agentic.py"
-        old.parent.mkdir(parents=True)
-        old.write_text("import sys\nprint('old version')\nsys.exit(1)\n")
-        r = self.install()
-        self.assertIn("modified by you (left alone): 1", r.stdout)
-        self.assertIn("old version", old.read_text(), "no record, different: not overwritten")
-        self.assertIn("rules: common, python", r.stdout)
-        self.assertTrue((self.dir / ".claude/rules/agentic/python.md").exists())
-
-    def test_dry_run_writes_nothing(self):
-        r = self.install("--dry-run")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("dry run", r.stdout)
-        self.assertFalse((self.dir / ".claude/bin/agentic.py").exists())
-
-    def test_cannot_install_over_itself(self):
-        r = subprocess.run([sys.executable, str(SCRIPT), "install", str(SCRIPT.parents[2])], capture_output=True,
-                           text=True, env=self.env)
-        self.assertEqual(r.returncode, 1)
-
-    def test_installed_flow_works(self):
-        self.install()
-        (self.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(dict(MANIFEST, stack=["python"])) + "\n```")
-        r = subprocess.run([sys.executable, ".claude/bin/agentic.py", "validate"], cwd=self.dir, capture_output=True,
-                           text=True, env=self.env)
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-
-@unittest.skipUnless(shutil.which("node"), "node is not installed")
-class WorkflowLogicTests(unittest.TestCase):
-    def test_workflow_scenarios(self):
-        r = subprocess.run(["node", str(SCRIPT.parent / "test_workflow.mjs")], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-
-
-class HookFailClosedTests(unittest.TestCase):
-    def setUp(self):
-        self.repo = Repo(raw_manifest='{"work_packages": [ roto')
-
-    def tearDown(self):
-        self.repo.cleanup()
-
-    def test_broken_manifest_blocks_inside_a_wp(self):
-        self.assertEqual(self.repo.hook(write_payload(str(self.repo.dir / "src/a.py")), wp="WP-01"), 2)
-
-    def test_broken_manifest_blocks_subagent(self):
-        self.assertEqual(self.repo.hook(write_payload(str(self.repo.dir / "src/a.py"), agent_id="ag1")), 2)
-
-    def test_broken_manifest_does_not_block_main_thread(self):
-        self.assertEqual(self.repo.hook(write_payload(str(self.repo.dir / "src/a.py"))), 0)
-
-    def test_unreadable_stdin_inside_a_wp(self):
-        r = self.repo.run("hook", stdin="not json", env={"AGENTIC_WP": "WP-01"})
-        self.assertEqual(r.returncode, 2)
-
-
-class HookBashTests(Base):
-    BLOCKED = [
-        "git commit -am x", "git -C . commit -am x", "git -c user.name=x commit -m y", "command git push",
-        "sh -c 'git commit -m x'", 'bash -c "git checkout main"', "cd src && git add .", "git stash",
-        "npm install lodash", "cd x && pnpm add zod", "pip install requests", "uv add httpx",
-        "claude -p hola", "claude --print hola",
-    ]
-    ALLOWED = [
-        "git status", "git diff src/add.py", "git log --oneline -5", "git show HEAD:src/a.py",
-        "python3 -m unittest tests.test_a", "npm test", "npm run build", "grep -r commit src",
-        "claude --version",
-    ]
-
-    def test_blocked(self):
-        for cmd in self.BLOCKED:
-            with self.subTest(cmd=cmd):
-                self.assertEqual(self.repo.hook(bash_payload(cmd), wp="WP-01"), 2)
-
-    def test_allowed(self):
-        for cmd in self.ALLOWED:
-            with self.subTest(cmd=cmd):
-                self.assertEqual(self.repo.hook(bash_payload(cmd), wp="WP-01"), 0)
-
-    def test_main_thread_may_use_git(self):
-        self.assertEqual(self.repo.hook(bash_payload("git commit -am x")), 0)
-
-
-class CheckStageTests(Base):
-    def setUp(self):
-        super().setUp()
-        self.repo.write("src/a.py", "v1")
-        subprocess.run(["git", "add", "-A"], cwd=self.repo.dir, check=True)
-        self.repo.run("snapshot", "1")
-
-    def test_own_changes_ok(self):
-        self.repo.write("src/a.py", "v2")
-        self.repo.write("src/b/new.py")
-        self.assertEqual(self.repo.run("check-wave", "1").returncode, 0)
-
-    def test_foreign_change_and_deletion_fail(self):
-        self.repo.write("README.md")
-        r = self.repo.run("check-wave", "1")
-        self.assertEqual(r.returncode, 3)
-        self.assertIn("README.md", r.stdout)
-
-    def test_deletion_counts_as_change(self):
-        (self.repo.dir / "src/a.py").unlink()
-        self.repo.run("snapshot", "2")
-        self.repo.write("src/a.py", "v1")
-        self.assertEqual(self.repo.run("check-wave", "2").returncode, 3, "src/a.py belongs to wave 1, not 2")
-
-    def test_ignored_artifacts(self):
-        self.repo.write("src/__pycache__/a.cpython-314.pyc")
-        self.repo.write("node_modules/x/index.js")
-        self.repo.write("dist/out.js")  # ignored by the manifest
-        self.repo.write("coverage/lcov.info")
-        self.assertEqual(self.repo.run("check-wave", "1").returncode, 0)
-
-    def test_next_wave_cannot_touch_the_previous(self):
-        self.repo.run("snapshot", "2")
-        self.repo.write("src/a.py", "v3")
-        self.assertEqual(self.repo.run("check-wave", "2").returncode, 3)
+        self.assertEqual(self.repo.run("open-stage", "1").returncode, 0)
+        self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="new")), 0)
 
 
 class LauncherTests(Base):
@@ -1021,11 +436,11 @@ class LauncherTests(Base):
     def test_fix_only_when_requested(self):
         runs = self.repo.dir / ".claude/state/runs"
         runs.mkdir(parents=True, exist_ok=True)
-        (runs / "QA.json").write_text(json.dumps({"result": "STATUS: FAIL"}))
+        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": [FINDING]}}))
         self.repo.run("run-wave", "1", "WP-02")
-        self.assertNotIn("QA.json", self.prompt_of("WP-02"), "without --fix it must not use an old QA report")
+        self.assertNotIn('"problem"', self.prompt_of("WP-02"), "without --fix it must not use an old report")
         self.repo.run("run-wave", "1", "WP-02", "--fix")
-        self.assertIn("QA.json", self.prompt_of("WP-02"))
+        self.assertIn('"problem":"p"', self.prompt_of("WP-02"))
 
     def test_fix_without_report_fails(self):
         r = self.repo.run("run-wave", "1", "WP-01", "--fix")
@@ -1108,10 +523,11 @@ class LauncherTests(Base):
     def test_fix_limit(self):
         runs = self.repo.dir / ".claude/state/runs"
         runs.mkdir(parents=True, exist_ok=True)
-        (runs / "REVIEW.json").write_text(json.dumps({"result": "STATUS: FAIL"}))
+        findings = [FINDING, dict(FINDING, wp="WP-01")]
+        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": findings}}))
         for _ in range(2):
             self.assertEqual(self.repo.run("run-wave", "1", "WP-02", "--fix").returncode, 0)
-            self.assertIn("REVIEW.json", self.prompt_of("WP-02"))
+            self.assertTrue(self.prompt_of("WP-02").startswith("Fix WP-02."))
         r = self.repo.run("run-wave", "1", "WP-02", "--fix")
         self.assertEqual(r.returncode, 4)
         self.assertIn("used up", r.stderr)

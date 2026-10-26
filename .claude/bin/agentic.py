@@ -24,10 +24,7 @@ Subcommands:
   save-result [FILE]
                       Saves the workflow JSON in .claude/state/runs/workflow-result.json (from FILE, which it
                       deletes, or from stdin). The launcher cannot write in .claude/, a protected path.
-  wave-plan N         Prints the WPs of wave N as JSON.
-  open-wave N         Validates, snapshots wave N and prints its WPs as JSON (native workflow).
-  close-wave N ID=estado...
-                      check-wave N + final states in the ledger, in one call (native workflow).
+  briefs              Writes the slice of architecture.md each WP and the test-author need, in .claude/state/briefs/.
   run-acceptance      Wave 0: launches the test-author agent, which writes the acceptance tests before the code.
   acceptance --expect red|green
                       Runs the manifest's acceptance command. In wave 0 they must fail (red);
@@ -71,6 +68,7 @@ from pathlib import Path
 ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().parents[2])
 ARCH = ROOT / "architecture.md"
 STATE = ROOT / ".claude" / "state"
+USAGE = STATE / "usage.jsonl"
 CLAIMS = STATE / "claims.json"
 LEDGER_JSON = STATE / "ledger.json"
 LEDGER_MD = STATE / "ledger.md"
@@ -114,7 +112,7 @@ SYMBOL_RES = {
     (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
 }
 # What `install` puts in another repo: the flow, without the flow's own tests.
-INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/pipeline.py", ".claude/agents/*.md", ".claude/commands/*.md",
+INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/agents/*.md", ".claude/commands/*.md",
                  ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
 INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
@@ -149,7 +147,6 @@ DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".r
 MANIFEST_RE = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
 AC_RE = re.compile(r"AC-\d+")
 CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")
-STATUS_RE = re.compile(r"STATUS:\s*(DONE|BLOCKER|PASS|FAIL)")
 # A write subcommand in the same command as `git`, even with options in front (`git -C . commit`)
 # or inside quotes (`sh -c "git commit"`). Requires a space before it so `src/add.py` is not mistaken.
 GIT_WRITE_RE = re.compile(
@@ -578,52 +575,104 @@ def child_env(cfg, **extra):
     return env
 
 
-def launch(label, jobs, cfg):
-    """jobs: a list of (id, agent, prompt, allowed). Launches them all at once and waits."""
-    runs = STATE / "runs"
-    runs.mkdir(parents=True, exist_ok=True)
-    snapshot(label)
-    procs = {}
-    for jid, agent, prompt, allowed in jobs:
-        cmd = ["claude", "-p", prompt, "--agent", agent, "--model", WORKER_MODEL,
-               "--output-format", "json", "--permission-mode", "acceptEdits",
-               "--strict-mcp-config",  # no MCP connectors: a WP only needs the repo
-               "--allowedTools", *allowed, "Bash(python3 .claude/bin/agentic.py claim:*)"]
-        env = child_env(cfg, AGENTIC_WP=jid, CLAUDE_PROJECT_DIR=str(ROOT))
-        out = open(runs / f"{jid}.json", "w")
-        err = open(runs / f"{jid}.log", "w")
-        proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
-                                start_new_session=True)  # its own group: stop and timeout kill it whole
-        procs[jid] = (proc, out, err)
-        ledger_update(jid, state="running", stage=label, mode="fallback", pid=proc.pid, started=now_hm(), note="")
-        print(f"Lanzado {jid} [{agent}, {WORKER_MODEL}] (pid {proc.pid})", flush=True)
+def load_spec():
+    if not PIPELINE_SPEC.exists():
+        die(f"{PIPELINE_SPEC.relative_to(ROOT)} does not exist: reinstall the flow (/agentic-flow:init).")
+    return json.loads(PIPELINE_SPEC.read_text(encoding="utf-8"))
 
-    start = time.time()
-    deadline = start + cfg["timeout_s"]
-    statuses = {}
-    for jid, (proc, out, err) in procs.items():
-        try:
-            proc.wait(timeout=max(0, deadline - time.time()))
-            timed_out = False
-        except subprocess.TimeoutExpired:
-            kill_group(proc.pid)
-            proc.wait()
-            timed_out = True
-        out.close()
-        err.close()
-        if timed_out:
-            statuses[jid] = f"TIMEOUT ({cfg['timeout_s']}s)"
-        elif ledger_read().get(jid, {}).get("state") == "stopped":
-            statuses[jid] = "STOPPED"
-        else:
-            statuses[jid] = parse_status(runs / f"{jid}.json", proc.returncode)
-        ledger_update(jid, state=status_to_state(statuses[jid]), pid=None, note=statuses[jid])
-        print(f"{jid}: {statuses[jid]} ({int(time.time() - start)}s)", flush=True)
-    return statuses
+
+def usage_of(path):
+    """Token usage and cost of a `claude -p --output-format json` output; zeros/None if there is none."""
+    try:
+        data = json.loads(path.read_text())
+    except (ValueError, OSError):
+        data = None
+    data = data if isinstance(data, dict) else {}
+    u = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    return {"input": (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0),
+            "cache_read": u.get("cache_read_input_tokens") or 0, "output": u.get("output_tokens") or 0,
+            "cost_usd": data.get("total_cost_usd"), "turns": data.get("num_turns") or 0}
+
+
+def run_agent(manifest, cfg, spec, agent_type, ident, label, prompt, out_path, final=False):
+    """One `claude -p` run with the agent's JSON schema. Returns {"report", "status", "usage"} and never raises.
+    `final`: also write the end state in the ledger (the one-off commands; the pipeline's close-stage does it there)."""
+    schema = spec["schemas"].get(agent_type, spec["schemas"]["implementer"])
+    cmd = ["claude", "-p", prompt, "--agent", agent_type, "--model", WORKER_MODEL, "--output-format", "json",
+           "--json-schema", json.dumps(schema), "--permission-mode", "acceptEdits", "--strict-mcp-config",
+           "--allowedTools", *pipeline_tools(manifest, agent_type), "Bash(python3 .claude/bin/agentic.py claim:*)"]
+    env = child_env(cfg, AGENTIC_WP=ident or "REVIEW", CLAUDE_PROJECT_DIR=str(ROOT))
+    tracked = agent_type not in READ_ONLY_AGENTS and ident in entities(manifest)
+    report, status = None, "NO REPORT"
+    try:
+        with open(out_path, "w") as out, open(out_path.with_suffix(".log"), "w") as err:
+            proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                                    start_new_session=True)  # its own group: stop and timeout kill it whole
+            if tracked:
+                ledger_update(ident, state="running", stage=stage_of(ident), mode="fallback", pid=proc.pid,
+                              started=now_hm(), note="")
+            try:
+                proc.wait(timeout=cfg["timeout_s"])
+                if tracked and ledger_read().get(ident, {}).get("state") == "stopped":
+                    status = "STOPPED"
+                else:
+                    report = structured_report(out_path, schema)
+                    status = report.get("status", "DONE") if report else "NO REPORT"
+            except subprocess.TimeoutExpired:
+                kill_group(proc.pid)
+                proc.wait()
+                status = f"TIMEOUT ({cfg['timeout_s']}s)"
+    except OSError as e:
+        status = f"ERROR ({e})"
+    usage = usage_of(out_path)
+    with open(USAGE, "a") as f:  # one short write: atomic enough for parallel agents
+        f.write(json.dumps({"id": ident or agent_type, "agent": agent_type, "label": label, **usage}) + "\n")
+    if final and tracked:
+        ledger_update(ident, state=status_to_state(status), pid=None, note=status)
+    print(f"{label}: {status}", flush=True)
+    return {"report": report, "status": status, "usage": usage}
+
+
+def write_briefs(manifest):
+    """The slice of architecture.md each WP (and the test-author, "AT") needs, in .claude/state/briefs/."""
+    brief, text = brief_module(), ARCH.read_text(encoding="utf-8")
+    (STATE / "briefs").mkdir(parents=True, exist_ok=True)
+    info = {}
+    for ident in [*wps(manifest), *(["AT"] if manifest.get("acceptance") else [])]:
+        body, sliced = brief.slice_architecture(text, ident, manifest)
+        (STATE / "briefs" / f"{ident}.md").write_text(body, encoding="utf-8")
+        info[ident] = {"path": f".claude/state/briefs/{ident}.md", "sliced": sliced, "words": len(body.split())}
+    return info
+
+
+def run_stage(manifest, label, jobs, expected):
+    """A one-off stage: snapshot, the agents of `jobs` ([(id, agent type, prompt)]) in parallel, ownership check."""
+    cfg, spec = load_config(), load_spec()
+    (STATE / "runs").mkdir(parents=True, exist_ok=True)
+    snapshot(label)
+    runs = pipeline_module().threaded([
+        (lambda j=j: run_agent(manifest, cfg, spec, j[1], j[0], j[0], j[2], STATE / "runs" / f"{j[0]}.json", final=True))
+        for j in jobs])
+    finish(manifest, label, {j[0]: r["status"] for j, r in zip(jobs, runs)}, expected)
+
+
+def render_prompt(manifest, name, ident=None, **values):
+    brief = f".claude/state/briefs/{ident}.md" if ident else ""
+    return pipeline_module().render(load_spec()["prompts"][name], wp=ident, brief=brief, rules=rules_hint(manifest), **values)
+
+
+def fix_defects(spec, wp_id):
+    """The blocking defects review and QA attribute to a WP, tagged with who found them."""
+    blocking, found = spec["constants"]["blocking"], []
+    for name, key, tag in (("REVIEW", "findings", "reviewer"), ("QA", "defects", "qa")):
+        report = structured_report(STATE / "runs" / f"{name}.json", {}) or {}
+        found += [{"source": tag, **d} for d in report.get(key, [])
+                  if d.get("wp") == wp_id and d.get("severity") in blocking and d.get("kind", "implementation") == "implementation"]
+    return found
 
 
 def run_wave(manifest, wave, only=None, fix=False):
-    cfg = load_config()
+    cfg, spec = load_config(), load_spec()
     wave_wps = sorted(stage_owners(manifest, wave), key=lambda w: w["id"])
     if only:
         unknown = set(only) - {wp["id"] for wp in wave_wps}
@@ -632,14 +681,12 @@ def run_wave(manifest, wave, only=None, fix=False):
         wave_wps = [wp for wp in wave_wps if wp["id"] in only]
     if not wave_wps:
         die(f"There are no WPs in wave {wave}.")
-    allowed = BASE_TOOLS + manifest.get("allow_bash", [])
-    at_cmd = at_entity(manifest)["command"]
-    if at_cmd:  # implementers may run their acceptance tests, but not edit them
-        allowed = allowed + [f"Bash({at_cmd}:*)", f"Bash({at_cmd})"]
-    reports = [r for r in ("QA", "REVIEW") if (STATE / "runs" / f"{r}.json").exists()]
-    if fix and not reports:
+    if fix and not any((STATE / "runs" / f"{r}.json").exists() for r in ("QA", "REVIEW")):
         die("--fix needs a review or QA report (.claude/state/runs/REVIEW.json or QA.json). "
             "Run run-review or run-qa first.")
+    defects = {wp["id"]: fix_defects(spec, wp["id"]) for wp in wave_wps} if fix else {}
+    for wp_id in [w for w, d in defects.items() if not d]:
+        die(f"{wp_id}: no blocking defect from review or QA is attributed to it.")
     if fix:
         cap = int(cfg.get("max_fix_cycles", 2))
         ledger = ledger_read()
@@ -649,46 +696,33 @@ def run_wave(manifest, wave, only=None, fix=False):
                 "to repetition: decide yourself, or revisit the contract with /architect.", code=4)
         for wp in wave_wps:
             ledger_update(wp["id"], fix_count=ledger.get(wp["id"], {}).get("fix_count", 0) + 1)
-    prompt = "Implement {id} according to architecture.md." + (
-        " The code already exists: fix the defects assigned to you in "
-        + " y ".join(f".claude/state/runs/{r}.json" for r in reports)
-        + ", without leaving the contract, and keep its acceptance tests green." if fix else "") + rules_hint(manifest)
-    statuses = launch(str(wave), [
-        (wp["id"], wp.get("agent", "implementer"), prompt.format(id=wp["id"]),
-         allowed)
-        for wp in wave_wps], cfg)
-    finish(manifest, str(wave), statuses, "DONE")
+    write_briefs(manifest)
+    pipeline = pipeline_module()
+    run_stage(manifest, str(wave), [
+        (wp["id"], wp.get("agent", "implementer"),
+         render_prompt(manifest, "fix", wp["id"], defects=pipeline.compact(defects[wp["id"]]), retry="") if fix
+         else render_prompt(manifest, "implement", wp["id"])) for wp in wave_wps], "DONE")
 
 
 def run_acceptance(manifest):
-    at = at_entity(manifest)
-    if not at["command"]:
+    if not at_entity(manifest)["command"]:
         die("The manifest has no 'acceptance' section: there is no wave 0 to launch.")
-    cfg = load_config()
-    allowed = BASE_TOOLS + manifest.get("allow_bash", []) + at["allow_bash"]
-    statuses = launch("acceptance", [("AT", "test-author",
-                                      "Write the acceptance tests according to architecture.md." + rules_hint(manifest),
-                                      allowed)], cfg)
-    finish(manifest, "acceptance", statuses, "DONE")
+    write_briefs(manifest)
+    run_stage(manifest, "acceptance", [("AT", "test-author", render_prompt(manifest, "test_author", "AT"))], "DONE")
 
 
 def run_review(manifest):
-    cfg = load_config()
-    allowed = REVIEW_TOOLS + manifest.get("allow_bash", [])
-    statuses = launch("review", [("REVIEW", "reviewer",
-                                  "Review the integrated code according to architecture.md." + rules_hint(manifest),
-                                  allowed)], cfg)
-    finish(manifest, "review", statuses, "PASS")
+    run_stage(manifest, "review", [("REVIEW", "reviewer", render_prompt(manifest, "reviewer"))], "PASS")
+
+
+def run_qa(manifest):
+    run_stage(manifest, "qa", [("QA", "qa", render_prompt(manifest, "qa"))], "PASS")
 
 
 def run_docs(manifest):
     if not docs_entity(manifest):
         die("The manifest has no 'docs' section: there is no living documentation to update.")
-    cfg = load_config()
-    allowed = BASE_TOOLS + ["Bash(git diff:*)", "Bash(git status:*)", "Bash(git log:*)"]
-    statuses = launch("docs", [("DOCS", "doc-updater",
-                                "Update the documentation according to architecture.md and the integrated code.", allowed)], cfg)
-    finish(manifest, "docs", statuses, "DONE")
+    run_stage(manifest, "docs", [("DOCS", "doc-updater", render_prompt(manifest, "doc_updater"))], "DONE")
 
 
 # ---------- language rules ----------
@@ -1015,7 +1049,7 @@ def acceptance(manifest, expect):
 # ---------- native workflow commands (run by the gatekeeper agent) ----------
 
 SEQ_OUTPUT_CAP = 12_000
-SEQ_COMMANDS = {"pipeline-plan", "baseline", "open-stage", "close-stage", "verify", "codemap", "docs-check",
+SEQ_COMMANDS = {"pipeline-plan", "briefs", "baseline", "open-stage", "close-stage", "verify", "codemap", "docs-check",
                 "acceptance"}
 
 
@@ -1100,10 +1134,17 @@ def structured_report(path, schema):
     return report
 
 
-def pipeline_module():
+def sibling(name):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import pipeline
-    return pipeline
+    return __import__(name)
+
+
+def pipeline_module():
+    return sibling("pipeline")
+
+
+def brief_module():
+    return sibling("brief")
 
 
 def run_pipeline(manifest, args):
@@ -1119,47 +1160,23 @@ def run_pipeline(manifest, args):
     if "--resume" in flags and start_wave is None and PIPELINE_STATE.exists():
         done = json.loads(PIPELINE_STATE.read_text()).get("completed_waves", [])
         start_wave = max(done) + 1 if done else None
-    if not PIPELINE_SPEC.exists():
-        die(f"{PIPELINE_SPEC.relative_to(ROOT)} does not exist: reinstall the flow (/agentic-flow:init).")
-    pipeline = pipeline_module()
-    spec = json.loads(PIPELINE_SPEC.read_text(encoding="utf-8"))
-    cfg = load_config()
+    pipeline, spec, cfg = pipeline_module(), load_spec(), load_config()
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / "runs").mkdir(parents=True, exist_ok=True)
     counter = iter(range(1, 10 ** 6))
     completed = []
+    seen = len(USAGE.read_text().splitlines()) if USAGE.exists() else 0
 
     def gate(cmds, label):
         ok, results = run_steps([shlex.split(c) for c in cmds])
         return {"steps": results}
 
     def agent(prompt, agent_type, label, ident):
-        schema = spec["schemas"][agent_type]
-        n = next(counter)
-        out_path = STATE / "runs" / f"{(ident or agent_type)}-{n}.json"
-        cmd = ["claude", "-p", prompt, "--agent", agent_type, "--model", WORKER_MODEL, "--output-format", "json",
-               "--json-schema", json.dumps(schema), "--permission-mode", "acceptEdits", "--strict-mcp-config",
-               "--allowedTools", *pipeline_tools(manifest, agent_type), "Bash(python3 .claude/bin/agentic.py claim:*)"]
-        env = child_env(cfg, AGENTIC_WP=ident or "REVIEW", CLAUDE_PROJECT_DIR=str(ROOT))
-        tracked = agent_type not in READ_ONLY_AGENTS and ident in entities(manifest)
-        with open(out_path, "w") as out, open(out_path.with_suffix(".log"), "w") as err:
-            proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
-                                    start_new_session=True)  # its own group: stop and timeout kill it whole
-            if tracked:
-                ledger_update(ident, state="running", stage=stage_of(ident), mode="fallback", pid=proc.pid,
-                              started=now_hm(), note="")
-            try:
-                proc.wait(timeout=cfg["timeout_s"])
-            except subprocess.TimeoutExpired:
-                kill_group(proc.pid)
-                proc.wait()
-                print(f"{label}: TIMEOUT ({cfg['timeout_s']}s)", flush=True)
-                return None
-        if tracked and ledger_read().get(ident, {}).get("state") == "stopped":
+        res = run_agent(manifest, cfg, spec, agent_type, ident, label, prompt,
+                        STATE / "runs" / f"{ident or agent_type}-{next(counter)}.json")
+        if res["status"] == "STOPPED":
             raise pipeline.Halted()
-        report = structured_report(out_path, schema)
-        print(f"{label}: {report.get('status', 'done') if report else 'NO REPORT'}", flush=True)
-        return report
+        return res["report"]
 
     def wave_done(wave):
         completed.append(wave)
@@ -1168,10 +1185,12 @@ def run_pipeline(manifest, args):
     engine = pipeline.Pipeline(spec, gate, agent, log=lambda m: print(m, flush=True), start_wave=start_wave,
                                phase=lambda t: print(f"== {t}", flush=True), wave_done=wave_done)
     result = engine.execute()
+    result["usage"] = usage_summary(usage_records()[seen:])
     out = STATE / "runs" / "workflow-result.json"
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"result": result["result"], "failed_stage": result.get("failed_stage"),
-                      "detail": result.get("detail"), "saved": str(out.relative_to(ROOT))}, ensure_ascii=False))
+                      "detail": result.get("detail"), "usage": result["usage"]["total"],
+                      "saved": str(out.relative_to(ROOT))}, ensure_ascii=False))
     print("RESULT:", "OK" if result["result"] == "OK" else "REVIEW")
     sys.exit(0 if result["result"] == "OK" else 3)
 
@@ -1373,16 +1392,6 @@ def sync_permissions(manifest):
     print(f"{len(added)} rule(s) added to .claude/settings.local.json" + (": " + ", ".join(added) if added else ""))
 
 
-def run_qa(manifest):
-    cfg = load_config()
-    qa = qa_entity(manifest)
-    allowed = BASE_TOOLS + manifest.get("allow_bash", []) + qa["allow_bash"]
-    statuses = launch("qa", [("QA", "qa",
-                              "Run the system's QA validation according to architecture.md." + rules_hint(manifest),
-                              allowed)], cfg)
-    finish(manifest, "qa", statuses, "PASS")
-
-
 def finish(manifest, label, statuses, expected):
     ownership_ok = check_stage(manifest, label)
     print(f"\nSTAGE {label} SUMMARY")
@@ -1392,17 +1401,6 @@ def finish(manifest, label, statuses, expected):
     ledger_stage(label, "OK" if ok else "REVIEW")
     print("RESULT:", "OK" if ok else "REVIEW")
     sys.exit(0 if ok else 3)
-
-
-def parse_status(path, returncode):
-    try:
-        data = json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return f"ERROR (exit {returncode}, no JSON output)"
-    m = STATUS_RE.search(data.get("result") or "")
-    if m:
-        return m.group(1)
-    return f"NO REPORT ({data.get('subtype') or 'exit ' + str(returncode)})"
 
 
 # ---------- hook PreToolUse ----------
@@ -1468,6 +1466,21 @@ def stage_of(jid):
         return "?"
 
 
+def usage_records():
+    return [json.loads(line) for line in USAGE.read_text().splitlines() if line.strip()] if USAGE.exists() else []
+
+
+def usage_summary(records):
+    costs = [r["cost_usd"] for r in records if r.get("cost_usd") is not None]
+    total = {k: sum(r.get(k) or 0 for r in records) for k in ("input", "cache_read", "output", "turns")}
+    return {"total": {**total, "cost_usd": sum(costs) if costs else None}, "by_agent": records}
+
+
+def usage_line(r):
+    cost = "?" if r.get("cost_usd") is None else f"{r['cost_usd']:.2f}"
+    return f"in {r['input']} · cache {r['cache_read']} · out {r['output']} · ${cost}"
+
+
 def ledger_render():
     d = ledger_read()
     stages = d.get("_stages", {})
@@ -1489,6 +1502,10 @@ def ledger_render():
         lines.append(" — ".join(parts))
     if not agents:
         lines.append("- (none)")
+    records = usage_records()
+    if records:
+        lines += ["", "## Usage", ""] + [f"- {r['label']}: {usage_line(r)}" for r in records]
+        lines.append("Total: " + usage_line(usage_summary(records)["total"]))
     LEDGER_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -1569,7 +1586,7 @@ def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
                   "Use a synthetic value or an environment variable; never a real secret.")
     if PROTECTED_CONFIG_RE.match(Path(rel).name) and abs_path.exists() and not ent.get("config_edit"):
         block(f"{owner_id}: {rel} is existing quality configuration. A rule is not relaxed to pass "
-              "a check: fix the code. If it really has to change, return STATUS: BLOCKER.")
+              "a check: fix the code. If it really has to change, return BLOCKER.")
     if TEST_PATH_RE.search(rel):
         if old is None:
             try:
@@ -1578,7 +1595,7 @@ def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
                 old = ""
         if len(SKIP_MARKER_RE.findall(new)) > len(SKIP_MARKER_RE.findall(old)):
             block(f"{owner_id}: tests are not disabled to turn them green (skip, xfail, only…) in {rel}. "
-                  "A failing test is fixed or reported: return STATUS: BLOCKER. "
+                  "A failing test is fixed or reported: return BLOCKER. "
                   "Conditional platform skips (skipIf/skipUnless) are allowed.")
 
 
@@ -1639,10 +1656,10 @@ def guard(data):
     # code map, even if its zone includes them by prefix (for example, "docs/").
     if rel == "architecture.md" or rel.startswith((".claude/", ARCHIVE_DIR)) or rel == codemap_path(manifest):
         block(f"{owner_id}: {rel} is not written by any agent of the flow (plan, configuration, decision archive "
-              "or generated map). If it has to change, return STATUS: BLOCKER.")
+              "or generated map). If it has to change, return BLOCKER.")
     if not any(owns(f, rel) for f in ent["files"]):
         block(f"{owner_id} does not own {rel}. Allowed files: {', '.join(ent['files'])}. "
-              "If you need to touch it, return STATUS: BLOCKER (or, if you are QA, report it as a defect).")
+              "If you need to touch it, return BLOCKER (or, if you are QA, report it as a defect).")
     content_checks(owner_id, ent, rel, abs_path, tool, tinput)
 
 
@@ -1708,6 +1725,9 @@ def main():
         if not args:
             die("Uso: close-stage N|acceptance|review|qa ID=estado... [--expect red|green] [--fix]")
         close_stage(require_valid(), stage_label(args[0]), args[1:])
+    elif cmd == "briefs":
+        info = write_briefs(require_valid())
+        print(json.dumps({"full_words": len(ARCH.read_text(encoding="utf-8").split()), "briefs": info}))
     elif cmd == "seq":
         seq(args)
     elif cmd == "run-pipeline":
@@ -1760,38 +1780,6 @@ def main():
             die("Uso: install [DIR] [--force] [--dry-run]")
         dirs = [a for a in args if not a.startswith("--")]
         install(Path(dirs[0] if dirs else os.getcwd()), force="--force" in flags, dry_run="--dry-run" in flags)
-    elif cmd in ("wave-plan", "open-wave"):
-        if not args or not args[0].isdigit():
-            die(f"Uso: {cmd} N")
-        manifest = require_valid()
-        ids = sorted(wp["id"] for wp in stage_owners(manifest, args[0]))
-        if cmd == "open-wave" and ids:
-            with open(os.devnull, "w") as quiet:  # the snapshot must not pollute the JSON output
-                old, sys.stdout = sys.stdout, quiet
-                try:
-                    snapshot(args[0])
-                finally:
-                    sys.stdout = old
-        print(json.dumps({"wave": int(args[0]), "work_packages": ids}))
-        sys.exit(0 if ids else 3)
-    elif cmd == "close-wave":
-        # close-wave N WP-01=done WP-02=blocker ...: check-wave + states in the ledger, in one call.
-        if not args or not args[0].isdigit():
-            die("Uso: close-wave N ID=estado [ID=estado...]")
-        manifest = require_valid()
-        known = entities(manifest)
-        marks = []
-        for item in args[1:]:
-            jid, _, state = item.partition("=")
-            if jid not in known or state not in LEDGER_STATES:
-                die(f"close-wave: invalid entry '{item}' (a manifest ID and a state in {', '.join(LEDGER_STATES)})")
-            marks.append((jid, state))
-        for jid, state in marks:
-            ledger_update(jid, state=state, stage=stage_of(jid), pid=None, note=state.upper())
-        ok = check_stage(manifest, args[0]) and all(state == "done" for _, state in marks)
-        ledger_stage(args[0], "OK" if ok else "REVIEW")
-        print("RESULT:", "OK" if ok else "REVIEW")
-        sys.exit(0 if ok else 3)
     elif cmd == "run-acceptance":
         run_acceptance(require_valid())
     elif cmd == "run-review":
