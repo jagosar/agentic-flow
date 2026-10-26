@@ -1,0 +1,117 @@
+"""Upgrades of a repo that has an older flow: which files are intact, what blocks a write, what changed.
+
+`agentic.py install` uses it. A file is intact when its content is one the flow shipped at some point, as recorded in
+.claude/flow-history.json (built from the flow's git history by `agentic.py flow-history`). That is what lets a repo
+created from the template, which has no install record, upgrade as safely as one installed by the plugin.
+"""
+import fnmatch
+import hashlib
+import json
+import subprocess
+from pathlib import Path
+
+# Files the template copies besides the flow itself: refreshed only where they already exist and are intact.
+EXTRA_GLOBS = [".claude/bin/test_*.py", ".claude/bin/test_workflow.mjs", ".claude/bin/conformance.json",
+               ".claude/bin/fixtures/*", ".github/workflows/agentic-flow-ci.yml", ".github/workflows/reset-readme.yml",
+               "plugin/commands/*.md", ".claude-plugin/*.json"]
+
+# What a user upgrading from an older version must know, by the version that introduced it.
+NOTES = {
+    "1.1.0": [
+        "Agents answer with the launcher's JSON schema; the text STATUS: format is gone. Agent files you customised "
+        "still work: compare them with the new versions.",
+        "The commands wave-plan, open-wave and close-wave were removed: update scripts or CI that call them.",
+        "Plans need '#### WP-NN' and '- AC-NNN ·' headings to give each agent only its slice (briefs); older plans "
+        "still work with the whole document.",
+        "install now updates the flow's own tests and CI copied from the template when they are intact, and keeps "
+        "edited files with the new version in .claude/state/upgrade/.",
+    ],
+}
+
+
+def git(cwd, *args, **kw):
+    try:
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, **({"text": True} | kw))
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(args, 127, "", "")
+
+
+def load_history(source_root):
+    """{path: hashes} from source_root/.claude/flow-history.json; {} if missing or unreadable."""
+    try:
+        data = json.loads((Path(source_root) / ".claude" / "flow-history.json").read_text(encoding="utf-8"))
+        return {path: set(hashes) for path, hashes in data["files"].items()}
+    except (OSError, ValueError, KeyError, AttributeError, TypeError):
+        return {}
+
+
+def classify(dst_hash, src_hash, known, force):
+    """"new", "unchanged", "updated" or "kept" for one file; known: the hashes that count as intact for its path."""
+    if dst_hash is None:
+        return "new"
+    if dst_hash == src_hash:
+        return "unchanged"
+    return "updated" if force or dst_hash in known else "kept"
+
+
+def version_key(version):
+    try:
+        return tuple(int(part) for part in str(version).split("."))
+    except ValueError:
+        return None
+
+
+def notes_between(from_version, to_version):
+    """The notes of every version after from_version up to to_version, oldest first. An unknown from_version gets
+    them all; an unknown to_version ("dev") has no upper bound."""
+    low, high = version_key(from_version), version_key(to_version)
+    return [note for v in sorted(NOTES, key=version_key)
+            if (low is None or version_key(v) > low) and (high is None or version_key(v) <= high) for note in NOTES[v]]
+
+
+def guard_problems(target, paths):
+    """Reasons not to write in target: not a git repo, uncommitted changes to tracked files among paths, a run in
+    progress. Untracked files never block: an intact one can be rebuilt from the history and an edited one is kept."""
+    target = Path(target)
+    if git(target, "rev-parse", "--is-inside-work-tree").stdout.strip() != "true":
+        return ["not a git repository"]
+    status = git(target, "status", "--porcelain", "--untracked-files=no", "--", *paths).stdout if paths else ""
+    problems = [f"uncommitted: {line[3:].strip()}" for line in status.splitlines() if line.strip()]
+    try:
+        ledger = json.loads((target / ".claude" / "state" / "ledger.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        ledger = {}
+    running = sorted(k for k, v in ledger.items()
+                     if not k.startswith("_") and isinstance(v, dict) and v.get("state") == "running")
+    if running:
+        problems.append(f"a run is in progress ({', '.join(running)}): finish it or run "
+                        "`python3 .claude/bin/agentic.py stop`")
+    return problems
+
+
+def build_history(repo_root, globs):
+    """Every content each path matching globs ever had in repo_root's history, as sha256 lists."""
+    root = Path(repo_root)
+    if git(root, "rev-parse", "--is-inside-work-tree").stdout.strip() != "true":
+        raise ValueError("not a git repository")
+    if git(root, "rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        raise ValueError("needs the full git history: run `git fetch --unshallow` (or use a full clone)")
+    paths_of = {}  # blob -> the matching paths that held it
+    for commit in git(root, "rev-list", "HEAD").stdout.split():
+        for line in git(root, "ls-tree", "-r", commit).stdout.splitlines():
+            meta, path = line.split("\t", 1)
+            _, kind, blob = meta.split()
+            if kind == "blob" and any(fnmatch.fnmatch(path, g) for g in globs):
+                paths_of.setdefault(blob, set()).add(path)
+    blobs = sorted(paths_of)
+    out = git(root, "cat-file", "--batch", input="".join(b + "\n" for b in blobs).encode(), text=False).stdout
+    files, pos = {}, 0
+    for blob in blobs:  # each answer: "<sha> blob <size>\n<content>\n"
+        end = out.index(b"\n", pos)
+        size = int(out[pos:end].split()[2])
+        digest = hashlib.sha256(out[end + 1:end + 1 + size]).hexdigest()
+        pos = end + 1 + size + 1
+        for path in paths_of[blob]:
+            files.setdefault(path, set()).add(digest)
+    head = git(root, "rev-parse", "HEAD").stdout.strip()
+    return {"generated_from": head, "files": {p: sorted(h) for p, h in sorted(files.items())}}
