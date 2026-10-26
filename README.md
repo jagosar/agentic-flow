@@ -1,3 +1,4 @@
+<!-- agentic-flow-template -->
 # agentic-flow
 
 A small team of Claude Code agents that turns an idea into tested code.
