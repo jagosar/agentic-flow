@@ -33,7 +33,6 @@ Python 3.9+ standard library only; git ≥ 2.20 on the machine that runs `instal
 .claude-plugin/plugin.json                WP-02 (version 1.1.0)
 plugin/commands/init.md                   WP-03
 docs/how-to/plugin.md                     WP-03
-README.md                                 WP-03
 .claude/bin/test_definitions.py           WP-03
 .claude/bin/test_acceptance_upgrade.py    AT (new)
 ```
@@ -91,21 +90,23 @@ def guard_problems(target, paths) -> list[str]
     - one line per tracked file among `paths` with uncommitted changes
       (`git status --porcelain --untracked-files=no -- <paths>`), as "uncommitted: <rel>";
     - "a run is in progress (<IDs>): finish it or run `python3 .claude/bin/agentic.py stop`" if
-      target/.claude/state/ledger.json has any entry whose "state" is "running"."""
+      target/.claude/state/ledger.json has any entry whose "state" is "running" (keys starting with "_",
+      such as "_stages", are skipped, as `stop` does at agentic.py:1521)."""
 
 def build_history(repo_root, globs) -> dict
     """{"generated_from": HEAD sha, "files": {...}} from every commit of repo_root's history:
     every path ever matching one of globs (fnmatch on the POSIX path), with the sha256 of each of
-    its blob versions. Raises ValueError("needs the full git history") on a shallow clone and
+    its blob versions (read in one `git cat-file --batch` process, not one subprocess per blob).
+    Raises ValueError("needs the full git history") on a shallow clone and
     ValueError("not a git repository") outside one."""
 ```
 **`agentic.py`** (WP-02)
 - `install(target, force=False, dry_run=False, allow_dirty=False)`, CLI `install [DIR] [--force] [--dry-run] [--allow-dirty]`:
   1. Sources: every file matching `INSTALL_GLOBS` in `SOURCE_ROOT`, plus every file matching `EXTRA_GLOBS` in `SOURCE_ROOT` **whose target path already exists**.
   2. `known[rel] = history.get(rel, set()) | {record hash if any} | {src hash}`; `classify` each; `"kept"` files go to the report key `modified by you (left alone)` and, when writing, their source is copied to `target/.claude/state/upgrade/<rel>`.
-  3. Removal: every path in the record or in the history that is not a current source path (managed globs), exists in the target and is intact (its hash in `history[rel]` or equal to the record's) is deleted and reported under `removed`. Nothing else is ever deleted.
-  4. Guards: unless `dry_run`, `guard_problems(target, <every path it would write or delete, plus .claude/settings.json, .gitignore, .claude/agentic.json>)`; "not a git repository" → `die(..., code=1)`; other problems → stderr lines and exit 3 before writing anything, except that `--allow-dirty` ignores the `uncommitted:` lines (never the run in progress). With `dry_run` the problems are printed as `warning: <problem>` lines on stdout and nothing exits.
-  5. Output, in this order: first line `agentic-flow <from> -> <to> -> <target>` where `<from>` is the record's version or `unknown`, `<to>` is `flow_version()`; the report as today; `kept files: new versions in .claude/state/upgrade/ (compare with: diff -ru .claude/state/upgrade/.claude .claude)` when any file was kept and not `dry_run`; then `upgrade notes:` followed by one `  - <note>` line per `notes_between(from, to)` (omitted if empty); then `validate: OK` or `validate: FAILED: <first stderr line>` when the target has `architecture.md` (running the target's new `agentic.py validate`, non-fatal); last line `RESULT: OK`.
+  3. Removal: a path P is removed (and reported under `removed`) when P is in the record or in the history, `SOURCE_ROOT/P` does not exist (the flow no longer ships it), `target/P` exists, and its hash is in `history[P]` or equals the record's. Nothing else is ever deleted.
+  4. Guards: unless `dry_run`, `guard_problems(target, paths)` where `paths` = every managed source path of step 1 that exists in the target (whatever its classification, so an edited tracked file blocks too), the removal candidates of step 3, `.claude/settings.json`, `.gitignore`, `.claude/agentic.json` and `.claude/agentic-install.json`; "not a git repository" → `die(..., code=1)`; other problems → stderr lines and exit 3 before writing anything, except that `--allow-dirty` ignores the `uncommitted:` lines (never the run in progress). With `dry_run` the problems are printed as `warning: <problem>` lines on stdout and nothing exits.
+  5. Output, in this order: first line `agentic-flow <from> -> <to> -> <target>` (plus ` (dry run: nothing is written)` with `--dry-run`, as today) where `<from>` is the record's version or `unknown`, `<to>` is `flow_version()`; the report as today; when any file was kept, `kept files: new versions in .claude/state/upgrade/ (compare with: diff -ru .claude/state/upgrade/.claude .claude)` — with `--dry-run`, `kept files: run without --dry-run to get their new versions in .claude/state/upgrade/` — replacing today's closing line "Some of the flow's files have been modified by you…" (`agentic.py:1000`); then `upgrade notes:` followed by one `  - <note>` line per `notes_between(from, to)` (omitted if empty); then, when the target has `architecture.md` and not `dry_run`, `validate: OK` or `validate: FAILED: <first error>`, running **the source script** (`Path(__file__)`) `validate` with `cwd=target` and `CLAUDE_PROJECT_DIR=<target>` exactly as the `rules-sync` call at the end of `install` does (`agentic.py:990-997`); `<first error>` is the first stderr line after the `Invalid manifest:` header, stripped; non-fatal; last line `RESULT: OK`.
   6. The record gets `version` = `flow_version()` and the hashes of every file installed, updated, unchanged or kept (kept: the previous record hash, or `""`).
 - `flow-history` (CLI, no arguments): writes `SOURCE_ROOT/.claude/flow-history.json` with `build_history(SOURCE_ROOT, INSTALL_GLOBS + EXTRA_GLOBS)` (JSON, `indent=1`, sorted) and prints `{"paths": n, "hashes": m, "generated_from": sha}`; on `ValueError` → `die(str(e))`.
 - `INSTALL_GLOBS` gains `.claude/bin/upgrade.py`.
@@ -114,7 +115,7 @@ def build_history(repo_root, globs) -> dict
 - English code and messages; comments only where the reason is not obvious, at `agentic.py`'s density; `agentic.py`'s style wins over `rules-library/python.md` (no annotations; the signatures in §6 are documentation).
 - Stdlib only. `upgrade.py` must not import `agentic`.
 - Never delete or overwrite a file that is not intact unless `--force`; never touch a path outside the managed globs, `settings.json`, `.gitignore`, `agentic.json`, the record and `.claude/state/upgrade/`.
-- Release rule (written in README's maintainer note): run `python3 .claude/bin/agentic.py flow-history` and bump `.claude-plugin/plugin.json` before tagging a release. A stale history is safe: unknown versions are kept, never overwritten.
+- Release rule (written in `docs/how-to/plugin.md`, `## Publish a version (maintainers)`): run `python3 .claude/bin/agentic.py flow-history` and bump `.claude-plugin/plugin.json` before tagging a release. A stale history is safe: unknown versions are kept, never overwritten.
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
@@ -167,14 +168,14 @@ All scenarios use a **source copy**: a temporary directory with this repo's `.cl
   - Expected: the first output line is `agentic-flow 1.0.0 -> 1.1.0 -> <target>` / `agentic-flow 1.1.0 -> 1.1.0 -> …` / `agentic-flow unknown -> 1.1.0 -> …`; the `1.0.0` and `unknown` outputs contain `upgrade notes:` and a note mentioning `wave-plan`; the `1.1.0` output has no `upgrade notes:`.
   - Must not: print notes of versions not newer than the record's.
   - Check: `test_acceptance_upgrade.py::test_ac_007_versions_and_notes`.
-  - WP: WP-01
+  - WP: WP-01 (the notes) and WP-02 (the output line)
 - AC-008 · `flow-history` rebuilds the history from git
   - Scenario: a source copy turned into a git repo with three commits: `.claude/agents/qa.md` = `A\n`, then `B\n`, and `.claude/workflows/old.js` = `X\n` added then deleted; a shallow clone of it (`git clone --depth 1 file://…`).
   - Action: `python3 .claude/bin/agentic.py flow-history` run from the copy's own script, then from the shallow clone's.
   - Expected: in the full repo, exit 0, `.claude/flow-history.json` has `generated_from` = `git rev-parse HEAD` and `files[".claude/agents/qa.md"]` containing sha256 of `A\n` and of `B\n`, and `files[".claude/workflows/old.js"]` containing sha256 of `X\n`; stdout is one JSON line with `paths` and `hashes`. In the shallow clone, exit 1 with `needs the full git history`.
   - Must not: include paths outside the managed globs (e.g. `README.md`).
   - Check: `test_acceptance_upgrade.py::test_ac_008_flow_history`.
-  - WP: WP-01
+  - WP: WP-01 (`build_history`) and WP-02 (the command)
 - AC-009 · The target's plan is validated after the upgrade, without failing it
   - Scenario: the AC-001 target plus an `architecture.md` whose manifest is invalid (`"work_packages": []`).
   - Action: `install`.
@@ -184,8 +185,8 @@ All scenarios use a **source copy**: a temporary directory with this repo's `.cl
   - WP: WP-02
 - AC-010 · The plugin command and the docs explain the upgrade
   - Scenario: the repo files.
-  - Action: read `plugin/commands/init.md`, `docs/how-to/plugin.md`, `README.md`, `.claude-plugin/plugin.json`.
-  - Expected: `init.md` allows `--allow-dirty` and mentions `.claude/state/upgrade/` and exit code 3; `plugin.md` has a section `## Update` that mentions `.claude/state/upgrade/`, `--allow-dirty` and that repos created from the template are upgraded the same way; `README.md` contains `flow-history` in a maintainer note; `plugin.json` has `"version": "1.1.0"`.
+  - Action: read `plugin/commands/init.md`, `docs/how-to/plugin.md`, `.claude-plugin/plugin.json`.
+  - Expected: `init.md` allows `--allow-dirty` and mentions `.claude/state/upgrade/` and exit code 3; `plugin.md`'s `## Update` section mentions `.claude/state/upgrade/`, `--allow-dirty` and that repos created from the template are upgraded the same way, and its `## Publish a version (maintainers)` section mentions `flow-history`; `plugin.json` has `"version": "1.1.0"`.
   - Must not: break `test_definitions.py` (plugin and documentation drift tests).
   - Check: `test_acceptance_upgrade.py::test_ac_010_docs`.
   - WP: WP-03
@@ -198,7 +199,7 @@ All scenarios use a **source copy**: a temporary directory with this repo's `.cl
   2. `The commands wave-plan, open-wave and close-wave were removed: update scripts or CI that call them.`
   3. `Plans need '#### WP-NN' and '- AC-NNN ·' headings to give each agent only its slice (briefs); older plans still work with the whole document.`
   4. `install now updates the flow's own tests and CI copied from the template when they are intact, and keeps edited files with the new version in .claude/state/upgrade/.`
-- ACs: AC-007, AC-008 (through `notes_between` and `build_history`; the CLI wiring is WP-02's).
+- ACs: AC-007, AC-008, shared with WP-02 (this WP owns `notes_between` and `build_history`; WP-02 the CLI wiring).
 - Patterns to mirror: `.claude/bin/brief.py:1-20` (module docstring, constants, pure functions), `.claude/bin/test_brief.py:1-30` (unit test module).
 - Gotchas: `build_history` must hash the blob bytes (`git cat-file -p <blob>` or `git show <commit>:<path>` as bytes), not the working tree; walk all commits with `git log --format=%H --name-only` or `git rev-list --all` + `git ls-tree -r`; skip submodules; `git rev-parse --is-shallow-repository` prints `true` on a shallow clone; `fnmatch` on POSIX paths: `*` also matches `/`, so `.claude/bin/fixtures/*` is enough.
 - Imports: `fnmatch`, `hashlib`, `json`, `subprocess`, `pathlib`.
@@ -208,15 +209,15 @@ All scenarios use a **source copy**: a temporary directory with this repo's `.cl
 - Wave 2, `depends_on: ["WP-01"]`. Files: `.claude/bin/agentic.py`, `.claude/bin/test_agentic.py`, `.claude/flow-history.json`, `.claude-plugin/plugin.json`.
 - Implements `install` and `flow-history` as in §6; adds `--allow-dirty`; adds `.claude/bin/upgrade.py` to `INSTALL_GLOBS`; bumps the version to `1.1.0`; generates `.claude/flow-history.json` by running `flow-history` on this repo with its full history (`git fetch --depth=1000 origin main` first if the clone is shallow).
 - Consumes `upgrade.py` by implementation (WP-01).
-- ACs: AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-009.
+- ACs: AC-001 to AC-009 (AC-007 and AC-008 shared with WP-01).
 - Patterns to mirror: `agentic.py:926-1000` (`install`: keep its report shape and order), `agentic.py:1137-1139` (`sibling`), `test_agentic.py:708-735` (`InstallTests`).
-- Gotchas: the existing `InstallTests` target has nothing committed, so every file is untracked: the dirty guard uses `--untracked-files=no` and those tests keep passing; the guard runs before any write (settings, gitignore, record included); `.claude/state/` is created inside the target only when a file is kept; `validate` must run the **target's** freshly installed `agentic.py` with `CLAUDE_PROJECT_DIR=<target>` (as the `rules-sync` call at the end of `install` does); keep `install` readable — the decisions live in `upgrade.py`.
+- Gotchas: if this clone is shallow and cannot fetch (no network or no `origin`), generate `flow-history.json` in any full clone of `jagosar/agentic-flow` and copy it; never commit one built from a shallow history (the command refuses anyway); the existing `InstallTests` target has nothing committed, so every file is untracked: the dirty guard uses `--untracked-files=no` and those tests keep passing; the guard runs before any write (settings, gitignore, record included); `.claude/state/` is created inside the target only when a file is kept; `validate` must run the **target's** freshly installed `agentic.py` with `CLAUDE_PROJECT_DIR=<target>` (as the `rules-sync` call at the end of `install` does); keep `install` readable — the decisions live in `upgrade.py`.
 - Validation: `python3 -m unittest discover -s .claude/bin -p test_agentic.py`.
 
 #### WP-03 · Plugin command and docs
 - Wave 3, `depends_on: ["WP-02"]` (the docs cite `agentic.py flow-history`, which the drift test checks).
-- Files: `plugin/commands/init.md`, `docs/how-to/plugin.md`, `README.md`, `.claude/bin/test_definitions.py`.
-- `init.md`: allow `--allow-dirty`; explain exit 3 (uncommitted changes or a run in progress: commit/stash or stop first), the kept files under `.claude/state/upgrade/` and how to compare them, and the upgrade notes. `plugin.md`: a `## Update` section (same command for plugin installs and template repos; what is updated, kept, removed; the guards). `README.md`: one maintainer note (run `flow-history` and bump the version before a release). `test_definitions.py`: keep the init contract test; add `--allow-dirty` to it.
+- Files: `plugin/commands/init.md`, `docs/how-to/plugin.md`, `.claude/bin/test_definitions.py`.
+- `init.md`: allow `--allow-dirty` (in the arguments list and in `argument-hint`, line 3); explain exit 3 (uncommitted changes or a run in progress: commit/stash or stop first), the kept files under `.claude/state/upgrade/` and how to compare them, and the upgrade notes. `plugin.md`: rewrite its existing `## Update` section (same command for plugin installs and template repos; what is updated, kept, removed; the guards; the line-endings caveat of §11) and add to `## Publish a version (maintainers)` the step: run `python3 .claude/bin/agentic.py flow-history` and commit `.claude/flow-history.json` before bumping the version. `test_definitions.py`: keep the init contract test; add `--allow-dirty` to it.
 - ACs: AC-010.
 - Patterns to mirror: `plugin/commands/init.md:1-50` (tone, steps), `docs/how-to/plugin.md:1-60` (guide structure).
 - Gotchas: the plugin command may pass only the allowed flags; keep `Do not commit or push`.
@@ -232,9 +233,9 @@ All scenarios use a **source copy**: a temporary directory with this repo's `.cl
     {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/upgrade.py", ".claude/bin/test_upgrade.py"],
      "acs": ["AC-007", "AC-008"], "mirror": [".claude/bin/brief.py:1-20", ".claude/bin/test_brief.py:1-30"]},
     {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/agentic.py", ".claude/bin/test_agentic.py", ".claude/flow-history.json", ".claude-plugin/plugin.json"],
-     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-009"],
+     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-008", "AC-009"],
      "mirror": [".claude/bin/agentic.py:926-1000", ".claude/bin/agentic.py:1137-1139", ".claude/bin/test_agentic.py:708-735"]},
-    {"id": "WP-03", "wave": 3, "depends_on": ["WP-02"], "files": ["plugin/commands/init.md", "docs/how-to/plugin.md", "README.md", ".claude/bin/test_definitions.py"],
+    {"id": "WP-03", "wave": 3, "depends_on": ["WP-02"], "files": ["plugin/commands/init.md", "docs/how-to/plugin.md", ".claude/bin/test_definitions.py"],
      "acs": ["AC-010"], "mirror": ["plugin/commands/init.md:1-50", "docs/how-to/plugin.md:1-60"]}
   ]
 }
@@ -242,7 +243,7 @@ All scenarios use a **source copy**: a temporary directory with this repo's `.cl
 
 ## 9. Test strategy
 - Unit: `test_upgrade.py` (classification table, version ordering, notes, guard messages with a temporary git repo, `build_history` on a tiny repo); `test_agentic.py` keeps `InstallTests` green and adds the CLI wiring of `--allow-dirty` and `flow-history`.
-- Acceptance: `.claude/bin/test_acceptance_upgrade.py`, written first from AC-001…AC-010, red before the code. It builds the source copy and the targets of §8; it must not depend on this repo's git history (CI clones are shallow).
+- Acceptance: `.claude/bin/test_acceptance_upgrade.py`, written first from AC-001…AC-010, red before the code. Every commit in the tests uses `git -c user.name=t -c user.email=t@t commit` (`test_acceptance.py:262`), so they run on CI machines without a git identity. It builds the source copy and the targets of §8; it must not depend on this repo's git history (CI clones are shallow).
 - Regression: the whole suite (`verify.tests`) stays green.
 
 ## 10. Decisions
