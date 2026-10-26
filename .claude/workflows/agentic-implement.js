@@ -125,6 +125,8 @@ const seq = async (cmds, label) => {
 const step = (res, i) => (res && res.steps[i]) || null
 const ok = st => !!st && st.exit_code === 0
 const BLOCKING = new Set(['critical', 'high'])
+// Each agent reads the slice of architecture.md that `agentic.py briefs` wrote for it, not the whole document.
+const brief = id => `.claude/state/briefs/${id}.md`
 const REFUTE_CONFIDENCE = 0.7
 const WAVE_TAIL = ['verify', 'open-stage review']
 // Files that close-stage saw change for an ID ("WP-01: 2 file(s) changed: a, b"). Used to compare what an agent
@@ -215,10 +217,10 @@ async function documentStage(steps) {
 // caller closes it together with whatever comes next.
 async function launchWave(wave, wpIds, defectsByWp) {
   const reports = await parallel(wpIds.map(wp => () => {
-    let prompt = `Implement ${wp} according to architecture.md.`
+    let prompt = `Implement ${wp}. Your brief is ${brief(wp)}: the parts of architecture.md your package needs.`
     if (defectsByWp) {
       const attempt = (fixCount[wp] || 0) + 1
-      prompt = `Fix ${wp} according to architecture.md. The code already exists. These are the defects the judges (reviewer, QA and verification) attribute to your package, as JSON:\n` +
+      prompt = `Fix ${wp}. Your brief is ${brief(wp)}. The code already exists. These are the defects the judges (reviewer, QA and verification) attribute to your package, as JSON:\n` +
         `${JSON.stringify(defectsByWp[wp])}\nStay within the contract, do not touch other packages' files or the acceptance tests, and keep the acceptance tests of your criteria green.`
       if (attempt > 1) {
         prompt += `\nThis is attempt ${attempt} of ${plan.max_fix_cycles}: the previous one did not fix it. The defects it was given:\n${JSON.stringify((fixHistory[wp] || []).slice(-2, -1)[0])}\n` +
@@ -286,15 +288,16 @@ async function fixCycle(defects, opened) {
 // touching anything: that way a phase that already failed at the end is a "pre-existing failure" and is blamed on no
 // package. When resuming from a wave (start_wave), the original run's baseline is kept.
 phase('Prepare')
-const first = await seq(startWave === null ? ['pipeline-plan', 'baseline'] : ['pipeline-plan'], 'prepare')
+const first = await seq(startWave === null ? ['pipeline-plan', 'briefs', 'baseline'] : ['pipeline-plan', 'briefs'], 'prepare')
 const planStep = step(first, 0)
 const plan = ok(planStep) ? lastJson(planStep.output) : null
 if (!plan) return stop('prepare', 'pipeline-plan failed: the manifest is not valid', { gate: planStep })
+if (!ok(step(first, 1))) return stop('prepare', 'briefs failed', { gate: step(first, 1) })
 // Language rules (rules-sync): every agent that writes or judges code receives them in its prompt.
 const RULES = plan.rules && plan.rules.length ? ` Rules you must follow (language and common): ${plan.rules.join(', ')}.` : ''
 if (startWave === null) {
   phase('Baseline')
-  const base = step(first, 1)
+  const base = step(first, 2)
   run.baseline = base ? lastJson(base.output) : null
   if (!ok(base)) return stop('baseline', 'a verify command could not be run (it does not exist or timed out)', { gate: base })
 }
@@ -310,7 +313,7 @@ if (startWave === null && plan.acceptance) {
   } else {
     const open = step(await seq(['open-stage acceptance'], 'open-stage acceptance'), 0)
     if (!ok(open)) return stop('wave 0', 'the acceptance stage could not be opened', { gate: open })
-    let prompt = 'Write the acceptance tests according to architecture.md.'
+    let prompt = `Write the acceptance tests. Your brief is ${brief('AT')}: the parts of architecture.md they need.`
     for (let round = 0; ; round += 1) {
       const at = await safe(agent(prompt + RULES, { agentType: 'test-author', label: round ? 'test-author (revision)' : 'test-author', schema: AT_SCHEMA }), 'test-author')
       const state = at && at.status === 'DONE' ? 'done' : 'blocker'
@@ -323,7 +326,7 @@ if (startWave === null && plan.acceptance) {
       }
       if (!at || at.status !== 'DONE') return stop('wave 0', 'the test-author returned no usable report', { test_author: at })
       // Red is not enough: a test can fail only because the code does not exist yet and still pass an empty stub.
-      const audit = await safe(agent(`Audit the acceptance tests against architecture.md. The test-author reports this coverage, as JSON:\n${JSON.stringify(at.coverage)}` + RULES,
+      const audit = await safe(agent(`Audit the acceptance tests against the brief they were written from, ${brief('AT')}. The test-author reports this coverage, as JSON:\n${JSON.stringify(at.coverage)}` + RULES,
         { agentType: 'test-auditor', label: round ? 'test-auditor (revision)' : 'test-auditor', schema: FINDINGS_SCHEMA }), 'test-auditor')
       if (!audit) return stop('wave 0', 'the test-auditor returned no report')
       const weak = audit.findings.filter(f => BLOCKING.has(f.severity))
@@ -332,7 +335,7 @@ if (startWave === null && plan.acceptance) {
       if (round >= 1) return stop('wave 0', 'the acceptance tests are still weak after one revision: architecture.md or the criteria need review', { test_audit: run.test_audit })
       const reopen = step(await seq(['open-stage acceptance'], 'open-stage acceptance'), 0)
       if (!ok(reopen)) return stop('wave 0', 'the acceptance stage could not be reopened', { gate: reopen })
-      prompt = 'Revise the acceptance tests according to architecture.md. An independent auditor found these weak points, as JSON:\n' +
+      prompt = `Revise the acceptance tests (your brief is ${brief('AT')}). An independent auditor found these weak points, as JSON:\n` +
         `${JSON.stringify(weak)}\nStrengthen them: the tests of each criterion must fail against an empty or trivial implementation (a stub that returns nothing, ` +
         'None or a constant) and must cover the criterion\'s "must not". Keep them red for the right reason.'
     }

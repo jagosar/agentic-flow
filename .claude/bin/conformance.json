@@ -493,6 +493,16 @@
     "docs": true,
     "codemap": "docs/CODEMAP.md"
    }
+  },
+  {
+   "name": "briefs cannot be written",
+   "gate_fail": [
+    {
+     "prefix": "briefs",
+     "exit_code": 1,
+     "output": "boom"
+    }
+   ]
   }
  ]
 }
