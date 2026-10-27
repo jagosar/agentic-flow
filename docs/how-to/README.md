@@ -14,6 +14,8 @@
 | JetBrains | [jetbrains.md](jetbrains.md) | IntelliJ, PyCharm, WebStorm… | Not tested |
 | Web and iOS (cloud) | [web-ios.md](web-ios.md) | Starting or following work away from your machine | Not tested |
 | GitHub Actions | [ci-github-actions.md](ci-github-actions.md) | Automatic QA on every pull request | Not tested |
+| Onboarding | [onboarding.md](onboarding.md) | Bringing a repo into the flow, or an older flow up to date, with two real examples | **Tested** on copies of both example repos |
+| GitLab | [gitlab.md](gitlab.md) | The same, for repos hosted on GitLab, and the flow's tests in GitLab CI | Install and upgrade as in onboarding; the GitLab CI job and merge requests, not yet |
 | Plugin | [plugin.md](plugin.md) | Installing or updating the flow in an existing repo | **Tested** in a real session with `--plugin-dir`; from the marketplace, not yet |
 
 ## The flow in one minute
@@ -265,7 +267,7 @@ python3 -m unittest discover -s .claude/bin -p "test_*.py"
 node .claude/bin/test_workflow.mjs
 ```
 
-193 Python tests and 38 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+194 Python tests and 38 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 

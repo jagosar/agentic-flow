@@ -68,8 +68,9 @@ def agentic_subcommands():
 
 class AgentDefinitionTests(unittest.TestCase):
     def test_every_agent_has_a_contract(self):
-        self.assertEqual({p.stem for p in AGENTS_DIR.glob("*.md")}, set(AGENTS),
-                         "every new agent needs its contract in this test")
+        # The flow's agents must all be there; a project may add its own (a WP's "agent").
+        self.assertLessEqual(set(AGENTS), {p.stem for p in AGENTS_DIR.glob("*.md")},
+                             "every agent of the flow needs its definition and its contract in this test")
 
     def test_frontmatter_model_and_tools(self):
         for name, spec in AGENTS.items():
@@ -132,7 +133,8 @@ class AgentDefinitionTests(unittest.TestCase):
 
 class CommandAndWorkflowTests(unittest.TestCase):
     def test_commands_and_models(self):
-        self.assertEqual({p.stem for p in COMMANDS_DIR.glob("*.md")}, set(COMMANDS))
+        # The flow's commands must all be there; a project may add its own.
+        self.assertLessEqual(set(COMMANDS), {p.stem for p in COMMANDS_DIR.glob("*.md")})
         for name, model in COMMANDS.items():
             with self.subTest(command=name):
                 self.assertEqual(frontmatter(COMMANDS_DIR / f"{name}.md")[0].get("model"), model)

@@ -174,7 +174,8 @@ class GuardTests(Upgrade):
 
 class VersionTests(Upgrade):
     def first_line(self, record_version):
-        files = {} if record_version is None else {
+        # With no record, an old flow file stands for a repo created from the template.
+        files = {".claude/agents/qa.md": "OLD QA\n"} if record_version is None else {
             ".claude/agentic-install.json": json.dumps({"version": record_version, "files": {}})}
         t = self.target(files, f"v-{record_version}")
         r = self.install(t)
