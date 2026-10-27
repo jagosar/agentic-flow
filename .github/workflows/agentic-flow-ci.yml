@@ -20,12 +20,20 @@ concurrency:
 jobs:
   test:
     if: github.repository == 'jagosar/agentic-flow'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    # Windows is slower at starting processes and running git, and this suite is mostly subprocesses.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python: ["3.9", "3.12", "3.14"]
+        include:
+          - {os: windows-latest, python: "3.12"}
+          - {os: macos-latest, python: "3.12"}
+    defaults:
+      run:
+        shell: bash  # Git Bash on Windows, as Claude Code uses there
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,7 +49,16 @@ jobs:
       - name: Workflow scenarios (simulated agents)
         run: node .claude/bin/test_workflow.mjs
       - name: Guardrails, commands and definitions
-        run: python -m unittest discover -s .claude/bin -p "test_*.py" -v
+        run: |
+          set -o pipefail
+          python -m unittest discover -s .claude/bin -p "test_*.py" -v 2>&1 | tee "$RUNNER_TEMP/unittest.txt"
+      # The failures as one annotation, readable on the pull request and through the API without the full log.
+      - name: Failures as an annotation
+        if: failure()
+        run: |
+          detail=$(tr -d '\r' < "$RUNNER_TEMP/unittest.txt" | sed -n '/^=\{20,\}$/,/^Ran /p' | head -c 3500)
+          detail=${detail//'%'/'%25'}
+          echo "::error title=unittest failures::${detail//$'\n'/'%0A'}"
 
   plugin:
     if: github.repository == 'jagosar/agentic-flow'

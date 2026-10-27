@@ -48,7 +48,7 @@ class Upgrade(unittest.TestCase):
             shutil.copytree(ROOT / rel, src / rel, dirs_exist_ok=True)
         shutil.copytree(ROOT / ".claude/bin", src / ".claude/bin", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copy(ROOT / ".claude/settings.json", src / ".claude/settings.json")
-        plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
+        plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
         write(src, {".claude-plugin/plugin.json": json.dumps(dict(plugin, version="1.1.0"))})
         self.history(src, history or {})
         return src
@@ -67,7 +67,7 @@ class Upgrade(unittest.TestCase):
 
     def install(self, target, *flags, src=None):
         return subprocess.run([sys.executable, str((src or self.src) / ".claude/bin/agentic.py"), "install",
-                               str(target), *flags], capture_output=True, text=True, env=self.env)
+                               str(target), *flags], capture_output=True, text=True, env=self.env, encoding="utf-8", errors="replace")
 
     @staticmethod
     def listed(out, kind):
@@ -95,13 +95,13 @@ class IntactAndEditedTests(Upgrade):
         self.assertTrue(self.same_as_source(t, ".claude/agents/implementer.md"))
         self.assertIn(".claude/agents/implementer.md", self.listed(r.stdout, "updated"))
         self.assertNotIn(".claude/agents/implementer.md", self.listed(r.stdout, "modified by you (left alone)"))
-        self.assertEqual(json.loads((t / ".claude/agentic-install.json").read_text())["version"], "1.1.0")
+        self.assertEqual(json.loads((t / ".claude/agentic-install.json").read_text(encoding="utf-8"))["version"], "1.1.0")
 
     def test_ac_002_edited_file_kept(self):
         t = self.target({".claude/agents/qa.md": "MY OWN QA\n"})
         r = self.install(t)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual((t / ".claude/agents/qa.md").read_text(), "MY OWN QA\n")
+        self.assertEqual((t / ".claude/agents/qa.md").read_text(encoding="utf-8"), "MY OWN QA\n")
         copy = t / ".claude/state/upgrade/.claude/agents/qa.md"
         self.assertEqual(copy.read_bytes(), (self.src / ".claude/agents/qa.md").read_bytes())
         self.assertIn(".claude/agents/qa.md", self.listed(r.stdout, "modified by you (left alone)"))
@@ -116,7 +116,7 @@ class IntactAndEditedTests(Upgrade):
         r = self.install(t)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(self.same_as_source(t, ".claude/bin/test_agentic.py"))
-        self.assertEqual((t / ".claude/bin/test_brief.py").read_text(), "MINE\n")
+        self.assertEqual((t / ".claude/bin/test_brief.py").read_text(encoding="utf-8"), "MINE\n")
         self.assertTrue((t / ".claude/state/upgrade/.claude/bin/test_brief.py").exists())
         self.assertTrue((self.src / ".github/workflows/agentic-flow-ci.yml").exists(), "the source ships it")
         self.assertFalse((t / ".github/workflows/agentic-flow-ci.yml").exists(), "never added where absent")
@@ -129,7 +129,7 @@ class IntactAndEditedTests(Upgrade):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertFalse((t / ".claude/workflows/agentic-wave.js").exists())
         self.assertIn(".claude/workflows/agentic-wave.js", self.listed(r.stdout, "removed"))
-        self.assertEqual((t / ".claude/commands/qa.md").read_text(), "USER QA CMD\n")
+        self.assertEqual((t / ".claude/commands/qa.md").read_text(encoding="utf-8"), "USER QA CMD\n")
         self.assertNotIn(".claude/commands/qa.md", self.listed(r.stdout, "removed"))
 
 
@@ -137,7 +137,7 @@ class GuardTests(Upgrade):
     def dirty_target(self, name):
         self.history(self.src, {".claude/agents/implementer.md": ["OLD IMPLEMENTER\n"]})
         t = self.target({".claude/agents/implementer.md": "OLD IMPLEMENTER\n"}, name)
-        (t / ".claude/agents/implementer.md").write_text("EDITED\n")
+        (t / ".claude/agents/implementer.md").write_text("EDITED\n", encoding="utf-8")
         return t
 
     def test_ac_005_dirty_and_not_git(self):
@@ -147,7 +147,7 @@ class GuardTests(Upgrade):
         self.assertIn("uncommitted: .claude/agents/implementer.md", r.stderr)
         self.assertFalse((t / ".claude/agentic-install.json").exists())
         self.assertFalse((t / ".claude/bin/agentic.py").exists(), "nothing is written before refusing")
-        self.assertEqual((t / ".claude/agents/implementer.md").read_text(), "EDITED\n")
+        self.assertEqual((t / ".claude/agents/implementer.md").read_text(encoding="utf-8"), "EDITED\n")
         self.assertEqual(self.install(t, "--allow-dirty").returncode, 0)
         dry = self.dirty_target("dry")
         r = self.install(dry, "--dry-run")
@@ -168,7 +168,7 @@ class GuardTests(Upgrade):
             self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
             self.assertIn("a run is in progress (WP-01)", r.stderr)
             self.assertIn("agentic.py stop", r.stderr)
-        ledger.write_text(json.dumps({"WP-01": {"state": "stopped"}}))
+        ledger.write_text(json.dumps({"WP-01": {"state": "stopped"}}), encoding="utf-8")
         self.assertEqual(self.install(t).returncode, 0)
 
 
@@ -219,13 +219,13 @@ class FlowHistoryTests(Upgrade):
         (src / ".claude/workflows/old.js").unlink()
         commit(src, "c")
         r = subprocess.run([sys.executable, str(src / ".claude/bin/agentic.py"), "flow-history"], cwd=src,
-                           capture_output=True, text=True, env=self.env)
+                           capture_output=True, text=True, env=self.env, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         summary = json.loads(r.stdout.strip().splitlines()[-1])
         self.assertIn("paths", summary)
         self.assertIn("hashes", summary)
-        data = json.loads((src / ".claude/flow-history.json").read_text())
-        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=src, capture_output=True, text=True).stdout.strip()
+        data = json.loads((src / ".claude/flow-history.json").read_text(encoding="utf-8"))
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=src, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
         self.assertEqual(data["generated_from"], head)
         self.assertTrue({sha("A\n"), sha("B\n")} <= set(data["files"][".claude/agents/qa.md"]))
         self.assertIn(sha("X\n"), data["files"][".claude/workflows/old.js"])
@@ -233,7 +233,7 @@ class FlowHistoryTests(Upgrade):
         clone = self.tmp / "shallow"
         subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{src}", str(clone)], check=True, capture_output=True)
         r = subprocess.run([sys.executable, str(clone / ".claude/bin/agentic.py"), "flow-history"], cwd=clone,
-                           capture_output=True, text=True, env=self.env)
+                           capture_output=True, text=True, env=self.env, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 1)
         self.assertIn("needs the full git history", r.stderr)
 
@@ -255,7 +255,7 @@ class DocsTests(unittest.TestCase):
         for token in (".claude/state/upgrade/", "--allow-dirty", "template"):
             self.assertIn(token, update)
         self.assertIn("flow-history", self.section(guide, "## Publish a version (maintainers)"))
-        self.assertEqual(json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["version"], "1.1.0")
+        self.assertEqual(json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"], "1.1.1")
 
 
 if __name__ == "__main__":

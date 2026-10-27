@@ -10,7 +10,7 @@ Before you start, meet the [requirements](README.md#requirements) and [install t
 - The Claude app for macOS, Windows or Linux (beta), signed in to a Pro, Max, Team or Enterprise plan.
 - **Dynamic workflows enabled** (on Pro, in `/config`). The template already sets `"enableWorkflows": true` in `.claude/settings.json`.
 - **Optionally, the CLI installed separately**, for the fallback mode. The app ships its own Claude Code, but does not put `claude` on the `PATH`.
-- On Windows, use the **WSL** environment: `agentic.py` needs POSIX.
+- On Windows, install Git for Windows and check that `python3` works ([details](README.md#windows)), or use the **WSL** environment.
 
 ## 1. Open a session
 

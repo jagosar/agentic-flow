@@ -31,7 +31,7 @@ class Repo:
                 p.unlink()
                 continue
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text)
+            p.write_text(text, encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=self.dir, check=True)
         subprocess.run(GIT + ["commit", "-qm", "c"], cwd=self.dir, check=True)
 
@@ -82,8 +82,8 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(upgrade.guard_problems(plain, ["a.md"]), ["not a git repository"])
 
     def test_tracked_changes_block_untracked_do_not(self):
-        (self.repo.dir / "a.md").write_text("y\n")
-        (self.repo.dir / "new.md").write_text("z\n")
+        (self.repo.dir / "a.md").write_text("y\n", encoding="utf-8")
+        (self.repo.dir / "new.md").write_text("z\n", encoding="utf-8")
         self.assertEqual(upgrade.guard_problems(self.repo.dir, ["a.md", "new.md"]), ["uncommitted: a.md"])
         self.assertEqual(upgrade.guard_problems(self.repo.dir, ["new.md"]), [])
 
@@ -91,10 +91,21 @@ class GuardTests(unittest.TestCase):
         state = self.repo.dir / ".claude/state"
         state.mkdir(parents=True)
         (state / "ledger.json").write_text(json.dumps({"_stages": {"state": "running"}, "QA": {"state": "running"},
-                                                       "WP-01": {"state": "done"}}))
+                                                       "WP-01": {"state": "done"}}), encoding="utf-8")
         problems = upgrade.guard_problems(self.repo.dir, [])
         self.assertEqual(len(problems), 1)
         self.assertIn("a run is in progress (QA)", problems[0])
+
+    def test_an_unreadable_ledger_blocks(self):
+        (self.repo.dir / ".claude/state/ledger.json").mkdir(parents=True)  # reading it raises OSError on every system
+        self.assertEqual(upgrade.guard_problems(self.repo.dir, []),
+                         ["the run state cannot be read: stop any run and try again"])
+
+    def test_a_corrupt_ledger_does_not_block(self):
+        state = self.repo.dir / ".claude/state"
+        state.mkdir(parents=True)
+        (state / "ledger.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual(upgrade.guard_problems(self.repo.dir, []), [])
 
 
 class HistoryTests(unittest.TestCase):
@@ -107,8 +118,27 @@ class HistoryTests(unittest.TestCase):
         data = upgrade.build_history(repo.dir, [".claude/agents/*.md", ".claude/workflows/*.js"])
         self.assertEqual(data["files"], {".claude/agents/qa.md": sorted([sha("A\n"), sha("B\n")]),
                                          ".claude/workflows/old.js": [sha("X\n")]})
-        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo.dir, capture_output=True, text=True).stdout.strip()
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo.dir, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
         self.assertEqual(data["generated_from"], head)
+
+    def test_crlf_contents_hash_like_lf(self):
+        repo = Repo()
+        self.addCleanup(shutil.rmtree, repo.dir, ignore_errors=True)
+        (repo.dir / ".claude/agents").mkdir(parents=True)
+        (repo.dir / ".claude/agents/qa.md").write_bytes(b"A\r\n")
+        subprocess.run(["git", "-c", "core.autocrlf=false", "add", "-A"], cwd=repo.dir, check=True)  # keep the CRLF blob
+        subprocess.run(GIT + ["-c", "core.autocrlf=false", "commit", "-qm", "c"], cwd=repo.dir, check=True)
+        data = upgrade.build_history(repo.dir, [".claude/agents/*.md"])
+        self.assertEqual(data["files"], {".claude/agents/qa.md": [sha("A\n")]})
+
+    def test_git_text_mode_is_utf8_and_binary_mode_stays_binary(self):
+        with mock.patch.object(upgrade.subprocess, "run") as run:
+            upgrade.git(".", "status")
+            upgrade.git(".", "cat-file", "--batch", input=b"x\n", text=False)
+        text_kw, bytes_kw = run.call_args_list[0][1], run.call_args_list[1][1]
+        self.assertEqual((text_kw["text"], text_kw["encoding"]), (True, "utf-8"))
+        self.assertFalse(bytes_kw["text"])
+        self.assertNotIn("encoding", bytes_kw)
 
     def test_refuses_without_git(self):
         plain = Path(tempfile.mkdtemp())
@@ -121,9 +151,9 @@ class HistoryTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         self.assertEqual(upgrade.load_history(tmp), {})
         (tmp / ".claude").mkdir()
-        (tmp / ".claude/flow-history.json").write_text("not json")
+        (tmp / ".claude/flow-history.json").write_text("not json", encoding="utf-8")
         self.assertEqual(upgrade.load_history(tmp), {})
-        (tmp / ".claude/flow-history.json").write_text(json.dumps({"files": {"a": ["h"]}}))
+        (tmp / ".claude/flow-history.json").write_text(json.dumps({"files": {"a": ["h"]}}), encoding="utf-8")
         self.assertEqual(upgrade.load_history(tmp), {"a": {"h"}})
 
 

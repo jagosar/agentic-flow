@@ -15,7 +15,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from test_agentic import SCRIPT, Repo
+from test_agentic import PY, SCRIPT, Repo, testutil
 
 BIN = SCRIPT.parent
 WORKFLOWS = SCRIPT.parents[1] / "workflows"
@@ -120,7 +120,7 @@ class ConformanceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        r = subprocess.run(["node", str(BIN / "test_workflow.mjs"), "--dump"], capture_output=True, text=True)
+        r = subprocess.run(["node", str(BIN / "test_workflow.mjs"), "--dump"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stdout + r.stderr
         cls.workflow = json.loads(r.stdout)
 
@@ -181,24 +181,26 @@ class EngineTests(unittest.TestCase):
         for name, (data, expected) in cases.items():
             with self.subTest(case=name):
                 f = tmp / "r.json"
-                f.write_text(json.dumps(data))
+                f.write_text(json.dumps(data), encoding="utf-8")
                 self.assertEqual(agentic.structured_report(f, schema), expected)
-        f.write_text("not json")
+        f.write_text("not json", encoding="utf-8")
         self.assertIsNone(agentic.structured_report(f, schema))
         self.assertIsNone(agentic.structured_report(tmp / "missing.json", schema))
 
 
 FAKE_CLAUDE = textwrap.dedent("""\
-    #!/usr/bin/env python3
-    import json, os, sys
+    import json, os, sys, time
     argv = sys.argv[1:]
+    prompt = sys.stdin.buffer.read().decode("utf-8")
     agent = argv[argv.index("--agent") + 1]
     ident = os.environ.get("AGENTIC_WP")
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], "calls.jsonl"), "a") as f:
-        f.write(json.dumps({"agent": agent, "id": ident, "argv": argv}) + "\\n")
+    # One file per call: parallel appends to a shared file can lose a line on Windows.
+    t = time.time_ns()
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{t}-{os.getpid()}.json"), "w", encoding="utf-8") as f:
+        json.dump({"t": t, "agent": agent, "id": ident, "argv": argv, "prompt": prompt}, f)
     def write(rel):
         os.makedirs(os.path.dirname(rel) or ".", exist_ok=True)
-        open(rel, "w").write("x = 1\\n")
+        open(rel, "w", encoding="utf-8").write("x = 1\\n")
     report = {}
     if agent == "implementer":
         write({"WP-01": "src/a.py", "WP-02": "src/b/x.py", "WP-03": "src/c.py"}[ident])
@@ -216,7 +218,7 @@ FAKE_CLAUDE = textwrap.dedent("""\
 
 E2E_MANIFEST = {
     "allow_bash": ["Bash(python3 -m unittest:*)"],
-    "acceptance": {"files": ["acceptance/"], "command": "python3 acc.py"},
+    "acceptance": {"files": ["acceptance/"], "command": f"{PY} acc.py"},
     "work_packages": [
         {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/a.py"], "acs": ["AC-001"]},
         {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["src/b/"]},
@@ -231,10 +233,10 @@ class RunPipelineEndToEndTests(unittest.TestCase):
     def setUp(self):
         self.repo = Repo(E2E_MANIFEST)
         self.bin = Path(tempfile.mkdtemp(prefix="fake-claude-"))
-        (self.bin / "claude").write_text(FAKE_CLAUDE)
-        (self.bin / "claude").chmod(0o755)
+        (self.bin / "claude_fake.py").write_text(FAKE_CLAUDE, encoding="utf-8")
         self.logs = Path(tempfile.mkdtemp(prefix="fake-logs-"))
-        self.repo.env.update(PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}", FAKE_LOG_DIR=str(self.logs))
+        self.repo.env.update(AGENTIC_CLAUDE=testutil.claude_command(self.bin / "claude_fake.py"),
+                             FAKE_LOG_DIR=str(self.logs))
         # red until the three packages exist
         self.repo.write("acc.py", "import os, sys\nsys.exit(0 if all(os.path.exists(p) for p in ('src/a.py', 'src/b/x.py', 'src/c.py')) else 1)\n")
         subprocess.run(["git", "add", "-A"], cwd=self.repo.dir, check=True)
@@ -246,10 +248,11 @@ class RunPipelineEndToEndTests(unittest.TestCase):
         shutil.rmtree(self.logs, ignore_errors=True)
 
     def calls(self):
-        return [json.loads(line) for line in (self.logs / "calls.jsonl").read_text().splitlines()]
+        found = [json.loads(f.read_text(encoding="utf-8")) for f in self.logs.glob("call-*.json")]
+        return sorted(found, key=lambda c: c["t"])
 
     def saved(self):
-        return json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text())
+        return json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))
 
     def test_a_whole_run_goes_to_ok(self):
         r = self.repo.run("run-pipeline")
@@ -264,9 +267,9 @@ class RunPipelineEndToEndTests(unittest.TestCase):
         self.assertEqual(order[1], "test-auditor")
         self.assertEqual(sorted(order[2:4]), ["implementer", "implementer"])
         self.assertEqual(order[4:], ["implementer", "reviewer", "qa"], "wave 2, then the judges")
-        state = json.loads((self.repo.dir / ".claude/state/pipeline.json").read_text())
+        state = json.loads((self.repo.dir / ".claude/state/pipeline.json").read_text(encoding="utf-8"))
         self.assertEqual(state["completed_waves"], [1, 2])
-        ledger = json.loads((self.repo.dir / ".claude/state/ledger.json").read_text())
+        ledger = json.loads((self.repo.dir / ".claude/state/ledger.json").read_text(encoding="utf-8"))
         self.assertTrue(all(ledger[i]["state"] in ("done", "pass") for i in ("WP-01", "WP-02", "WP-03", "AT", "QA", "REVIEW")), ledger)
 
     def test_every_agent_runs_with_its_schema_identity_and_tools(self):
@@ -296,9 +299,10 @@ class RunPipelineEndToEndTests(unittest.TestCase):
     def test_resume_continues_after_the_waves_that_finished(self):
         self.repo.run("run-pipeline", env={"FAKE_ROGUE": "1"})  # wave 1 fails: nothing completed
         state = self.repo.dir / ".claude/state/pipeline.json"
-        self.assertFalse(state.exists() and json.loads(state.read_text())["completed_waves"])
-        state.write_text(json.dumps({"completed_waves": [1]}))
-        (self.logs / "calls.jsonl").unlink()
+        self.assertFalse(state.exists() and json.loads(state.read_text(encoding="utf-8"))["completed_waves"])
+        state.write_text(json.dumps({"completed_waves": [1]}), encoding="utf-8")
+        for f in self.logs.glob("call-*.json"):
+            f.unlink()
         self.repo.write("src/a.py")
         self.repo.write("src/b/x.py")
         r = self.repo.run("run-pipeline", "--resume")

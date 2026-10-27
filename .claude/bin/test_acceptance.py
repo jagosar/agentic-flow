@@ -17,7 +17,7 @@ from pathlib import Path
 BIN = Path(__file__).resolve().parent
 ROOT = BIN.parents[1]
 sys.path.insert(0, str(BIN))
-from test_agentic import Repo  # noqa: E402
+from test_agentic import PY, Repo, testutil  # noqa: E402
 
 SPEC = json.loads((ROOT / ".claude" / "workflows" / "pipeline-spec.json").read_text(encoding="utf-8"))
 
@@ -30,7 +30,7 @@ def manifest(wps=2, wave2=False):
     if wps == 3:
         items.append({"id": "WP-03", "wave": 2, "depends_on": ["WP-01"], "files": ["src/c.py"], "acs": ["AC-003"]})
     return {"allow_bash": ["Bash(python3 -m unittest:*)"],
-            "acceptance": {"files": ["acceptance/"], "command": "python3 acc.py"}, "work_packages": items}
+            "acceptance": {"files": ["acceptance/"], "command": f"{PY} acc.py"}, "work_packages": items}
 
 
 def document(m, contract_extra=""):
@@ -53,13 +53,15 @@ def document(m, contract_extra=""):
 FENCED = "```text\n## 10. Decisions\n#### WP-02 · fake\nFENCED-LINE\n```\n"
 
 FAKE_CLAUDE = textwrap.dedent("""\
-    #!/usr/bin/env python3
-    import json, os, sys
+    import json, os, sys, time
     argv = sys.argv[1:]
+    prompt = sys.stdin.buffer.read().decode("utf-8")
     agent = argv[argv.index("--agent") + 1]
     ident = os.environ.get("AGENTIC_WP")
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], "calls.jsonl"), "a") as f:
-        f.write(json.dumps({"agent": agent, "id": ident, "argv": argv}) + "\\n")
+    # One file per call: parallel appends to a shared file can lose a line on Windows.
+    t = time.time_ns()
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{t}-{os.getpid()}.json"), "w", encoding="utf-8") as f:
+        json.dump({"t": t, "agent": agent, "id": ident, "argv": argv, "prompt": prompt}, f)
     mode = os.environ.get("FAKE_MODE", "structured")
     if mode == "text":
         print(json.dumps({"result": "STATUS: DONE"}))
@@ -68,7 +70,7 @@ FAKE_CLAUDE = textwrap.dedent("""\
         files = {"WP-01": "src/a.py", "WP-02": "src/b/x.py", "WP-03": "src/c.py"}
         if os.environ.get("FAKE_WRITE"):
             os.makedirs(os.path.dirname(files[ident]), exist_ok=True)
-            open(files[ident], "w").write("x = 1\\n")
+            open(files[ident], "w", encoding="utf-8").write("x = 1\\n")
         report = {"status": "DONE", "wp": ident, "files": [], "checks": [], "internal_decisions": [], "blocker": None}
     elif agent == "test-author":
         report = {"status": "DONE", "coverage": [{"ac": "AC-001", "tests": ["t"]}], "blocker": None}
@@ -87,7 +89,7 @@ FAKE_CLAUDE = textwrap.dedent("""\
 
 
 class Project(Repo):
-    """A temporary git repo with an architecture.md, the workflows folder (the spec) and a fake `claude` on PATH."""
+    """A temporary git repo with an architecture.md, the workflows folder (the spec) and a fake `claude` (AGENTIC_CLAUDE)."""
 
     def __init__(self, m=None, doc=None):
         m = m or manifest()
@@ -95,14 +97,14 @@ class Project(Repo):
         (self.dir / "architecture.md").write_text(doc if doc is not None else document(m), encoding="utf-8")
         shutil.copytree(ROOT / ".claude" / "workflows", self.dir / ".claude" / "workflows", dirs_exist_ok=True)
         self.fake_bin = Path(tempfile.mkdtemp(prefix="fake-claude-"))
-        (self.fake_bin / "claude").write_text(FAKE_CLAUDE)
-        (self.fake_bin / "claude").chmod(0o755)
+        (self.fake_bin / "claude_fake.py").write_text(FAKE_CLAUDE, encoding="utf-8")
         self.logs = Path(tempfile.mkdtemp(prefix="fake-logs-"))
-        self.env.update(PATH=f"{self.fake_bin}{os.pathsep}{os.environ['PATH']}", FAKE_LOG_DIR=str(self.logs))
+        self.env.update(AGENTIC_CLAUDE=testutil.claude_command(self.fake_bin / "claude_fake.py"),
+                        FAKE_LOG_DIR=str(self.logs))
 
     def calls(self):
-        f = self.logs / "calls.jsonl"
-        return [json.loads(line) for line in f.read_text().splitlines()] if f.exists() else []
+        found = [json.loads(f.read_text(encoding="utf-8")) for f in self.logs.glob("call-*.json")]
+        return sorted(found, key=lambda c: c["t"])
 
     def files(self):
         return {p.relative_to(self.dir).as_posix() for p in self.dir.rglob("*")
@@ -193,7 +195,7 @@ class CommandTests(unittest.TestCase):
         r = self.p.run("seq", "pipeline-plan", "+", "briefs")
         steps = json.loads(r.stdout)["steps"]
         self.assertEqual([s["exit_code"] for s in steps], [0, 0])
-        (self.p.dir / "architecture.md").write_text("# no manifest\n")
+        (self.p.dir / "architecture.md").write_text("# no manifest\n", encoding="utf-8")
         self.assertEqual(self.p.run("briefs").returncode, 1)
 
     def test_ac_007_single_report_format(self):
@@ -204,7 +206,7 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(json.loads(argv[argv.index("--json-schema") + 1]), SPEC["schemas"]["implementer"])
         r = self.p.run("run-wave", "1", env={"FAKE_MODE": "text"})
         self.assertEqual(r.returncode, 3, r.stdout)
-        ledger = json.loads((self.p.dir / ".claude/state/ledger.json").read_text())
+        ledger = json.loads((self.p.dir / ".claude/state/ledger.json").read_text(encoding="utf-8"))
         self.assertEqual(ledger["WP-01"]["state"], "error")
         self.assertIn("NO REPORT", ledger["WP-01"]["note"])
 
@@ -212,11 +214,10 @@ class CommandTests(unittest.TestCase):
         runs = self.p.dir / ".claude/state/runs"
         runs.mkdir(parents=True)
         finding = {"severity": "high", "wp": "WP-02", "file": "src/b/x.py", "problem": "p", "evidence": "e"}
-        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": [finding]}}))
+        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": [finding]}}), encoding="utf-8")
         r = self.p.run("run-wave", "1", "WP-02", "--fix")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        argv = self.p.calls()[-1]["argv"]
-        prompt = argv[argv.index("-p") + 1]
+        prompt = self.p.calls()[-1]["prompt"]
         self.assertTrue(prompt.startswith("Fix WP-02."), prompt)
         self.assertIn('"problem":"p"', prompt)
         n = len(self.p.calls())
@@ -236,7 +237,7 @@ class CommandTests(unittest.TestCase):
     def test_ac_010_usage(self):
         r = self.p.run("run-wave", "1", env={"FAKE_MODE": "structured"})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        records = [json.loads(x) for x in (self.p.dir / ".claude/state/usage.jsonl").read_text().splitlines()]
+        records = [json.loads(x) for x in (self.p.dir / ".claude/state/usage.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(records), 2)
         self.assertIn({"id": "WP-01", "agent": "implementer", "label": "WP-01", "input": 120, "cache_read": 300,
                        "output": 50, "cost_usd": 0.01, "turns": 3}, records)
@@ -247,7 +248,7 @@ class CommandTests(unittest.TestCase):
     def test_ac_010_usage_missing_fields(self):
         r = self.p.run("run-wave", "1", env={"FAKE_MODE": "nousage"})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        rec = json.loads((self.p.dir / ".claude/state/usage.jsonl").read_text().splitlines()[0])
+        rec = json.loads((self.p.dir / ".claude/state/usage.jsonl").read_text(encoding="utf-8").splitlines()[0])
         self.assertEqual((rec["input"], rec["cache_read"], rec["output"], rec["cost_usd"]), (0, 0, 0, None))
         self.assertIn("$?", self.p.run("status").stdout)
 
@@ -262,21 +263,21 @@ class PipelineUsageTests(unittest.TestCase):
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"], cwd=p.dir, check=True)
         r = p.run("run-pipeline", env={"FAKE_MODE": "structured", "FAKE_WRITE": "1"})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        result = json.loads((p.dir / ".claude/state/runs/workflow-result.json").read_text())
+        result = json.loads((p.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))
         usage = result["usage"]
         self.assertEqual(len(usage["by_agent"]), 7, "test-author, auditor, 3 implementers, reviewer, qa")
         self.assertEqual(usage["total"]["output"], 50 * 7)
         for call in p.calls():
             if call["agent"] != "implementer":
                 continue
-            prompt = call["argv"][call["argv"].index("-p") + 1]
+            prompt = call["prompt"]
             self.assertIn(f".claude/state/briefs/{call['id']}.md", prompt)
 
 
 class PromptTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        r = subprocess.run(["node", str(BIN / "test_workflow.mjs"), "--dump"], capture_output=True, text=True)
+        r = subprocess.run(["node", str(BIN / "test_workflow.mjs"), "--dump"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stdout + r.stderr
         cls.dump = json.loads(r.stdout)
 

@@ -245,7 +245,7 @@ flowchart LR
     C -->|yes| A["Fallback mode"]
     C -->|no| X(["Enable Dynamic workflows<br/>or install the CLI"])
     W --> W1["deterministic script, in the background<br/>agents via parallel() and JSON Schema<br/>identity: claim + agent_id<br/>stopped from /workflows"]
-    A --> A1["agentic.py run-pipeline in the background<br/>one claude -p process per agent<br/>identity: AGENTIC_WP<br/>stop kills the process group"]
+    A --> A1["agentic.py run-pipeline in the background<br/>one claude -p process per agent<br/>identity: AGENTIC_WP<br/>stop kills the process and its children"]
     W1 --> L[("ledger.md")]
     A1 --> L
 ```

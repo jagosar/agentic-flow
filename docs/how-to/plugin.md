@@ -90,7 +90,7 @@ What else it does:
 - **Version and notes.** The first line shows the jump (`agentic-flow 1.0.0 -> 1.1.0`), and `upgrade notes:` lists what changed that may affect you (removed commands, for example).
 - **Your plan.** If the repo has an `architecture.md`, it validates it with the new version and tells you, without failing the upgrade.
 
-On Windows with `core.autocrlf=true`, line endings change the files' bytes, so intact files look edited: they are kept (safe), not updated. Compare them or use `--force`.
+Line endings do not count: a flow file checked out with CRLF (Windows with `core.autocrlf=true`) is recognised as intact and updated. Before 1.1.1 such files looked edited and were kept.
 
 ## Try it without installing
 

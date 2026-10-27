@@ -62,9 +62,13 @@ Models are set by alias and cannot be changed: `validate` fails if any piece dec
    ```
 
 3. **`git` and `python3` 3.9 or later.**
-4. **macOS, Linux or WSL 2.** Claude Code runs on native Windows, but `agentic.py` uses `fcntl`, which only exists on POSIX. On Windows, work inside WSL.
+4. **macOS, Linux, WSL 2 or Windows with Git for Windows.** On Windows, see [below](#windows).
 
 Check your setup:
+
+```bash
+git --version && python3 --version
+```
 
 ```bash
 claude --version
@@ -83,6 +87,16 @@ python3 --version
 ```
 
 You should see a Claude Code version, `claude doctor` without errors, `"authMethod": "claude.ai"` with your `subscriptionType`, and Python 3.9 or later.
+
+### Windows
+
+Since 1.1.1 the flow's own code runs on native Windows, and its whole test suite passes on Windows, macOS and Linux in CI. Nobody has run a full `/implement` on Windows yet: if you are the first, tell us what happened.
+
+1. **Git for Windows.** Claude Code runs hooks and its Bash tool in Git Bash when Git for Windows is installed. Without it, the flow's guardrail hook never runs, so do not use the flow there.
+2. **A `python3` command.** The hook and the agents still call `python3` (the next release removes this requirement). The python.org installer only creates `python` and `py`; the Microsoft Store Python creates `python3`. Check it in Git Bash: `python3 --version` must print 3.9 or later. If it prints `Python was not found` instead, that is Windows' Store shortcut: install Python from the Store, or turn the shortcut off in **Settings → Apps → Advanced app settings → App execution aliases** and use WSL.
+3. **Or WSL 2.** Inside WSL everything works as on Linux.
+
+Line endings are not a problem: an upgrade recognises a flow file checked out with CRLF (`core.autocrlf=true`) as intact.
 
 ## Install the flow in a project
 
@@ -250,6 +264,8 @@ The messages below are quoted as the flow prints them (the first words are enoug
 | `bypassing git hooks ... is not allowed` | `--no-verify`, `commit -n` or `core.hooksPath` | Fix what makes the git hook fail |
 | A package returns `BLOCKER` about its acceptance tests | A test is wrong and the package cannot touch it | Check the diagnosis, fix the test, and resume with `/implement <wave>` |
 | Every wave has a single package | The architect chose real layers | Ask for "contracts first" |
+| `python3: command not found` or `Python was not found` (Windows) | There is no `python3` command, or it is the Store shortcut | See [Windows](#windows), or work inside WSL |
+| `No module named 'fcntl'` (Windows) | A flow older than 1.1.1 | Upgrade the flow (`/agentic-flow:init` or `agentic.py install`) |
 | `/implement` uses the fallback mode on Pro | Workflows are not enabled | Enable them in `/config` (Dynamic workflows) or with `"enableWorkflows": true` |
 | The workflow stops to ask permission for a command | Rules missing in `settings.local.json` | Run `agentic.py sync-permissions`, or choose "always allow" the first time |
 
@@ -267,7 +283,7 @@ python3 -m unittest discover -s .claude/bin -p "test_*.py"
 node .claude/bin/test_workflow.mjs
 ```
 
-194 Python tests and 38 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+225 Python tests and 38 workflow scenarios with simulated agents, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 
