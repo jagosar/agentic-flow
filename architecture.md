@@ -1,115 +1,94 @@
-# Architecture: the flow on Windows (with Git for Windows) and macOS
-Type: change · Size: large
+# Architecture: the flow on Windows and macOS — delivery A (portable internals, no visible change)
+Type: refactor · Size: standard
 
 ## 1. Goal
-The flow only runs on Linux and macOS today: `agentic.py` imports `fcntl` (absent on Windows), kills processes with `os.killpg`, calls Python as `python3` everywhere (on Windows it is `python` or `py`), runs `npm`/`claude` without resolving `.cmd` files, reads and writes text with the platform's default encoding, and nothing tests it outside Ubuntu. This change makes it run on native Windows with Git for Windows — what Claude Code recommends there, and what runs hooks and the Bash tool in Git Bash — with the same guardrails, and proves it with CI on Windows and macOS. Without Git Bash the flow refuses to start instead of running without guardrails.
+The flow only runs on Linux and macOS today: `agentic.py` imports `fcntl` (absent on Windows), kills processes with `os.killpg`, runs `npm`/`claude` without resolving `.cmd` files, reads and writes text with the platform's default encoding, and nothing tests it outside Ubuntu. Native Windows support is delivered in **two steps**, each one undoable on its own. This document is **delivery A**: the internals become portable and CI proves them on Linux, macOS and Windows, **without changing anything a user sees** — same `python3` commands, same hook, same `settings.json`. Delivery B (the `sh` launcher and the migration of the hook, end of §11) is planned only after A has been green for a while.
 
 ## 2. Scope
-### Included
-- `compat.py`: the operating-system layer (file locks, process groups and killing, executable resolution, UTF-8 standard streams, line-ending-independent content hashes).
-- `.claude/bin/agentic`: a POSIX `sh` launcher that finds Python 3.9+ (`python3`, `python`, `py -3`). Every caller (hook, permissions, workflow, agents, commands, plugin, docs) uses `sh .claude/bin/agentic <command>`.
-- `agentic.py` and `upgrade.py` use `compat.py`; UTF-8 explicit in every text read and write; the hook also guards the `PowerShell` tool (blocked for the flow's agents); `install` migrates the old `python3 … agentic.py` hook and permission and keeps the launcher's line endings LF through `.gitattributes`.
-- Portable tests (fake executables as `.cmd` on Windows) and a CI matrix with `windows-latest` and `macos-latest`.
-- Version 1.2.0 with its upgrade note; docs.
-### Excluded (non-goals)
-- Windows without Git for Windows (PowerShell-only): detected and refused, not supported.
-- WSL: it is Linux; nothing to do.
-- A manual end-to-end run of Claude Code on Windows (user's choice: CI only). See §11.
-- Rewriting manifest commands per OS: manifests keep POSIX-style commands with forward slashes.
+### Included (delivery A)
+- `compat.py`: the operating-system layer (file locks, process groups and killing, executable resolution, UTF-8 standard streams and stdin, line-ending-independent content hashes), and `testutil.py` for portable fake executables in tests.
+- `agentic.py` and `upgrade.py` use it: no `fcntl` import, UTF-8 explicit in every text read, write and subprocess, prompts to agents on stdin, claims reset under the lock, an unreadable ledger blocks an upgrade, CRLF-tolerant upgrade comparisons.
+- Portable tests and a CI matrix with `windows-latest` and `macos-latest`.
+- Version 1.1.1 (no upgrade notes: nothing changes for users).
+### Excluded (delivery B, see the end of §11)
+- The `sh .claude/bin/agentic` launcher and replacing `python3` in the hook, permissions, workflow, agents, commands, plugin and docs.
+- Migrating users' `settings.json` (hook command, permission, `PowerShell` in the matcher) and `.gitattributes`.
+- Closing the `PowerShell` tool to the flow's agents (it needs the matcher change).
+### Excluded (both deliveries)
+- Windows without Git for Windows; WSL (it is Linux already); a manual Claude Code run on Windows (CI only, user's choice).
 
 ## 3. Stack
-Python 3.9+ standard library only (`msvcrt` on Windows, `fcntl` elsewhere, both stdlib). POSIX `sh` (Git Bash on Windows). Node ≥ 18 for the workflow tests. GitHub Actions.
+Python 3.9+ standard library only (`msvcrt` on Windows, `fcntl` elsewhere). Node ≥ 18 for the workflow tests. GitHub Actions.
 - Build: `python3 -m compileall -q .claude/bin`
-- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"`
-- Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_windows.py`
+- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"` (includes the workflow scenarios through `WorkflowLogicTests`)
+- Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_portable.py`
 
 ## 4. Repository structure
 ```
 .claude/bin/compat.py                       WP-01 (new)
-.claude/bin/test_compat.py                  WP-01 (new)
 .claude/bin/testutil.py                     WP-01 (new)
-.claude/bin/agentic                         WP-02 (new, sh launcher, LF)
-.gitattributes                              WP-02 (new)
-.claude/bin/test_launcher.py                WP-02 (new)
-.claude/bin/agentic.py                      WP-03
-.claude/bin/upgrade.py                      WP-03
-.claude/bin/test_agentic.py                 WP-03
-.claude/bin/test_upgrade.py                 WP-03
-.claude/settings.json                       WP-03
-.claude/workflows/agentic-implement.js      WP-04
-.claude/agents/*.md                         WP-04
-.claude/commands/*.md                       WP-04
-plugin/commands/init.md                     WP-04
-.claude/bin/test_workflow.mjs               WP-04
-.claude/bin/test_definitions.py             WP-04
-.claude/bin/test_pipeline.py                WP-05
-.claude/bin/test_acceptance.py              WP-05
-.claude/bin/test_acceptance_upgrade.py      WP-05
-.github/workflows/agentic-flow-ci.yml       WP-05
-README.md, docs/how-it-works.md, docs/how-to/*.md   WP-04
-.claude-plugin/plugin.json                  WP-04
-.claude/bin/test_acceptance_windows.py      AT (new)
+.claude/bin/test_compat.py                  WP-01 (new)
+.claude/bin/agentic.py                      WP-02
+.claude/bin/upgrade.py                      WP-02
+.claude/bin/test_agentic.py                 WP-02
+.claude/bin/test_upgrade.py                 WP-02
+.claude/bin/test_pipeline.py                WP-03
+.claude/bin/test_acceptance.py              WP-03
+.claude/bin/test_acceptance_upgrade.py      WP-03
+.github/workflows/agentic-flow-ci.yml       WP-03
+docs/how-to/README.md                       WP-03
+.claude-plugin/plugin.json                  WP-03
+.claude/bin/test_acceptance_portable.py     AT (new)
 ```
-Waves: WP-01, WP-02 (1) → WP-03 (2) → WP-04, WP-05 (3); then the release step (§9: `flow-history`). See D8.
+Waves: WP-01 (1) → WP-02 (2) → WP-03 (3), then the release step (§9). See D5.
+Untouched on purpose: `.claude/settings.json`, `.claude/workflows/`, `.claude/agents/`, `.claude/commands/`, `plugin/`, and every `python3 .claude/bin/agentic.py` a user or agent runs.
 
 ## 4b. Existing code context
 | What an implementer needs to know | Where it is | Pattern or rule |
 |---|---|---|
-| POSIX-only imports | `agentic.py:56` (`import fcntl`), `64` (`import signal`) | `fcntl` makes the module fail to import on Windows: remove it from `agentic.py` |
+| POSIX-only import | `agentic.py:56` (`import fcntl`) | Makes the module fail to import on Windows: remove it |
 | File lock of the ledger and claims | `agentic.py:1443-1458` (`locked_json`, `fcntl.flock` at 1447) | Becomes `with compat.locked(fh):` |
-| Process group and kill | `agentic.py:612` (`start_new_session=True` in `run_agent`), `1547-1551` (`kill_group`, `os.killpg`), `1554` (`stop`) | Use `compat.group_kwargs()` and `compat.kill_tree(pid)` |
-| Commands run without a shell | `agentic.py:1043` (`run_command`: `shlex.split(cmd)`), `1091` (`run_steps`, runs `sys.executable`), `599-612` (`run_agent`: `["claude", …]`) | Pass argv through `compat.resolve(argv)` so `npm` finds `npm.cmd` and `claude` finds `claude.exe`/`.cmd` |
-| Text encodings | e.g. `agentic.py:538, 548, 589, 610, 630, 1155, 1196, 1203, 1313, 1378, 1446, 1505` (no `encoding=`), `1705` and `1781` (`json.load(sys.stdin)`) | Every text `open`/`read_text`/`write_text` passes `encoding="utf-8"`; stdin is read as bytes and decoded as UTF-8; `main()` calls `compat.utf8_stdio()` first |
-| The claim pattern | `agentic.py:151` (`CLAIM_RE`) | Must match `sh .claude/bin/agentic claim WP-01` and the old `python3 .claude/bin/agentic.py claim WP-01` |
-| Messages that name the interpreter | `agentic.py:605` (`--allowedTools … "Bash(python3 .claude/bin/agentic.py claim:*)"`), `1416` (`sync_permissions`), `1667` (claim message), codemap header (`agentic.py:826`) | Use `sh .claude/bin/agentic` |
-| The hook | `agentic.py:1647-1700` (`guard`), `1701-1716` (`hook`); paths: `guard` resolves `file_path` and calls `.relative_to(ROOT.resolve()).as_posix()` | Already separator-safe; add the `PowerShell` tool rule (§6) |
-| Settings merge on install | `agentic.py:906-926` (`merge_settings`) | Today it skips adding the hook if any hook command contains `agentic.py` and ends in `hook`: replace with the migration of §6 |
-| Gitignore lines on install | `agentic.py:120` (`INSTALL_GITIGNORE`), used in `install` around line 989 | Same pattern for `.gitattributes` |
-| Installed files | `agentic.py:117` (`INSTALL_GLOBS`) | Add `.claude/bin/compat.py` and `.claude/bin/agentic` |
-| Content hashes | `agentic.py:894` (`sha256`), `upgrade.py:100-127` (`build_history`, `hashlib.sha256` at 120) | Use `compat.content_hash` (CRLF → LF before hashing) in `install` and `build_history`; `digest()` (ownership check) keeps raw bytes |
-| Hook entry and permission | `.claude/settings.json:4` (`Bash(python3 .claude/bin/agentic.py:*)`), `:16` (matcher), `:20` (command) | New values in §6 |
-| Workflow command prefix | `agentic-implement.js:25` (`const AGENTIC = 'python3 .claude/bin/agentic.py'`) | `'sh .claude/bin/agentic'`; the gatekeeper's rule (`agents/gatekeeper.md:16`) follows |
-| Workflow tests parse the prefix | `test_workflow.mjs:43` (`prompt.split('agentic.py ')`), `:191` | Split on the new prefix |
-| Docs drift test | `test_definitions.py:322` (regex for `python3 .claude/bin/agentic.py <cmd>`) | Must also recognise `sh .claude/bin/agentic <cmd>` |
-| Fake `claude` executables in tests | `test_agentic.py:32-48`, `test_pipeline.py:188-237`, `test_acceptance.py:55-100` (shebang + `chmod`) | Replace with `testutil.fake_exe` (§6) |
-| Fake `claude` of the launcher tests | `test_agentic.py:909-917` (`LauncherTests.setUp`) | Same move to `AGENTIC_CLAUDE` |
-| Message naming the interpreter in the upgrade guard | `upgrade.py:96` | `sh .claude/bin/agentic stop` |
-| Claims reset | `agentic.py:539` (`CLAIMS.unlink(missing_ok=True)` in `snapshot`) | Empty them under the lock instead (§6) |
-| POSIX paths in tests | `test_agentic.py:160` (`"/tmp/outside.py"`) | Use `tempfile.gettempdir()` |
-| CI | `.github/workflows/agentic-flow-ci.yml:20-44` (job `test`, Ubuntu, Python 3.9/3.12/3.14) | Add an OS axis (§6) |
+| Claims reset | `agentic.py:539` (`CLAIMS.unlink(missing_ok=True)` in `snapshot`) | On Windows a file another process holds open cannot be deleted: empty it under the lock |
+| Process group and kill | `agentic.py:612` (`start_new_session=True` in `run_agent`), `1547-1551` (`kill_group`, `os.killpg`), `1554` (`stop`) | `compat.group_kwargs()` and `compat.kill_tree(pid)` |
+| Commands run without a shell | `agentic.py:1043` (`run_command`, `shlex.split`), `1091` (`run_steps`), `599-612` (`run_agent`: `["claude", "-p", prompt, …]`) | Resolve argv with `compat.resolve`; the prompt moves to stdin |
+| Text encodings | e.g. `agentic.py:538, 548, 589, 610, 630, 1155, 1196, 1203, 1313, 1378, 1446, 1505` (no `encoding=`), `1705` and `1781` (`json.load(sys.stdin)`); text subprocesses in `run_command`, `run_steps`, `install` (`rules-sync`, `validate`), `git_tree`, `tracked_files`, `write_fix_diffs`, `upgrade.git` (`upgrade.py:40-44`) | `encoding="utf-8"` everywhere (`errors="replace"` for subprocess output); stdin decoded as UTF-8; `main()` calls `compat.utf8_stdio()` first |
+| The claim pattern | `agentic.py:151` (`CLAIM_RE`) | Also accept `agentic\s+claim` (prepares B; harmless now) |
+| Content hashes | `agentic.py:894` (`sha256`), used by `install`; `upgrade.py:100-125` (`build_history`, hash at 120) | `compat.content_hash` (CRLF → LF) for upgrade comparisons and the record; `digest()` keeps raw bytes |
+| Run-in-progress guard | `upgrade.py:80-97` (`guard_problems`; `except (OSError, ValueError)` at 90 turns an unreadable ledger into "no run") | `OSError` must become a blocking problem; `ValueError` (corrupt JSON) keeps today's behaviour |
+| Fake `claude` in tests | `test_agentic.py:32-48, 909-917`, `test_pipeline.py:188-237`, `test_acceptance.py:55-100` (shebang + `chmod`, prompt read from argv) | `AGENTIC_CLAUDE` + a fake that reads the prompt from stdin |
+| Test commands that call `python3` | manifests in `test_agentic.py` (`python3 acc.py`, `python3 ok.py`), `test_acceptance*.py` | `shlex.join([Path(sys.executable).as_posix(), …])`: on Windows `python3` may be missing or the Store stub |
+| POSIX paths in tests | `test_agentic.py:160` (`"/tmp/outside.py"`) | `tempfile.gettempdir()` |
+| Requirements in the docs | `docs/how-to/README.md:64-65` ("macOS, Linux or WSL 2… uses `fcntl`") | Becomes true only after this delivery: rewrite it (WP-03) |
+| CI | `.github/workflows/agentic-flow-ci.yml:20-44` (job `test`, Ubuntu, Python 3.9/3.12/3.14) | Add an OS axis |
+| Module style | `.claude/bin/upgrade.py:1-40`, `.claude/bin/test_upgrade.py:1-40` | Docstring with purpose and callers; small functions; stdlib only |
 
 ## 5. Data model
-- **Launcher** `.claude/bin/agentic` (no extension, LF line endings, run as `sh .claude/bin/agentic …`).
-- **`.gitattributes` line** written by `install` and present in this repo: `.claude/bin/agentic text eol=lf` (a CRLF checkout of a `sh` script fails with `$'\r': command not found`).
-- **Content hash:** `sha256(bytes.replace(b"\r\n", b"\n"))`, hex.
-- **Settings entries owned by the flow** (current / legacy):
-  - permission `Bash(sh .claude/bin/agentic:*)` / legacy `Bash(python3 .claude/bin/agentic.py:*)`;
-  - PreToolUse hook `{"matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell", "hooks": [{"type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/bin/agentic\" hook"}]}` / legacy: any hook whose command contains `.claude/bin/agentic.py` and ends in `hook`.
+- **Content hash:** `sha256(bytes.replace(b"\r\n", b"\n"))`, hex. Used for upgrade comparisons and the install record only.
+- **`AGENTIC_CLAUDE`** (environment, optional): the command that runs Claude Code, split with `shlex.split` in POSIX mode (paths with forward slashes or quoted); default `claude`.
+- No change to `settings.json`, the manifest, the ledger or any file a user commits.
 
 ## 6. Contracts between modules
-**`compat.py`** (WP-01) — `IS_WINDOWS = os.name == "nt"`; every function branches on it, so tests can patch it.
+**`compat.py`** (WP-01) — `IS_WINDOWS = os.name == "nt"`; every function branches on it at call time, so tests can patch it. `fcntl` and `msvcrt` are imported inside the functions.
 ```python
 @contextlib.contextmanager
 def locked(fh):
-    """Exclusive lock of an open file for the block. POSIX: fcntl.flock(LOCK_EX). Windows: msvcrt.locking on byte 0
-    with LK_LOCK, retried until acquired (LK_LOCK gives up after ~10 s with OSError), released with LK_UNLCK.
-    On exit, fh.flush() BEFORE unlocking (else the write lands after another process read the file); on Windows
-    seek(0) before LK_UNLCK, which unlocks from the current position."""
+    """Exclusive lock of an open file for the block. POSIX: fcntl.flock(LOCK_EX). Windows: seek(0), then
+    msvcrt.locking(fileno, LK_LOCK, 1) retried until acquired (LK_LOCK gives up after ~10 s with OSError).
+    On exit: fh.flush() BEFORE unlocking; on Windows seek(0) then LK_UNLCK."""
 
 def group_kwargs() -> dict
-    """Popen kwargs that start the child in its own process group: {"start_new_session": True} on POSIX,
-    {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} on Windows."""
+    """{"start_new_session": True} on POSIX; {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} on Windows."""
 
 def kill_tree(pid: int) -> None
-    """Ends the process and its children; never raises. POSIX: os.killpg(pid, SIGTERM). Windows:
-    `taskkill /T /F /PID <pid>` (output discarded)."""
+    """Ends the process and its children; never raises. POSIX: os.killpg(pid, SIGTERM).
+    Windows: `taskkill /T /F /PID <pid>`, output discarded."""
 
 def resolve(argv: list[str]) -> list[str]
-    """argv with argv[0] replaced by shutil.which(argv[0]) when found (so npm -> npm.cmd on Windows); unchanged
-    otherwise, so the caller's FileNotFoundError handling still applies."""
+    """A copy of argv with argv[0] replaced by shutil.which(argv[0]) when found (npm -> npm.cmd; PATHEXT order);
+    unchanged otherwise, so the caller's FileNotFoundError handling still applies. Empty argv returned as is."""
 
 def utf8_stdio() -> None
-    """Reconfigures sys.stdout and sys.stderr to UTF-8 (errors="replace") when they support reconfigure()."""
+    """sys.stdout and sys.stderr reconfigured to UTF-8 (errors="replace") when they support reconfigure()."""
 
 def read_stdin_text() -> str
     """sys.stdin.buffer.read().decode("utf-8")."""
@@ -117,228 +96,185 @@ def read_stdin_text() -> str
 def content_hash(path) -> str
     """sha256 hex of the file's bytes with CRLF turned into LF."""
 ```
-**Launcher** `.claude/bin/agentic` (WP-02): `sh .claude/bin/agentic ARGS…` runs `agentic.py ARGS…` (the file next to the launcher) with the first of `python3`, `python`, `py -3` for which `-c 'import sys; sys.exit(sys.version_info < (3, 9))'` exits 0, using `exec` so the exit code passes through; stdin is inherited (the hook reads it). It finds its own directory with `${0%/*}` (or `.` when `$0` has no `/`), never `dirname`, which is not in `/bin` on macOS. If none qualifies: stderr `agentic: Python 3.9 or later not found (tried python3, python, py -3)` and exit 2 (so a hook blocks, fail-closed). The candidate test must run the interpreter (the Microsoft Store `python3` stub exists on PATH but exits non-zero).
-
-**`agentic.py`** (WP-03)
-- Imports `compat` via `sibling("compat")` at module level (it is next to it), and never `fcntl`.
-- `locked_json` uses `compat.locked`; `run_agent` uses `compat.group_kwargs()` and `compat.resolve`; `kill_group` becomes `compat.kill_tree` (callers updated); `run_command` and `run_steps` resolve argv.
-- `run_agent` sends the **prompt on stdin** (`claude -p` with no prompt argument reads it), with `proc.communicate(input=prompt.encode("utf-8"), timeout=cfg["timeout_s"])` so the write cannot block before the timeout starts (stdout and stderr still go to the run's files), never as an argument: on Windows a `claude.cmd` would pass arguments through `cmd.exe`, which cuts newlines and limits the line to 8191 characters. The JSON schema stays an argument as `json.dumps(schema, separators=(",", ":"))` (no newline, no `%`). `shutil.which` prefers `claude.exe` over `claude.cmd` through `PATHEXT`.
-- The `claude` command is `shlex.split(os.environ.get("AGENTIC_CLAUDE", "claude"))`, so tests (and unusual installs) can point it at `<python> <fake_claude.py>` without any shim. POSIX `shlex` drops backslashes, so the value uses forward slashes or quotes: tests build it with `shlex.join([Path(sys.executable).as_posix(), Path(fake).as_posix()])`.
-- Every text-mode subprocess call (`run_command`, `run_steps`, the `rules-sync` and `validate` calls in `install`, `upgrade.git`, `git_tree`, `tracked_files`, `write_fix_diffs`) passes `encoding="utf-8", errors="replace"`.
-- `snapshot()` empties the claims with `locked_json(CLAIMS, lambda c: {})` instead of `CLAIMS.unlink(...)` (`agentic.py:539`): on Windows a file another process holds open cannot be deleted.
-- `main()` first calls `compat.utf8_stdio()`; `hook` and `save-result` read stdin with `compat.read_stdin_text()`.
-- `CLAIM_RE = re.compile(r"agentic(?:\.py)?\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")`.
-- `guard`: right after the git-hook-bypass check and before the claim handling and `if not owner_id: return` (`agentic.py:1655-1670`), if `tool == "PowerShell"` and there is an `agent_id` or `AGENTIC_WP` (any subagent: with Git Bash they all have the Bash tool), block with `the flow's agents use the Bash tool (Git for Windows); PowerShell is not allowed for them`. The main session is not restricted.
-- Interpreter text: `sh .claude/bin/agentic` in the claim message, `run_agent`'s allowed tool (`Bash(sh .claude/bin/agentic claim:*)`), `sync_permissions` (`Bash(sh .claude/bin/agentic:*)`) and the codemap header.
-- `merge_settings(dst, src)`: removes the legacy permission and every legacy hook (§5) before adding the flow's current ones — only the legacy hook object is removed from its entry's `hooks` list, and the entry is dropped only if that list becomes empty; adds the current hook entry only if no hook command contains `.claude/bin/agentic"` (the launcher) and ends in `hook`; reports `migrated hook to sh .claude/bin/agentic` / `migrated permission` in `added` when it replaced something. Nothing else of the user's is touched.
-- `install` adds `.claude/bin/agentic text eol=lf` to `.gitattributes` when missing (same reporting as `.gitignore`: `  .gitattributes: <lines>`), and uses `compat.content_hash` for every comparison and for the record. `INSTALL_GLOBS` gains `.claude/bin/compat.py` and `.claude/bin/agentic`. `.gitattributes` joins the paths the dirty guard checks.
-- Every text `open`, `read_text` and `write_text` in `agentic.py`, `upgrade.py`, `pipeline.py`, `brief.py`, `compat.py` passes `encoding="utf-8"` (binary modes excepted). The test files each WP owns do the same.
-- `upgrade.py:96` (the run-in-progress message) names `sh .claude/bin/agentic stop`; `guard_problems` treats a ledger that exists but cannot be read (`OSError`, e.g. a byte locked by a running process on Windows) as `the run state cannot be read: stop any run and try again`, a blocking problem — never as "no run".
-- `upgrade.build_history` hashes with the CRLF-normalised digest (same as `compat.content_hash`, applied to the blob bytes). `upgrade.NOTES["1.2.0"]` = `["Commands run through 'sh .claude/bin/agentic <command>' (it finds python3, python or py -3); install migrates the hook and permission. On Windows the flow needs Git for Windows."]`.
-
-**`testutil.py`** (WP-05)
+**`testutil.py`** (WP-01)
 ```python
 def fake_exe(directory, name, python_source) -> Path
-    """An executable `name` on PATH that runs python_source with sys.executable: on POSIX a script with a shebang and
-    mode 0o755; on Windows `name.py` plus `name.cmd` (`@"<sys.executable>" "%~dp0<name>.py" %*`), chosen with
-    compat.IS_WINDOWS. The shebang names sys.executable by absolute path (never `/usr/bin/env python3`, which a fake
-    python3 on PATH would hijack). Returns its path. Used for project commands (`verify`, `acceptance`), not for
-    `claude` (tests use AGENTIC_CLAUDE) nor for the launcher's tests (which write their own sh fakes)."""
+    """An executable `name` findable on PATH that runs python_source with sys.executable. POSIX: a script whose
+    shebang names sys.executable by absolute path, mode 0o755. Windows (compat.IS_WINDOWS): name.py plus
+    name.cmd = '@"<sys.executable>" "%~dp0<name>.py" %*'. For project commands in tests, not for `claude`."""
+
+def claude_command(fake_py) -> str
+    """The AGENTIC_CLAUDE value that runs fake_py with this interpreter:
+    shlex.join([Path(sys.executable).as_posix(), Path(fake_py).as_posix()])."""
 ```
-**References** (WP-04): `settings.json` per §5; `AGENTIC = 'sh .claude/bin/agentic'`; the gatekeeper accepts only commands starting with `sh .claude/bin/agentic`; agents' first action `sh .claude/bin/agentic claim <ID>`; commands and `plugin/commands/init.md` use `sh .claude/bin/agentic …` and `sh "${CLAUDE_PLUGIN_ROOT}/.claude/bin/agentic" install <root>`; `init.md` explains that on Windows a `sh: command not found` or `python not found` means installing Git for Windows or Python.
-**CI** (WP-05): job `test` matrix `os: [ubuntu-latest]` × `python: ["3.9", "3.12", "3.14"]` plus `include` entries `{os: windows-latest, python: "3.12"}` and `{os: macos-latest, python: "3.12"}`; `runs-on: ${{ matrix.os }}`; `shell: bash` for every run step; Windows keeps the runner's default `core.autocrlf` (so CRLF is exercised).
+**`agentic.py`** (WP-02)
+- `compat` is imported at module level with the same mechanism as `sibling()` (its directory on `sys.path`); `agentic.py` never imports `fcntl`.
+- `locked_json` uses `compat.locked`; `snapshot` empties the claims with `locked_json(CLAIMS, lambda c: {})`; `kill_group` is replaced by `compat.kill_tree` (callers updated); `run_agent` uses `compat.group_kwargs()`.
+- `run_command`, `run_steps` and `run_agent` pass argv through `compat.resolve`.
+- `run_agent`: the command is `shlex.split(os.environ.get("AGENTIC_CLAUDE", "claude")) + ["-p", "--agent", …]` (no prompt argument), started with `stdin=subprocess.PIPE` and fed with `proc.communicate(input=prompt.encode("utf-8"), timeout=cfg["timeout_s"])` (stdout and stderr still go to the run's files); the schema argument is `json.dumps(schema, separators=(",", ":"))`. On timeout: `compat.kill_tree`, then `proc.wait()`, as today.
+- `main()` first calls `compat.utf8_stdio()`; `hook` and `save-result` read stdin with `compat.read_stdin_text()`.
+- Every text `open`/`read_text`/`write_text` in `agentic.py`, `upgrade.py`, `pipeline.py`, `brief.py`, `compat.py` passes `encoding="utf-8"` (binary modes excepted); every `subprocess.run`/`Popen` with `text=True` passes `encoding="utf-8", errors="replace"`.
+- `CLAIM_RE = re.compile(r"agentic(?:\.py)?\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")`.
+- `install` uses `compat.content_hash` for every comparison and for the record.
+
+**`upgrade.py`** (WP-02): `build_history` hashes blob bytes with CRLF turned into LF (same rule as `content_hash`); `guard_problems` adds `the run state cannot be read: stop any run and try again` when `ledger.json` exists but reading it raises `OSError` (a blocking problem; `install` then exits 3 and writes nothing, as for any other guard problem).
+
+**CI** (WP-03): job `test` keeps `os: ubuntu-latest` × `python: ["3.9", "3.12", "3.14"]` and adds `include: [{os: windows-latest, python: "3.12"}, {os: macos-latest, python: "3.12"}]`; `runs-on: ${{ matrix.os }}`; `defaults.run.shell: bash`; Windows keeps the runner's default `core.autocrlf`.
 
 ## 7. Conventions
-- Stdlib only. `compat.py` is the only module that branches on the OS; nobody else checks `os.name` (`testutil` uses `compat.IS_WINDOWS`).
-- The launcher is the only shell script; the rules library has no shell rules, so it follows POSIX `sh` (no bashisms) and this section.
+- Stdlib only. `compat.py` is the only module that branches on the OS (`testutil` uses `compat.IS_WINDOWS`).
 - English; `agentic.py`'s style (no annotations; `except Exception` only where a function promises not to raise).
-- Manifest and documentation commands keep POSIX syntax with forward slashes; on Windows they run in Git Bash or, for `verify`/`acceptance`, without a shell through `compat.resolve`.
-- Every doc that shows a flow command writes `sh .claude/bin/agentic <command>`.
+- **No user-visible change:** the paths §4 lists as untouched must not change, and every command and message that names `python3 .claude/bin/agentic.py` stays as it is.
+- Test commits use `git -c user.name=t -c user.email=t@t`; test files declare UTF-8 in their own reads and writes.
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-Tests run on every OS of the CI matrix; the local run here is Linux only.
-- AC-001 · The launcher finds a working Python 3.9+
-  - Scenario: a temp dir with a copy of `.claude/bin/`; `PATH` holds extensionless `#!/bin/sh` fakes written by the test itself (Git Bash runs those; it does not run `.cmd` by bare name): `python3` = `exit 9009` (the Store stub) and `python` = `exec "<sys.executable as a POSIX path>" "$@"`, plus the directory of the real `sh`.
-  - Action: `sh <copy>/.claude/bin/agentic stack` with that PATH; then with a PATH whose fakes `python3`, `python`, `py` all exit 1.
-  - Expected: the first prints the `stack` JSON and exits 0; the second exits 2 with `Python 3.9 or later not found` on stderr.
-  - Must not: run the Store stub's output as the result, or exit 0 when no Python qualifies.
-  - Check: `test_acceptance_windows.py::test_ac_001_launcher`.
-  - WP: WP-02
-- AC-002 · `agentic.py` imports and locks without `fcntl`
-  - Scenario: a fresh Python subprocess that sets `sys.modules["fcntl"] = None` and then imports `agentic` from `.claude/bin`; and, in the test process with the real modules of the runner's OS, a temp JSON file.
-  - Action: run the subprocess; then call `agentic.locked_json(<temp file>, lambda d: {"a": 1})` in-process.
-  - Expected: the subprocess exits 0; the file holds `{"a": 1}`; no line of `.claude/bin/agentic.py` matches `^import fcntl`.
+They run on every OS of the CI matrix; locally, on Linux.
+- AC-001 · `agentic.py` imports and locks without `fcntl`
+  - Scenario: a fresh Python subprocess that sets `sys.modules["fcntl"] = None` and then imports `agentic` from `.claude/bin`; in the test process, a temp JSON file.
+  - Action: run the subprocess; then `agentic.locked_json(<temp file>, lambda d: {"a": 1})` in-process.
+  - Expected: the subprocess exits 0; the file holds `{"a": 1}`; no line of `.claude/bin/agentic.py` matches `^\s*import fcntl`.
   - Must not: import `fcntl` or `msvcrt` outside `compat.py`.
-  - Check: `test_acceptance_windows.py::test_ac_002_no_fcntl`.
-  - WP: WP-01, WP-03
-- AC-003 · Commands are found through PATHEXT
-  - Scenario: a project whose manifest has `verify: {"tests": "faketool --ok"}`, with `faketool` created by `testutil.fake_exe` (a `.cmd` on Windows) on PATH, exiting 0.
-  - Action: `sh .claude/bin/agentic verify`.
+  - Check: `test_acceptance_portable.py::test_ac_001_no_fcntl`.
+  - WP: WP-01, WP-02
+- AC-002 · Commands are found through PATHEXT
+  - Scenario: a git project whose manifest has `verify: {"tests": "faketool --ok"}`, with `faketool` made by `testutil.fake_exe` (a `.cmd` on Windows) in a directory prepended to PATH, exiting 0.
+  - Action: `agentic.py verify`, run with `sys.executable`.
   - Expected: the `tests` phase has `"passed": true`.
   - Must not: report `command not found`.
-  - Check: `test_acceptance_windows.py::test_ac_003_resolve`.
-  - WP: WP-03
-- AC-004 · Non-ASCII text survives any console encoding
-  - Scenario: a project whose `architecture.md` contains `· € ñ` and a ledger with a label `WP-01 · ñ`.
+  - Check: `test_acceptance_portable.py::test_ac_002_resolve`.
+  - WP: WP-02
+- AC-003 · Non-ASCII text survives any console encoding
+  - Scenario: a project whose `architecture.md` contains `· € ñ` and a ledger with the note `nota · ñ`.
   - Action: `agentic.py validate` and `agentic.py status` with `PYTHONIOENCODING=ascii`.
-  - Expected: both exit 0 and `status` prints `WP-01`.
+  - Expected: both exit 0 and `status` prints `nota`.
   - Must not: raise `UnicodeEncodeError` or `UnicodeDecodeError`.
-  - Check: `test_acceptance_windows.py::test_ac_004_utf8`.
-  - WP: WP-03
-- AC-005 · Every text read and write declares UTF-8
-  - Scenario: the sources `agentic.py`, `upgrade.py`, `pipeline.py`, `brief.py`, `compat.py`.
-  - Action: parse them with `ast` and inspect every call to `open`, `.open`, `read_text`, `write_text`, and every `subprocess.run`/`subprocess.Popen` with `text=True`.
-  - Expected: each has an `encoding` keyword, or a mode containing `b`.
+  - Check: `test_acceptance_portable.py::test_ac_003_utf8`.
+  - WP: WP-02
+- AC-004 · Every text read, write and subprocess declares UTF-8
+  - Scenario: `agentic.py`, `upgrade.py`, `pipeline.py`, `brief.py`, `compat.py`.
+  - Action: parse them with `ast`; inspect every call to `open`, `.open`, `read_text`, `write_text`, and every `subprocess.run`/`subprocess.Popen` call with `text=True`.
+  - Expected: each has an `encoding` keyword, or a literal mode containing `b`.
   - Must not: allow a call without either.
-  - Check: `test_acceptance_windows.py::test_ac_005_encodings_declared`.
-  - WP: WP-03
-- AC-006 · Native paths in the hook
-  - Scenario: a project with the manifest of `test_agentic.py` (WP-01 owns `src/a.py`).
-  - Action: the hook with `{"tool_name": "Write", "tool_input": {"file_path": str(<project>/"src"/"a.py")}}` (native separators: backslashes on Windows) for WP-01, and for WP-02.
+  - Check: `test_acceptance_portable.py::test_ac_004_encodings_declared`.
+  - WP: WP-02
+- AC-005 · Native paths in the hook
+  - Scenario: a project where WP-01 owns `src/a.py` and WP-02 owns `src/b.py`.
+  - Action: the hook with `{"tool_name": "Write", "tool_input": {"file_path": str(<project> / "src" / "a.py")}}` (backslashes on Windows), with `AGENTIC_WP=WP-01`, then with `AGENTIC_WP=WP-02`.
   - Expected: exit 0 for WP-01, exit 2 for WP-02.
   - Must not: block the owner because of the separator.
-  - Check: `test_acceptance_windows.py::test_ac_006_native_paths`.
-  - WP: WP-03
-- AC-007 · PowerShell is closed to the flow's agents
-  - Scenario: the AC-006 project.
-  - Action: the hook with `tool_name: "PowerShell"` and `command: "Get-ChildItem"`, once with `agent_id` `a1` claimed as WP-01, once from the main session (no `agent_id`, no `AGENTIC_WP`).
-  - Expected: exit 2 with `PowerShell is not allowed` for the agent; exit 0 for the main session.
-  - Must not: let an agent through.
-  - Check: `test_acceptance_windows.py::test_ac_007_powershell`.
-  - WP: WP-03
-- AC-008 · Claims through the launcher and the legacy form
-  - Scenario: the AC-006 project.
-  - Action: hook Bash payloads `sh .claude/bin/agentic claim WP-01` (agent `a1`) and `python3 .claude/bin/agentic.py claim WP-02` (agent `a2`).
+  - Check: `test_acceptance_portable.py::test_ac_005_native_paths`.
+  - WP: WP-02
+- AC-006 · Both claim forms are recorded
+  - Scenario: the AC-005 project with a run snapshot taken.
+  - Action: hook Bash payloads `python3 .claude/bin/agentic.py claim WP-01` (agent `a1`) and `sh .claude/bin/agentic claim WP-02` (agent `a2`).
   - Expected: `.claude/state/claims.json` maps `a1` → `WP-01` and `a2` → `WP-02`.
   - Must not: ignore either form.
-  - Check: `test_acceptance_windows.py::test_ac_008_claims`.
-  - WP: WP-03
-- AC-009 · Install migrates the old hook and permission
-  - Scenario: a git repo whose committed `.claude/settings.json` has the legacy hook (`python3 "$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py" hook`), the legacy permission, a user permission `Bash(make test)` and a user hook `PostToolUse` entry.
-  - Action: `install`.
-  - Expected: exactly one PreToolUse entry whose command is `sh "$CLAUDE_PROJECT_DIR/.claude/bin/agentic" hook` with matcher `Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell`; `Bash(sh .claude/bin/agentic:*)` present and the legacy permission gone; `Bash(make test)` and the `PostToolUse` entry unchanged; `.gitattributes` contains `.claude/bin/agentic text eol=lf`; running `install` again reports `settings.json: unchanged` and adds no line to `.gitattributes`.
-  - Must not: leave two flow hooks, or remove anything of the user's.
-  - Check: `test_acceptance_windows.py::test_ac_009_migrate_settings`.
-  - WP: WP-03
-- AC-010 · CRLF copies of intact files are recognised
-  - Scenario: an upgrade source whose history lists the LF content `OLD\n` for `.claude/agents/qa.md`; the target holds `OLD\r\n`.
-  - Action: `install`.
+  - Check: `test_acceptance_portable.py::test_ac_006_claims`.
+  - WP: WP-02
+- AC-007 · CRLF copies of intact files are recognised
+  - Scenario: an upgrade source whose `flow-history.json` lists the hash of `OLD\n` for `.claude/agents/qa.md`; the target holds `OLD\r\n` there, committed.
+  - Action: `install <target>`.
   - Expected: the file is listed under `updated:`.
   - Must not: list it under `modified by you (left alone)`.
-  - Check: `test_acceptance_windows.py::test_ac_010_crlf_intact`.
-  - WP: WP-03
-- AC-011 · Every reference uses the launcher
-  - Scenario: the repo.
-  - Action: read `.claude/settings.json`, `.claude/workflows/agentic-implement.js`, `.claude/agents/*.md`, `.claude/commands/*.md`, `plugin/commands/init.md`.
-  - Expected: none contains `python3 .claude/bin/agentic.py` or `python3 "`; settings and workflow use `sh .claude/bin/agentic` / the §5 hook.
-  - Must not: keep a `python3` reference to the flow.
-  - Check: `test_acceptance_windows.py::test_ac_011_references`.
-  - WP: WP-04
-- AC-012 · CI covers Windows and macOS
-  - Scenario: `.github/workflows/agentic-flow-ci.yml`.
-  - Action: parse it as text.
-  - Expected: the `test` job runs on `${{ matrix.os }}` and the matrix includes `windows-latest` and `macos-latest`; run steps use `shell: bash`.
-  - Must not: drop the Ubuntu Python versions.
-  - Check: `test_acceptance_windows.py::test_ac_012_ci_matrix`; and the real CI run on the pull request is green on all three systems.
-  - WP: WP-05
-- AC-013 · Docs say how to run on Windows
-  - Scenario: `docs/how-to/README.md`, `docs/how-to/onboarding.md`, `README.md`.
-  - Action: read them.
-  - Expected: `docs/how-to/README.md` has a requirement naming `Git for Windows`; no doc cites `python3 .claude/bin/agentic.py`; `README.md` mentions Windows, macOS and Linux.
-  - Must not: break `DocumentationDriftTests`.
-  - Check: `test_acceptance_windows.py::test_ac_013_docs`.
-  - WP: WP-04
-- AC-014 · Prompts reach agents on stdin
-  - Scenario: the AC-006 project with `AGENTIC_CLAUDE` = `<sys.executable> <fake_claude.py>`, where the fake logs its argv and its stdin and prints a structured report.
+  - Check: `test_acceptance_portable.py::test_ac_007_crlf_intact`.
+  - WP: WP-02
+- AC-008 · Prompts reach agents on stdin
+  - Scenario: a project with `AGENTIC_CLAUDE` = `testutil.claude_command(<fake>)`, where the fake logs its argv and its stdin and prints a valid structured report.
   - Action: `agentic.py run-wave 1`.
-  - Expected: each logged stdin starts with `Implement WP-0`; no argv element contains a newline; argv still contains `--json-schema`.
+  - Expected: each logged stdin starts with `Implement WP-0`; no argv element contains a newline; argv contains `--json-schema`.
   - Must not: pass the prompt as an argument.
-  - Check: `test_acceptance_windows.py::test_ac_014_prompt_on_stdin`.
+  - Check: `test_acceptance_portable.py::test_ac_008_prompt_on_stdin`.
+  - WP: WP-02
+- AC-009 · An unreadable ledger blocks an upgrade
+  - Scenario: an install target with a committed flow and a directory named `.claude/state/ledger.json` (reading it raises `OSError` on every OS).
+  - Action: `install <target>`.
+  - Expected: exit 3; the output contains `the run state cannot be read`.
+  - Must not: write any file in the target.
+  - Check: `test_acceptance_portable.py::test_ac_009_unreadable_ledger`.
+  - WP: WP-02
+- AC-010 · Nothing changes for users
+  - Scenario: the repo after delivery A.
+  - Action: read `.claude/settings.json`, `.claude/workflows/agentic-implement.js`, `.claude/agents/implementer.md`.
+  - Expected: the hook command is `python3 "$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py" hook` with matcher `Write|Edit|MultiEdit|NotebookEdit|Bash`; the permission `Bash(python3 .claude/bin/agentic.py:*)` is present; the workflow contains `python3 .claude/bin/agentic.py`; the implementer contains `python3 .claude/bin/agentic.py claim <WP-ID>`.
+  - Must not: contain `sh .claude/bin/agentic` in any of them.
+  - Check: `test_acceptance_portable.py::test_ac_010_no_visible_change`.
+  - WP: WP-02
+- AC-011 · CI covers Windows and macOS
+  - Scenario: `.github/workflows/agentic-flow-ci.yml`.
+  - Action: read it.
+  - Expected: the `test` job runs on `${{ matrix.os }}`, the matrix includes `windows-latest` and `macos-latest` and keeps the three Ubuntu Python versions; run steps use `bash`.
+  - Must not: drop a system or a Python version.
+  - Check: `test_acceptance_portable.py::test_ac_011_ci_matrix`; and the pull request's real CI run is green on the three systems.
   - WP: WP-03
-
 
 ### Work packages
-#### WP-01 · `compat.py`, the OS layer, and `testutil.py`
-- Wave 1. Files: `.claude/bin/compat.py`, `.claude/bin/test_compat.py`, `.claude/bin/testutil.py`.
-- Implements §6 `compat.py` and `testutil.fake_exe`. Unit tests patch `compat.IS_WINDOWS` and `subprocess.run`/`os.killpg` to check both branches on any OS; `locked` is tested for real on the runner's OS (two threads append to a file under the lock).
-- ACs: AC-002 (shared with WP-03).
-- Patterns to mirror: `.claude/bin/upgrade.py:1-40` (module docstring, small pure functions), `.claude/bin/test_upgrade.py:1-40`.
-- Gotchas: `msvcrt` and `fcntl` must be imported inside the functions (each exists on one OS only); `msvcrt.locking` locks from the current position, so `seek(0)` first and restore; `LK_LOCK` raises `OSError` after ~10 tries: loop; `taskkill` exists only on Windows — never call it elsewhere; `shutil.which` on Windows already applies `PATHEXT`.
+#### WP-01 · `compat.py` and `testutil.py`
+- Wave 1. Files: `.claude/bin/compat.py`, `.claude/bin/testutil.py`, `.claude/bin/test_compat.py`.
+- Implements §6 `compat.py` and `testutil.py`. Unit tests patch `compat.IS_WINDOWS`, `subprocess.run` and `os.killpg` to check both branches on any OS; `locked` is tested for real on the runner's OS (two threads append to a JSON file under the lock, and no write is lost).
+- ACs: AC-001 (shared with WP-02).
+- Patterns to mirror: `.claude/bin/upgrade.py:1-40`, `.claude/bin/test_upgrade.py:1-40`.
+- Gotchas: `msvcrt.locking` locks from the current position (seek first); `LK_LOCK` raises after ~10 tries (loop); flush before unlocking; never call `taskkill` outside Windows; `shutil.which` on Windows already applies `PATHEXT`; `subprocess.CREATE_NEW_PROCESS_GROUP` exists only on Windows (read it inside the branch).
 - Validation: `python3 -m unittest discover -s .claude/bin -p test_compat.py`.
 
-#### WP-02 · The launcher
-- Wave 1. Files: `.claude/bin/agentic`, `.gitattributes`, `.claude/bin/test_launcher.py`.
-- Implements the launcher (§6) in POSIX `sh` (no bashisms: it must run in Git Bash's `sh` and in `dash`), and `.gitattributes` with `.claude/bin/agentic text eol=lf`.
-- ACs: AC-001.
-- Patterns to mirror: `.claude/bin/test_upgrade.py:1-40` (test module).
-- Gotchas: `py -3` is two words: iterate over candidates as a string split by the shell on purpose; `exec` keeps stdin for the hook; locate `agentic.py` from `$0`'s directory (`${0%/*}`, not `dirname`), not from the current directory; the tests write their own extensionless `#!/bin/sh` fakes (no `testutil`: Git Bash does not run `.cmd` by bare name) and set `PATH` to the fakes' dir plus the dir of `shutil.which("sh")`; fakes call `sys.executable` by absolute POSIX path (`Path(sys.executable).as_posix()`).
-- Validation: `python3 -m unittest discover -s .claude/bin -p test_launcher.py`.
-
-#### WP-03 · `agentic.py` and `upgrade.py` on every OS
-- Wave 2, `depends_on: ["WP-01", "WP-02"]` (it runs `compat.py` and `testutil`; `settings.json` points at the launcher). Files: `.claude/bin/agentic.py`, `.claude/bin/upgrade.py`, `.claude/bin/test_agentic.py`, `.claude/bin/test_upgrade.py`, `.claude/settings.json` (the hook and permission of §5).
-- Implements every `agentic.py` and `upgrade.py` item of §6. Consumes `compat.py` by implementation, the launcher and `testutil.fake_exe` by signature.
-- ACs: AC-002 to AC-010, AC-014.
-- Patterns to mirror: `.claude/bin/agentic.py:906-926` (`merge_settings`), `.claude/bin/agentic.py:1443-1458` (`locked_json`), `.claude/bin/test_agentic.py:700-740` (install tests).
-- Gotchas: `sibling("compat")` must run before any use (module level, after `sibling` is defined, or import it the same way `sibling` does at the top); keep `digest()` on raw bytes (ownership compares a file with itself on one machine); the record now holds normalised hashes — old records of LF files are unchanged, and history covers the rest; `test_agentic.py:160` uses `/tmp/outside.py`, which is not absolute on Windows; the fake `claude` of `LauncherTests` (`test_agentic.py:32-48, 909-917`) moves to `AGENTIC_CLAUDE` and logs stdin; test manifests that run `python3 acc.py`/`python3 ok.py` build the command with `shlex.join([sys.executable, …])` (on Windows `python3` may be missing or the Store stub).
-- AC-009's test commits the target between the two `install` runs (the second must not hit the dirty guard).
+#### WP-02 · `agentic.py` and `upgrade.py` on every OS
+- Wave 2, `depends_on: ["WP-01"]` (consumes `compat` by implementation). Files: `.claude/bin/agentic.py`, `.claude/bin/upgrade.py`, `.claude/bin/test_agentic.py`, `.claude/bin/test_upgrade.py`.
+- Implements every `agentic.py` and `upgrade.py` item of §6, moves the fakes of its own test files to `AGENTIC_CLAUDE` (prompt on stdin) and its test manifests to `sys.executable`.
+- ACs: AC-001 to AC-010.
+- Patterns to mirror: `.claude/bin/agentic.py:1443-1458` (`locked_json`), `.claude/bin/agentic.py:599-640` (`run_agent`), `.claude/bin/test_agentic.py:700-740` (install tests).
+- Gotchas: keep `digest()` on raw bytes; the record now holds normalised hashes (records of LF files do not change, and the history covers older ones); `test_agentic.py:160` uses `/tmp/outside.py`; do not touch the paths §4 lists as untouched.
 - Validation: `python3 -m unittest discover -s .claude/bin -p test_agentic.py` and `-p test_upgrade.py`.
 
-#### WP-04 · Every reference and the docs go through the launcher
-- Wave 3, `depends_on: ["WP-02", "WP-03"]` (the launcher must exist and `settings.json` be switched before the definitions tests check them). Files: `.claude/workflows/agentic-implement.js`, `.claude/agents/*.md`, `.claude/commands/*.md`, `plugin/commands/init.md`, `.claude/bin/test_workflow.mjs`, `.claude/bin/test_definitions.py`, `README.md`, `docs/how-it-works.md`, `docs/how-to/*.md`, `.claude-plugin/plugin.json`.
-- Implements the references of §6; every flow command in the docs becomes `sh .claude/bin/agentic …`; `docs/how-to/README.md` requirements add Git for Windows on Windows (and what fails without it); `README.md` names Windows, macOS and Linux; version 1.2.0. In `test_definitions.py`: the drift regex (`:322`) also matches `sh .claude/bin/agentic <cmd>`; the plugin contract test expects `sh "${CLAUDE_PLUGIN_ROOT}/.claude/bin/agentic" install`; the gatekeeper test expects `sh .claude/bin/agentic`; each agent's claim string (`:104`) is `sh .claude/bin/agentic claim <ID>`; the settings hook checks (`:131`, `:221`, today `"agentic.py" in c`) look for `.claude/bin/agentic"`.
-- ACs: AC-011, AC-013.
-- Patterns to mirror: `.claude/agents/gatekeeper.md:1-18`, `.claude/bin/test_definitions.py:295-310`, `docs/how-to/README.md:50-60`.
-- Gotchas: `test_workflow.mjs:43` splits prompts on `agentic.py `; the JS spec copies are untouched (no interpreter in prompts); keep `architect.md`'s manifest example commands (`python3 -m pytest`) — those are the project's commands, not the flow's.
-- Validation: `node .claude/bin/test_workflow.mjs` and `python3 -m unittest discover -s .claude/bin -p test_definitions.py`.
-
-#### WP-05 · Portable tests and the CI matrix
-- Wave 3, `depends_on: ["WP-03"]` (`AGENTIC_CLAUDE` and the new stop message exist only after it). Files: `.claude/bin/test_pipeline.py`, `.claude/bin/test_acceptance.py`, `.claude/bin/test_acceptance_upgrade.py`, `.github/workflows/agentic-flow-ci.yml`.
-- Moves every fake `claude` in its files to `AGENTIC_CLAUDE` (prompt on stdin); `test_acceptance_upgrade.py:170` asserts `agentic stop` (not `agentic.py stop`); test manifests use `shlex.join([sys.executable, …])`; explicit UTF-8 in its files; the CI matrix of §6.
-- ACs: AC-012.
-- Patterns to mirror: `.claude/bin/test_pipeline.py:188-237` (fake `claude`), `.github/workflows/agentic-flow-ci.yml:20-44`.
-- Gotchas: on Windows a script named `claude` without extension is not executable — that is what `.cmd` solves; keep the actions pinned by SHA; `shell: bash` is Git Bash on Windows runners.
-- Validation: `python3 -m unittest discover -s .claude/bin -p "test_pipeline.py"`.
+#### WP-03 · Portable tests, CI and the patch version
+- Wave 3, `depends_on: ["WP-02"]` (its tests need `AGENTIC_CLAUDE`). Files: `.claude/bin/test_pipeline.py`, `.claude/bin/test_acceptance.py`, `.claude/bin/test_acceptance_upgrade.py`, `.github/workflows/agentic-flow-ci.yml`, `docs/how-to/README.md`, `.claude-plugin/plugin.json`.
+- Moves the fakes in its files to `AGENTIC_CLAUDE`, test manifests to `sys.executable`, UTF-8 in its reads and writes; the CI matrix of §6; rewrites `docs/how-to/README.md:64-65`: tested on Linux, macOS and Windows (Git for Windows); on Windows, until the next release, the `python3` command must run Python 3.9+; version `1.1.1` in `plugin.json`.
+- ACs: AC-011.
+- Patterns to mirror: `.claude/bin/test_pipeline.py:188-237`, `.github/workflows/agentic-flow-ci.yml:20-44`.
+- Gotchas: keep the actions pinned by SHA; `shell: bash` is Git Bash on Windows runners; do not add upgrade notes.
+- Validation: `python3 -m unittest discover -s .claude/bin -p test_pipeline.py`.
 
 ```json wp-manifest
 {
-  "stack": ["python", "typescript"],
-  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(node .claude/bin/test_workflow.mjs:*)"],
-  "acceptance": {"files": [".claude/bin/test_acceptance_windows.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_windows.py"},
+  "stack": ["python"],
+  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)"],
+  "acceptance": {"files": [".claude/bin/test_acceptance_portable.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_portable.py"},
   "verify": {"build": "python3 -m compileall -q .claude/bin", "tests": "python3 -m unittest discover -s .claude/bin -p test_*.py"},
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/compat.py", ".claude/bin/test_compat.py", ".claude/bin/testutil.py"], "acs": ["AC-002"], "mirror": [".claude/bin/upgrade.py:1-40", ".claude/bin/test_upgrade.py:1-40"]},
-    {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude/bin/agentic", ".gitattributes", ".claude/bin/test_launcher.py"], "acs": ["AC-001"], "mirror": [".claude/bin/test_upgrade.py:1-40"]},
-    {"id": "WP-03", "wave": 2, "depends_on": ["WP-01", "WP-02"], "files": [".claude/bin/agentic.py", ".claude/bin/upgrade.py", ".claude/bin/test_agentic.py", ".claude/bin/test_upgrade.py", ".claude/settings.json"], "acs": ["AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-008", "AC-009", "AC-010", "AC-014"], "mirror": [".claude/bin/agentic.py:906-926", ".claude/bin/agentic.py:1443-1458", ".claude/bin/test_agentic.py:700-740"]},
-    {"id": "WP-04", "wave": 3, "depends_on": ["WP-02", "WP-03"], "files": [".claude/workflows/agentic-implement.js", ".claude/agents/", ".claude/commands/", "plugin/commands/init.md", ".claude/bin/test_workflow.mjs", ".claude/bin/test_definitions.py", "README.md", "docs/how-it-works.md", "docs/how-to/", ".claude-plugin/plugin.json"], "acs": ["AC-011", "AC-013"], "mirror": [".claude/agents/gatekeeper.md:1-18", ".claude/bin/test_definitions.py:295-310", "docs/how-to/README.md:50-60"]},
-    {"id": "WP-05", "wave": 3, "depends_on": ["WP-03"], "files": [".claude/bin/test_pipeline.py", ".claude/bin/test_acceptance.py", ".claude/bin/test_acceptance_upgrade.py", ".github/workflows/agentic-flow-ci.yml"], "acs": ["AC-012"], "mirror": [".claude/bin/test_pipeline.py:188-237", ".github/workflows/agentic-flow-ci.yml:20-44"]}
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/compat.py", ".claude/bin/testutil.py", ".claude/bin/test_compat.py"],
+     "acs": ["AC-001"], "mirror": [".claude/bin/upgrade.py:1-40", ".claude/bin/test_upgrade.py:1-40"]},
+    {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/agentic.py", ".claude/bin/upgrade.py", ".claude/bin/test_agentic.py", ".claude/bin/test_upgrade.py"],
+     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-008", "AC-009", "AC-010"],
+     "mirror": [".claude/bin/agentic.py:1443-1458", ".claude/bin/agentic.py:599-640", ".claude/bin/test_agentic.py:700-740"]},
+    {"id": "WP-03", "wave": 3, "depends_on": ["WP-02"], "files": [".claude/bin/test_pipeline.py", ".claude/bin/test_acceptance.py", ".claude/bin/test_acceptance_upgrade.py", ".github/workflows/agentic-flow-ci.yml", "docs/how-to/README.md", ".claude-plugin/plugin.json"],
+     "acs": ["AC-011"], "mirror": [".claude/bin/test_pipeline.py:188-237", ".github/workflows/agentic-flow-ci.yml:20-44"]}
   ]
 }
 ```
 
 ## 9. Test strategy
-- Unit: `test_compat.py` (both branches by patching `IS_WINDOWS`), `test_launcher.py`, and the existing suites, made portable with `testutil.fake_exe`.
-- Acceptance: `.claude/bin/test_acceptance_windows.py` from AC-001…AC-014, red before the code. It runs on every OS of the CI matrix; locally only on Linux.
-- CI: the pull request's run must be green on `ubuntu-latest` (3.9, 3.12, 3.14), `windows-latest` and `macos-latest` (3.12). Every commit uses `git -c user.name=t -c user.email=t@t`.
-- Regression: the whole existing suite on Linux, and then on the new systems. `verify.tests` includes the workflow scenarios (`WorkflowLogicTests` runs `node .claude/bin/test_workflow.mjs`).
-- Release step, after every WP: commit, run `sh .claude/bin/agentic flow-history`, commit `.claude/flow-history.json` (the order of `docs/how-to/plugin.md`).
+- Unit: `test_compat.py` (both branches by patching `IS_WINDOWS`) and the existing suites, made portable.
+- Acceptance: `.claude/bin/test_acceptance_portable.py`, from AC-001…AC-011, written first and red before the code.
+- CI: the pull request's run must be green on `ubuntu-latest` (3.9, 3.12, 3.14), `windows-latest` and `macos-latest` (3.12).
+- Branch protection (a GitHub setting the owner enables by hand): require the checks of the three systems before merging, so no later feature lands unless it works on all of them.
+- Release step after the WPs: commit, `python3 .claude/bin/agentic.py flow-history`, commit `.claude/flow-history.json`.
 
 ## 10. Decisions
-- **D1 · Implemented outside `/implement`** (as designs 0001 and the safe upgrade): the files are the flow's own, under `.claude/`; `validate` rejects this manifest on purpose. In the manual run, WP-02 (the launcher) lands before WP-04 switches this repo's own hook to it, or the hook would point at a missing file.
-- **D2 · Git for Windows required (user's choice).** Claude Code recommends it; with it, hooks and Bash run in Git Bash and the guardrails work unchanged. Without it the Bash tool does not exist and a `Bash`-only hook never fires; the launcher (`sh`) is missing too, so `/implement`'s first command fails and nothing runs. Discarded: rewriting the guardrails for PowerShell.
-- **D3 · A `sh` launcher (user's choice)** instead of one interpreter name: `python3` is missing on Windows, `python` is missing on many Linux systems. The launcher tries both and `py -3`, and runs the candidate to skip the Store stub. Discarded: per-machine settings (a shared `settings.json` cannot name one interpreter for a mixed team).
-- **D4 · One OS module.** `compat.py` is the only place that knows the OS, so the rest reads the same on every system and both branches are unit-tested anywhere.
-- **D5 · PowerShell closed to the flow's agents:** if a Windows machine has both tools, the guardrails only understand Bash commands; an agent using PowerShell would bypass them.
-- **D6 · CRLF-normalised content hashes** for upgrades only; Windows checkouts with `core.autocrlf=true` then upgrade like any other. Ownership checks keep raw bytes.
-- **D7 · CI only (user's choice)** as proof; no manual Windows run in this change.
-- **D8 · Waves 1 → 2 → 3:** WP-03 runs `compat.py`'s real code and switches `settings.json` to the launcher (WP-02); the references and docs (WP-04) and the moved test fakes (WP-05) need what WP-03 makes real (the definitions tests read `settings.json`; `AGENTIC_CLAUDE` exists only after WP-03).
-- **D9 · Version 1.2.0** with an upgrade note, because the hook command and permission change in every repo.
+- **D1 · One codebase, not a fork (user's question).** The flow lives inside each project, and one project can be used from Linux, macOS and Windows at once, so it needs one flow that runs on all three. A fork would duplicate every feature and drift apart; CI on the three systems plus branch protection keeps them equal automatically.
+- **D2 · Two deliveries (user's choice).** A changes internals only and is undone with a revert; B, the only part that touches users' `settings.json`, is planned once A has been green for a while.
+- **D3 · Implemented outside `/implement`**, as in earlier designs: the files are the flow's own, under `.claude/`, so `validate` rejects this manifest on purpose.
+- **D4 · One OS module.** `compat.py` is the only place that knows the OS; both branches are unit-tested on any OS.
+- **D5 · Waves 1 → 2 → 3:** WP-02 runs `compat.py`'s real code; WP-03's tests need `AGENTIC_CLAUDE`, which WP-02 adds.
+- **D6 · Prompts on stdin** (`claude -p` reads it): on Windows a `claude.cmd` passes arguments through `cmd.exe`, which cuts newlines and limits the line to 8191 characters.
+- **D7 · CRLF-normalised hashes** for upgrades only; ownership checks keep raw bytes.
+- **D8 · CI only (user's choice)** as proof of portability.
+- **D9 · Version 1.1.1**, a patch: nothing a user sees changes, so no upgrade notes.
 
 ## 11. Risks and open questions
-- **No real Claude Code run on Windows** (D7): CI proves the code, not the hook as Claude Code invokes it in Git Bash. First real use should be watched; the PR says so.
-- **`$CLAUDE_PROJECT_DIR` in a shell-form hook under Git Bash** is the documented form; if a user's setup runs hooks in PowerShell (no Git Bash), the hook fails as a non-blocking error — the flow is unsupported there (D2) and `/implement` cannot start.
-- **Windows runners' Git Bash `sh`** is assumed on `PATH` for `shell: bash` steps; if not, the launcher tests call it by `shutil.which("sh")`.
-- **`claude.cmd` installs (npm) on Windows:** the prompt goes on stdin; the schema still crosses `cmd.exe` as one quoted argument (no newline, no `%`). The native installer's `claude.exe` avoids `cmd.exe` entirely and is preferred by `PATHEXT`.
-- **`docs/assets/make_screens.py`** still shows the legacy commands in its sample text; the screenshots are out of scope.
+- **Rollback of delivery A:** `git revert` of its merge commit here. In a project that upgraded to 1.1.1, `git revert` of that project's upgrade commit (or install 1.1.0 again): A does not touch `settings.json` or any command a user runs, so both versions read the same files.
+- **What A does not give yet:** on Windows the flow still calls `python3`, so it works only where that command runs Python 3.9+ (the python.org installer does not create it). Delivery B removes that requirement.
+- **No real Claude Code run on Windows** (D8): CI proves the code, not Claude Code's own hook invocation.
+- **`claude.cmd` (npm installs on Windows):** the JSON schema still crosses `cmd.exe` as one quoted argument (no newline, no `%`); `claude.exe` from the native installer avoids it.
 - **Long paths and OneDrive-synced folders** on Windows are not covered.
-- **Rollback:** one commit per WP; reverting WP-04 and the settings migration restores `python3` everywhere (the legacy claim form stays accepted). `install` of the previous version would re-add the legacy hook next to the new one; users then delete one by hand.
+
+### Delivery B (next, to plan with `/architect` once A is green)
+Already decided with the user: Windows requires Git for Windows (without Git Bash the flow refuses to start); a POSIX `sh` launcher `.claude/bin/agentic` that tries `python3`, `python`, `py -3` by running them (which skips the Microsoft Store stub) and exits 2 if none works; every reference becomes `sh .claude/bin/agentic <command>`; `install` migrates the hook and permission in place and adds `.claude/bin/agentic text eol=lf` to `.gitattributes`; the matcher adds `PowerShell` and the hook blocks that tool for the flow's agents; version 1.2.0 with an upgrade note. To keep B's rollback safe, its hook command will still contain `agentic.py` and end in `hook`, so an older installer run by mistake does not add a second hook.
