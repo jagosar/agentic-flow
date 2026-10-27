@@ -36,7 +36,9 @@ Python 3.9+ standard library only (`msvcrt` on Windows, `fcntl` elsewhere). Node
 .claude/bin/test_acceptance.py              WP-03
 .claude/bin/test_acceptance_upgrade.py      WP-03
 .github/workflows/agentic-flow-ci.yml       WP-03
+README.md                                   WP-03
 docs/how-to/README.md                       WP-03
+docs/how-to/desktop.md                      WP-03
 .claude-plugin/plugin.json                  WP-03
 .claude/bin/test_acceptance_portable.py     AT (new)
 ```
@@ -47,6 +49,7 @@ Untouched on purpose: `.claude/settings.json`, `.claude/workflows/`, `.claude/ag
 | What an implementer needs to know | Where it is | Pattern or rule |
 |---|---|---|
 | POSIX-only import | `agentic.py:56` (`import fcntl`) | Makes the module fail to import on Windows: remove it |
+| What `install` copies | `agentic.py:117-118` (`INSTALL_GLOBS`), `upgrade.py:14-16` (`EXTRA_GLOBS`) | A new module the flow imports must be listed, or installed projects break (`test_agentic.py:809` `test_installed_flow_works`) |
 | File lock of the ledger and claims | `agentic.py:1443-1458` (`locked_json`, `fcntl.flock` at 1447) | Becomes `with compat.locked(fh):` |
 | Claims reset | `agentic.py:539` (`CLAIMS.unlink(missing_ok=True)` in `snapshot`) | On Windows a file another process holds open cannot be deleted: empty it under the lock |
 | Process group and kill | `agentic.py:612` (`start_new_session=True` in `run_agent`), `1547-1551` (`kill_group`, `os.killpg`), `1554` (`stop`) | `compat.group_kwargs()` and `compat.kill_tree(pid)` |
@@ -58,7 +61,9 @@ Untouched on purpose: `.claude/settings.json`, `.claude/workflows/`, `.claude/ag
 | Fake `claude` in tests | `test_agentic.py:32-48, 909-917`, `test_pipeline.py:188-237`, `test_acceptance.py:55-100` (shebang + `chmod`, prompt read from argv) | `AGENTIC_CLAUDE` + a fake that reads the prompt from stdin |
 | Test commands that call `python3` | manifests in `test_agentic.py` (`python3 acc.py`, `python3 ok.py`), `test_acceptance*.py` | `shlex.join([Path(sys.executable).as_posix(), …])`: on Windows `python3` may be missing or the Store stub |
 | POSIX paths in tests | `test_agentic.py:160` (`"/tmp/outside.py"`) | `tempfile.gettempdir()` |
-| Requirements in the docs | `docs/how-to/README.md:64-65` ("macOS, Linux or WSL 2… uses `fcntl`") | Becomes true only after this delivery: rewrite it (WP-03) |
+| Requirements in the docs | `docs/how-to/README.md:64-65` ("macOS, Linux or WSL 2… uses `fcntl`"), `README.md:51` ("macOS, Linux or WSL 2"), `docs/how-to/desktop.md:13` ("use WSL: `agentic.py` needs POSIX") | Rewrite all three (WP-03) |
+| Version pinned by a test | `test_acceptance_upgrade.py:258` (asserts `"1.1.0"`) | Bump it with `plugin.json` (WP-03) |
+| Rules on annotations | `.claude/rules-library/python.md:13` (annotations on public signatures) vs `agentic.py` (none) | New modules (`compat.py`, `testutil.py`) annotate public signatures as §6; edits inside `agentic.py`/`upgrade.py` keep their style |
 | CI | `.github/workflows/agentic-flow-ci.yml:20-44` (job `test`, Ubuntu, Python 3.9/3.12/3.14) | Add an OS axis |
 | Module style | `.claude/bin/upgrade.py:1-40`, `.claude/bin/test_upgrade.py:1-40` | Docstring with purpose and callers; small functions; stdlib only |
 
@@ -116,14 +121,15 @@ def claude_command(fake_py) -> str
 - Every text `open`/`read_text`/`write_text` in `agentic.py`, `upgrade.py`, `pipeline.py`, `brief.py`, `compat.py` passes `encoding="utf-8"` (binary modes excepted); every `subprocess.run`/`Popen` with `text=True` passes `encoding="utf-8", errors="replace"`.
 - `CLAIM_RE = re.compile(r"agentic(?:\.py)?\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")`.
 - `install` uses `compat.content_hash` for every comparison and for the record.
+- `INSTALL_GLOBS` gains `.claude/bin/compat.py` (without it every installed `agentic.py` fails to import).
 
-**`upgrade.py`** (WP-02): `build_history` hashes blob bytes with CRLF turned into LF (same rule as `content_hash`); `guard_problems` adds `the run state cannot be read: stop any run and try again` when `ledger.json` exists but reading it raises `OSError` (a blocking problem; `install` then exits 3 and writes nothing, as for any other guard problem).
+**`upgrade.py`** (WP-02): `EXTRA_GLOBS` gains `.claude/bin/testutil.py` (the refreshed flow tests import it); `git()` adds `encoding="utf-8", errors="replace"` **only when text mode is on** (`build_history` calls it with `text=False` and bytes input: encoding there would turn text mode back on and break it); `build_history` hashes blob bytes with CRLF turned into LF (same rule as `content_hash`); `guard_problems` adds `the run state cannot be read: stop any run and try again` when `ledger.json` exists but reading it raises `OSError` (a blocking problem; `install` then exits 3 and writes nothing, as for any other guard problem).
 
 **CI** (WP-03): job `test` keeps `os: ubuntu-latest` × `python: ["3.9", "3.12", "3.14"]` and adds `include: [{os: windows-latest, python: "3.12"}, {os: macos-latest, python: "3.12"}]`; `runs-on: ${{ matrix.os }}`; `defaults.run.shell: bash`; Windows keeps the runner's default `core.autocrlf`.
 
 ## 7. Conventions
 - Stdlib only. `compat.py` is the only module that branches on the OS (`testutil` uses `compat.IS_WINDOWS`).
-- English; `agentic.py`'s style (no annotations; `except Exception` only where a function promises not to raise).
+- English; inside `agentic.py` and `upgrade.py`, their style (no annotations; `except Exception` only where a function promises not to raise).
 - **No user-visible change:** the paths §4 lists as untouched must not change, and every command and message that names `python3 .claude/bin/agentic.py` stays as it is.
 - Test commits use `git -c user.name=t -c user.email=t@t`; test files declare UTF-8 in their own reads and writes.
 
@@ -131,7 +137,7 @@ def claude_command(fake_py) -> str
 ### Acceptance criteria
 They run on every OS of the CI matrix; locally, on Linux.
 - AC-001 · `agentic.py` imports and locks without `fcntl`
-  - Scenario: a fresh Python subprocess that sets `sys.modules["fcntl"] = None` and then imports `agentic` from `.claude/bin`; in the test process, a temp JSON file.
+  - Scenario: a fresh Python subprocess that sets `sys.modules["fcntl"] = None` and then imports `agentic` from `.claude/bin`; in the test process (with `CLAUDE_PROJECT_DIR` set to a temp dir before importing, so no state lands in the repo), a temp JSON file.
   - Action: run the subprocess; then `agentic.locked_json(<temp file>, lambda d: {"a": 1})` in-process.
   - Expected: the subprocess exits 0; the file holds `{"a": 1}`; no line of `.claude/bin/agentic.py` matches `^\s*import fcntl`.
   - Must not: import `fcntl` or `msvcrt` outside `compat.py`.
@@ -173,7 +179,7 @@ They run on every OS of the CI matrix; locally, on Linux.
   - Check: `test_acceptance_portable.py::test_ac_006_claims`.
   - WP: WP-02
 - AC-007 · CRLF copies of intact files are recognised
-  - Scenario: an upgrade source whose `flow-history.json` lists the hash of `OLD\n` for `.claude/agents/qa.md`; the target holds `OLD\r\n` there, committed.
+  - Scenario: an upgrade source whose `flow-history.json` lists the hash of `OLD\n` for `.claude/agents/qa.md`; the target holds `OLD\r\n` there (written with `write_bytes`: `write_text` would add another `\r` on Windows), committed.
   - Action: `install <target>`.
   - Expected: the file is listed under `updated:`.
   - Must not: list it under `modified by you (left alone)`.
@@ -207,6 +213,13 @@ They run on every OS of the CI matrix; locally, on Linux.
   - Must not: drop a system or a Python version.
   - Check: `test_acceptance_portable.py::test_ac_011_ci_matrix`; and the pull request's real CI run is green on the three systems.
   - WP: WP-03
+- AC-012 · An installed flow can import its OS layer
+  - Scenario: an empty git repo with one commit.
+  - Action: `install <target>`, then `<target>/.claude/bin/agentic.py validate` run with `sys.executable` from the target.
+  - Expected: `<target>/.claude/bin/compat.py` exists; `validate` does not print `ModuleNotFoundError`.
+  - Must not: install an `agentic.py` that imports a module `install` does not copy.
+  - Check: `test_acceptance_portable.py::test_ac_012_compat_installed`.
+  - WP: WP-02
 
 ### Work packages
 #### WP-01 · `compat.py` and `testutil.py`
@@ -214,24 +227,24 @@ They run on every OS of the CI matrix; locally, on Linux.
 - Implements §6 `compat.py` and `testutil.py`. Unit tests patch `compat.IS_WINDOWS`, `subprocess.run` and `os.killpg` to check both branches on any OS; `locked` is tested for real on the runner's OS (two threads append to a JSON file under the lock, and no write is lost).
 - ACs: AC-001 (shared with WP-02).
 - Patterns to mirror: `.claude/bin/upgrade.py:1-40`, `.claude/bin/test_upgrade.py:1-40`.
-- Gotchas: `msvcrt.locking` locks from the current position (seek first); `LK_LOCK` raises after ~10 tries (loop); flush before unlocking; never call `taskkill` outside Windows; `shutil.which` on Windows already applies `PATHEXT`; `subprocess.CREATE_NEW_PROCESS_GROUP` exists only on Windows (read it inside the branch).
+- Gotchas: `msvcrt.locking` locks from the current position (seek first); `LK_LOCK` raises after ~10 tries (loop); flush before unlocking; never call `taskkill` outside Windows; `shutil.which` on Windows already applies `PATHEXT`; `subprocess.CREATE_NEW_PROCESS_GROUP` exists only on Windows (read it inside the branch). In tests, patch `os.killpg` and `subprocess.CREATE_NEW_PROCESS_GROUP` with `create=True` (each is missing on one OS); compare paths after `resolve()` (Windows runners use 8.3 short names such as `RUNNER~1`).
 - Validation: `python3 -m unittest discover -s .claude/bin -p test_compat.py`.
 
 #### WP-02 · `agentic.py` and `upgrade.py` on every OS
 - Wave 2, `depends_on: ["WP-01"]` (consumes `compat` by implementation). Files: `.claude/bin/agentic.py`, `.claude/bin/upgrade.py`, `.claude/bin/test_agentic.py`, `.claude/bin/test_upgrade.py`.
 - Implements every `agentic.py` and `upgrade.py` item of §6, moves the fakes of its own test files to `AGENTIC_CLAUDE` (prompt on stdin) and its test manifests to `sys.executable`.
-- ACs: AC-001 to AC-010.
+- ACs: AC-001 to AC-010, AC-012.
 - Patterns to mirror: `.claude/bin/agentic.py:1443-1458` (`locked_json`), `.claude/bin/agentic.py:599-640` (`run_agent`), `.claude/bin/test_agentic.py:700-740` (install tests).
-- Gotchas: keep `digest()` on raw bytes; the record now holds normalised hashes (records of LF files do not change, and the history covers older ones); `test_agentic.py:160` uses `/tmp/outside.py`; do not touch the paths §4 lists as untouched.
+- Gotchas: keep `digest()` on raw bytes; the record now holds normalised hashes (records of LF files do not change, and the history covers older ones); `test_agentic.py:160` uses `/tmp/outside.py`; after this WP the fakes in `test_pipeline.py` and `test_acceptance.py` (prompt read from argv) fail until WP-03 lands, so only this WP's own files are its validation; do not touch the paths §4 lists as untouched.
 - Validation: `python3 -m unittest discover -s .claude/bin -p test_agentic.py` and `-p test_upgrade.py`.
 
 #### WP-03 · Portable tests, CI and the patch version
-- Wave 3, `depends_on: ["WP-02"]` (its tests need `AGENTIC_CLAUDE`). Files: `.claude/bin/test_pipeline.py`, `.claude/bin/test_acceptance.py`, `.claude/bin/test_acceptance_upgrade.py`, `.github/workflows/agentic-flow-ci.yml`, `docs/how-to/README.md`, `.claude-plugin/plugin.json`.
-- Moves the fakes in its files to `AGENTIC_CLAUDE`, test manifests to `sys.executable`, UTF-8 in its reads and writes; the CI matrix of §6; rewrites `docs/how-to/README.md:64-65`: tested on Linux, macOS and Windows (Git for Windows); on Windows, until the next release, the `python3` command must run Python 3.9+; version `1.1.1` in `plugin.json`.
+- Wave 3, `depends_on: ["WP-02"]` (its tests need `AGENTIC_CLAUDE`). Files: `.claude/bin/test_pipeline.py`, `.claude/bin/test_acceptance.py`, `.claude/bin/test_acceptance_upgrade.py`, `.github/workflows/agentic-flow-ci.yml`, `README.md`, `docs/how-to/README.md`, `docs/how-to/desktop.md`, `.claude-plugin/plugin.json`.
+- Moves the fakes in its files to `AGENTIC_CLAUDE`, test manifests to `sys.executable`, UTF-8 in its reads and writes; the CI matrix of §6; rewrites `docs/how-to/README.md:64-65`: tested on Linux, macOS and Windows (Git for Windows); on Windows, until the next release, the `python3` command must run Python 3.9+; the same in `README.md:51` and `docs/how-to/desktop.md:13`; version `1.1.1` in `plugin.json` and in the assertion at `test_acceptance_upgrade.py:258`.
 - ACs: AC-011.
 - Patterns to mirror: `.claude/bin/test_pipeline.py:188-237`, `.github/workflows/agentic-flow-ci.yml:20-44`.
 - Gotchas: keep the actions pinned by SHA; `shell: bash` is Git Bash on Windows runners; do not add upgrade notes.
-- Validation: `python3 -m unittest discover -s .claude/bin -p test_pipeline.py`.
+- Validation: the whole suite, `python3 -m unittest discover -s .claude/bin -p "test_*.py"` (it includes every `test_acceptance*.py`).
 
 ```json wp-manifest
 {
@@ -243,9 +256,9 @@ They run on every OS of the CI matrix; locally, on Linux.
     {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/compat.py", ".claude/bin/testutil.py", ".claude/bin/test_compat.py"],
      "acs": ["AC-001"], "mirror": [".claude/bin/upgrade.py:1-40", ".claude/bin/test_upgrade.py:1-40"]},
     {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/agentic.py", ".claude/bin/upgrade.py", ".claude/bin/test_agentic.py", ".claude/bin/test_upgrade.py"],
-     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-008", "AC-009", "AC-010"],
+     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-008", "AC-009", "AC-010", "AC-012"],
      "mirror": [".claude/bin/agentic.py:1443-1458", ".claude/bin/agentic.py:599-640", ".claude/bin/test_agentic.py:700-740"]},
-    {"id": "WP-03", "wave": 3, "depends_on": ["WP-02"], "files": [".claude/bin/test_pipeline.py", ".claude/bin/test_acceptance.py", ".claude/bin/test_acceptance_upgrade.py", ".github/workflows/agentic-flow-ci.yml", "docs/how-to/README.md", ".claude-plugin/plugin.json"],
+    {"id": "WP-03", "wave": 3, "depends_on": ["WP-02"], "files": [".claude/bin/test_pipeline.py", ".claude/bin/test_acceptance.py", ".claude/bin/test_acceptance_upgrade.py", ".github/workflows/agentic-flow-ci.yml", "README.md", "docs/how-to/README.md", "docs/how-to/desktop.md", ".claude-plugin/plugin.json"],
      "acs": ["AC-011"], "mirror": [".claude/bin/test_pipeline.py:188-237", ".github/workflows/agentic-flow-ci.yml:20-44"]}
   ]
 }
@@ -253,7 +266,7 @@ They run on every OS of the CI matrix; locally, on Linux.
 
 ## 9. Test strategy
 - Unit: `test_compat.py` (both branches by patching `IS_WINDOWS`) and the existing suites, made portable.
-- Acceptance: `.claude/bin/test_acceptance_portable.py`, from AC-001…AC-011, written first and red before the code.
+- Acceptance: `.claude/bin/test_acceptance_portable.py`, from AC-001…AC-012, written first and red before the code.
 - CI: the pull request's run must be green on `ubuntu-latest` (3.9, 3.12, 3.14), `windows-latest` and `macos-latest` (3.12).
 - Branch protection (a GitHub setting the owner enables by hand): require the checks of the three systems before merging, so no later feature lands unless it works on all of them.
 - Release step after the WPs: commit, `python3 .claude/bin/agentic.py flow-history`, commit `.claude/flow-history.json`.
@@ -273,7 +286,7 @@ They run on every OS of the CI matrix; locally, on Linux.
 - **Rollback of delivery A:** `git revert` of its merge commit here. In a project that upgraded to 1.1.1, `git revert` of that project's upgrade commit (or install 1.1.0 again): A does not touch `settings.json` or any command a user runs, so both versions read the same files.
 - **What A does not give yet:** on Windows the flow still calls `python3`, so it works only where that command runs Python 3.9+ (the python.org installer does not create it). Delivery B removes that requirement.
 - **No real Claude Code run on Windows** (D8): CI proves the code, not Claude Code's own hook invocation.
-- **`claude.cmd` (npm installs on Windows):** the JSON schema still crosses `cmd.exe` as one quoted argument (no newline, no `%`); `claude.exe` from the native installer avoids it.
+- **`claude.cmd` (npm installs on Windows):** the JSON schema still crosses `cmd.exe` as one quoted argument; it has no newline or `%`, but it does contain `^` (the implementer's `"pattern": "^WP-[0-9]+$"`), cmd's escape character, inside `list2cmdline`'s `\"` quoting, which is untested; `claude.exe` from the native installer avoids it.
 - **Long paths and OneDrive-synced folders** on Windows are not covered.
 
 ### Delivery B (next, to plan with `/architect` once A is green)
