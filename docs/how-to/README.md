@@ -265,7 +265,7 @@ python3 -m unittest discover -s .claude/bin -p "test_*.py"
 node .claude/bin/test_workflow.mjs
 ```
 
-172 Python tests and 38 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+193 Python tests and 38 workflow scenarios with simulated agents. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 

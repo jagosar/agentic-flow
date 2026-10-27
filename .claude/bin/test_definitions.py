@@ -297,6 +297,8 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(fm.get("model"), "sonnet")
         self.assertIn('python3 "${CLAUDE_PLUGIN_ROOT}/.claude/bin/agentic.py" install', body)
         self.assertIn("Do not commit or push", body)
+        for flag in ("--dry-run", "--force", "--allow-dirty"):
+            self.assertIn(flag, fm.get("argument-hint", ""))
 
     def test_what_is_installed_exists(self):
         src = AGENTIC.read_text(encoding="utf-8")

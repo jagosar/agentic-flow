@@ -64,21 +64,33 @@ Then:
 
 ## Update
 
+The same command installs and upgrades, whether the repo installed the flow with the plugin or was created from the template, and whatever version it has:
+
 ```bash
 claude plugin update agentic-flow@agentic-flow
 ```
 
-Restart the session and run `/agentic-flow:init` again. Each of the flow's files ends in one of these states:
+Restart the session and run `/agentic-flow:init` again (or, without the plugin, `python3 <a clone of agentic-flow>/.claude/bin/agentic.py install <repo>`). Use `--dry-run` first to see what it would do.
+
+Each of the flow's files ends in one of these states:
 
 | State | What happens |
 |---|---|
 | new | It did not exist: copied |
-| updated | Changed in the new version and untouched by you: replaced |
+| updated | Intact (its content is one the flow shipped at some point): replaced |
 | unchanged | Already up to date |
-| modified by you (left alone) | You edited it since the last install: kept and listed. Compare it with the new version, or run again with `--force` to replace it |
-| removed | The new version no longer ships it and you had not touched it: deleted |
+| modified by you (left alone) | You edited it: kept, and the new version is saved beside it in `.claude/state/upgrade/<path>` (ignored by git). Compare with `diff -ru .claude/state/upgrade/.claude .claude`, or run again with `--force` to replace it |
+| removed | The new version no longer ships it and it is intact: deleted. An edited one is never deleted |
 
-The installer knows what you touched by comparing each file with the fingerprint in `.claude/agentic-install.json`. A file with no record (from a copy by hand, say) that differs from the new one counts as modified: it is not overwritten without `--force`.
+How it knows a file is intact: the flow ships the fingerprint of every version it ever published (`.claude/flow-history.json`), and the previous install's record (`.claude/agentic-install.json`). That is why a repo created from the template, which has no record, upgrades just as safely.
+
+What else it does:
+- **Template leftovers.** The flow's own tests, CI workflow and plugin files that the template copied are updated only if they are already there and intact. If part of the flow's test suite is there, the rest of it is added, so your CI keeps passing.
+- **Guards.** It writes nothing if a flow file has uncommitted changes (commit or stash them, or use `--allow-dirty`) or a run is in progress (let it finish, or run `python3 .claude/bin/agentic.py stop`). It exits with code 3 and says why. So any upgrade can be undone with git.
+- **Version and notes.** The first line shows the jump (`agentic-flow 1.0.0 -> 1.1.0`), and `upgrade notes:` lists what changed that may affect you (removed commands, for example).
+- **Your plan.** If the repo has an `architecture.md`, it validates it with the new version and tells you, without failing the upgrade.
+
+On Windows with `core.autocrlf=true`, line endings change the files' bytes, so intact files look edited: they are kept (safe), not updated. Compare them or use `--force`.
 
 ## Try it without installing
 
@@ -90,14 +102,20 @@ claude --plugin-dir /path/to/agentic-flow
 
 ## Publish a version (maintainers)
 
-1. Bump `version` in `.claude-plugin/plugin.json`. The version lives only there; the marketplace entry does not repeat it.
-2. Check the plugin, as CI does:
+1. Bump `version` in `.claude-plugin/plugin.json` and commit. The version lives only there; the marketplace entry does not repeat it.
+2. Record the flow's history, so upgrades recognise every published version, and commit it (it needs a full clone, not a shallow one):
+
+   ```bash
+   python3 .claude/bin/agentic.py flow-history
+   ```
+
+3. Check the plugin, as CI does:
 
    ```bash
    claude plugin validate --strict .
    ```
 
-3. Create the `agentic-flow--v<version>` tag:
+4. Create the `agentic-flow--v<version>` tag:
 
    ```bash
    claude plugin tag .
@@ -110,4 +128,5 @@ claude --plugin-dir /path/to/agentic-flow
 | `/plugin install` cannot find the marketplace | The repo is private and git cannot authenticate. Set up your GitHub credentials for git and try again |
 | `/agentic-flow:init` does not appear | Plugins load when a session starts: restart it after installing or updating |
 | After `init`, `/architect` does not appear | Open a new session in the repo: project commands and agents load at startup |
-| `modified by you` on files you don't remember touching | The flow was copied by hand earlier, without a record. Check the difference and use `--force` if nothing of yours is there |
+| `modified by you` on files you don't remember touching | Their content matches no published version: line endings (`core.autocrlf`), a formatter, or a copy from an unreleased commit. Compare with `.claude/state/upgrade/` and use `--force` if nothing of yours is there |
+| `install: nothing was written` (exit 3) | A flow file has uncommitted changes, or a run is in progress. Commit or stash (or `--allow-dirty`), or run `python3 .claude/bin/agentic.py stop` |
