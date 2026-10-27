@@ -20,12 +20,20 @@ concurrency:
 jobs:
   test:
     if: github.repository == 'jagosar/agentic-flow'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ${{ matrix.os }}
+    # Windows is slower at starting processes and running git, and this suite is mostly subprocesses.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python: ["3.9", "3.12", "3.14"]
+        include:
+          - {os: windows-latest, python: "3.12"}
+          - {os: macos-latest, python: "3.12"}
+    defaults:
+      run:
+        shell: bash  # Git Bash on Windows, as Claude Code uses there
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

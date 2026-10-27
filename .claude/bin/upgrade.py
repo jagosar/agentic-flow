@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 # Files the template copies besides the flow itself: refreshed only where they already exist and are intact.
-EXTRA_GLOBS = [".claude/bin/test_*.py", ".claude/bin/test_workflow.mjs", ".claude/bin/conformance.json",
+EXTRA_GLOBS = [".claude/bin/test_*.py", ".claude/bin/testutil.py", ".claude/bin/test_workflow.mjs", ".claude/bin/conformance.json",
                ".claude/bin/fixtures/*", ".github/workflows/agentic-flow-ci.yml", ".github/workflows/reset-readme.yml",
                "plugin/commands/*.md", ".claude-plugin/*.json"]
 
@@ -38,8 +38,11 @@ def leftovers(shipped, present):
 
 
 def git(cwd, *args, **kw):
+    opts = {"text": True} | kw
+    if opts["text"]:  # only in text mode: an encoding would turn a text=False call back into text
+        opts = {"encoding": "utf-8", "errors": "replace"} | opts
     try:
-        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, **({"text": True} | kw))
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, **opts)
     except FileNotFoundError:
         return subprocess.CompletedProcess(args, 127, "", "")
 
@@ -85,9 +88,15 @@ def guard_problems(target, paths):
         return ["not a git repository"]
     status = git(target, "status", "--porcelain", "--untracked-files=no", "--", *paths).stdout if paths else ""
     problems = [f"uncommitted: {line[3:].strip()}" for line in status.splitlines() if line.strip()]
+    ledger_path = target / ".claude" / "state" / "ledger.json"
     try:
-        ledger = json.loads((target / ".claude" / "state" / "ledger.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        ledger = {}
+    except OSError:  # it exists but cannot be read: a run may be using it
+        problems.append("the run state cannot be read: stop any run and try again")
+        ledger = {}
+    except ValueError:
         ledger = {}
     running = sorted(k for k, v in ledger.items()
                      if not k.startswith("_") and isinstance(v, dict) and v.get("state") == "running")
@@ -117,7 +126,7 @@ def build_history(repo_root, globs):
     for blob in blobs:  # each answer: "<sha> blob <size>\n<content>\n"
         end = out.index(b"\n", pos)
         size = int(out[pos:end].split()[2])
-        digest = hashlib.sha256(out[end + 1:end + 1 + size]).hexdigest()
+        digest = hashlib.sha256(out[end + 1:end + 1 + size].replace(b"\r\n", b"\n")).hexdigest()  # as compat.content_hash
         pos = end + 1 + size + 1
         for path in paths_of[blob]:
             files.setdefault(path, set()).add(digest)

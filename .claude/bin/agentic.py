@@ -53,7 +53,6 @@ compaction and is the source for answering "how is it going?".
 The manifest is a ```json wp-manifest``` block inside architecture.md.
 Launcher timeout and authentication: .claude/agentic.json (optional) and AGENTIC_* variables.
 """
-import fcntl
 import fnmatch
 import hashlib
 import json
@@ -61,11 +60,13 @@ import os
 import re
 import shlex
 import shutil
-import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import compat  # noqa: E402  - the operating-system layer, next to this file
 
 ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().parents[2])
 ARCH = ROOT / "architecture.md"
@@ -114,7 +115,7 @@ SYMBOL_RES = {
     (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
 }
 # What `install` puts in another repo: the flow, without the flow's own tests.
-INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
+INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/compat.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
                  ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
 INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
@@ -148,7 +149,7 @@ DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".r
 
 MANIFEST_RE = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
 AC_RE = re.compile(r"AC-\d+")
-CLAIM_RE = re.compile(r"agentic\.py\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")
+CLAIM_RE = re.compile(r"agentic(?:\.py)?\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")
 # A write subcommand in the same command as `git`, even with options in front (`git -C . commit`)
 # or inside quotes (`sh -c "git commit"`). Requires a space before it so `src/add.py` is not mistaken.
 GIT_WRITE_RE = re.compile(
@@ -515,7 +516,7 @@ def git_tree():
     that the real one is left alone. None if this is not a git repo."""
     try:
         git_index = subprocess.run(["git", "rev-parse", "--git-path", "index"], cwd=ROOT, capture_output=True,
-                                   text=True, check=True).stdout.strip()
+                                   text=True, encoding="utf-8", errors="replace", check=True).stdout.strip()
         tmp = STATE / "tree.idx"
         tmp.unlink(missing_ok=True)
         if (ROOT / git_index).exists():
@@ -523,7 +524,7 @@ def git_tree():
         env = dict(os.environ, GIT_INDEX_FILE=str(tmp))
         subprocess.run(["git", "add", "-A"], cwd=ROOT, env=env, capture_output=True, check=True)
         tree = subprocess.run(["git", "write-tree"], cwd=ROOT, env=env, capture_output=True, text=True,
-                              check=True).stdout.strip()
+                              encoding="utf-8", errors="replace", check=True).stdout.strip()
         tmp.unlink(missing_ok=True)
         return tree
     except (subprocess.CalledProcessError, FileNotFoundError, OSError):
@@ -532,11 +533,11 @@ def git_tree():
 
 def snapshot(label):
     STATE.mkdir(parents=True, exist_ok=True)
-    (STATE / f"snapshot-{label}.json").write_text(json.dumps(digest()))
+    (STATE / f"snapshot-{label}.json").write_text(json.dumps(digest()), encoding="utf-8")
     tree = git_tree()
     if tree:  # what a fix attempt changed is later diffed against this
-        (STATE / f"tree-{label}.txt").write_text(tree)
-    CLAIMS.unlink(missing_ok=True)  # every stage starts with no claims
+        (STATE / f"tree-{label}.txt").write_text(tree, encoding="utf-8")
+    locked_json(CLAIMS, lambda c: {})  # every stage starts with no claims (emptied: Windows cannot delete an open file)
     ledger_stage(label, "in progress")
     print(f"Snapshot of stage {label} saved.")
 
@@ -545,7 +546,7 @@ def check_stage(manifest, label):
     snap_file = STATE / f"snapshot-{label}.json"
     if not snap_file.exists():
         die(f"There is no snapshot of stage {label}. Run `snapshot {label}` before launching it.")
-    before = json.loads(snap_file.read_text())
+    before = json.loads(snap_file.read_text(encoding="utf-8"))
     after = digest()
     patterns = DEFAULT_IGNORE + manifest.get("ignore", [])
     changed = sorted(p for p in before.keys() | after.keys()
@@ -586,7 +587,7 @@ def load_spec():
 def usage_of(path):
     """Token usage and cost of a `claude -p --output-format json` output; zeros/None if there is none."""
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         data = None
     data = data if isinstance(data, dict) else {}
@@ -600,34 +601,37 @@ def run_agent(manifest, cfg, spec, agent_type, ident, label, prompt, out_path, f
     """One `claude -p` run with the agent's JSON schema. Returns {"report", "status", "usage"} and never raises.
     `final`: also write the end state in the ledger (the one-off commands; the pipeline's close-stage does it there)."""
     schema = spec["schemas"].get(agent_type, spec["schemas"]["implementer"])
-    cmd = ["claude", "-p", prompt, "--agent", agent_type, "--model", WORKER_MODEL, "--output-format", "json",
-           "--json-schema", json.dumps(schema), "--permission-mode", "acceptEdits", "--strict-mcp-config",
-           "--allowedTools", *pipeline_tools(manifest, agent_type), "Bash(python3 .claude/bin/agentic.py claim:*)"]
+    # The prompt goes on stdin: on Windows a `claude.cmd` would pass it through cmd.exe, which cuts newlines.
+    cmd = compat.resolve(shlex.split(os.environ.get("AGENTIC_CLAUDE", "claude"))) + [
+        "-p", "--agent", agent_type, "--model", WORKER_MODEL, "--output-format", "json",
+        "--json-schema", json.dumps(schema, separators=(",", ":")), "--permission-mode", "acceptEdits",
+        "--strict-mcp-config", "--allowedTools", *pipeline_tools(manifest, agent_type),
+        "Bash(python3 .claude/bin/agentic.py claim:*)"]
     env = child_env(cfg, AGENTIC_WP=ident or "REVIEW", CLAUDE_PROJECT_DIR=str(ROOT))
     tracked = agent_type not in READ_ONLY_AGENTS and ident in entities(manifest)
     report, status = None, "NO REPORT"
     try:
-        with open(out_path, "w") as out, open(out_path.with_suffix(".log"), "w") as err:
-            proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
-                                    start_new_session=True)  # its own group: stop and timeout kill it whole
+        with open(out_path, "w", encoding="utf-8") as out, open(out_path.with_suffix(".log"), "w", encoding="utf-8") as err:
+            proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.PIPE,
+                                    **compat.group_kwargs())  # its own group: stop and timeout kill it whole
             if tracked:
                 ledger_update(ident, state="running", stage=stage_of(ident), mode="fallback", pid=proc.pid,
                               started=now_hm(), note="")
             try:
-                proc.wait(timeout=cfg["timeout_s"])
+                proc.communicate(input=prompt.encode("utf-8"), timeout=cfg["timeout_s"])
                 if tracked and ledger_read().get(ident, {}).get("state") == "stopped":
                     status = "STOPPED"
                 else:
                     report = structured_report(out_path, schema)
                     status = report.get("status", "DONE") if report else "NO REPORT"
             except subprocess.TimeoutExpired:
-                kill_group(proc.pid)
+                compat.kill_tree(proc.pid)
                 proc.wait()
                 status = f"TIMEOUT ({cfg['timeout_s']}s)"
     except OSError as e:
         status = f"ERROR ({e})"
     usage = usage_of(out_path)
-    with open(USAGE, "a") as f:  # one short write: atomic enough for parallel agents
+    with open(USAGE, "a", encoding="utf-8") as f:  # one short write: atomic enough for parallel agents
         f.write(json.dumps({"id": ident or agent_type, "agent": agent_type, "label": label, **usage}) + "\n")
     if final and tracked:
         ledger_update(ident, state=status_to_state(status), pid=None, note=status)
@@ -891,10 +895,6 @@ def docs_check(manifest):
 
 # ---------- installing in another repo (plugin) ----------
 
-def sha256(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def flow_version():
     manifest = SOURCE_ROOT / ".claude-plugin" / "plugin.json"
     try:
@@ -943,13 +943,14 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
         return {p.relative_to(SOURCE_ROOT).as_posix() for g in globs for p in SOURCE_ROOT.glob(g) if p.is_file()}
 
     def intact(rel):
-        digest = sha256(target / rel)
+        digest = compat.content_hash(target / rel)
         return digest in history.get(rel, set()) or digest == previous.get(rel)
 
     # The flow everywhere; the template's leftovers (its tests, CI, plugin files) only where they already are.
     extras = shipped(upgrade.EXTRA_GLOBS)
     sources = sorted(shipped(INSTALL_GLOBS) | upgrade.leftovers(extras, {r for r in extras if (target / r).is_file()}))
-    plan = {rel: upgrade.classify(sha256(target / rel) if (target / rel).is_file() else None, sha256(SOURCE_ROOT / rel),
+    plan = {rel: upgrade.classify(compat.content_hash(target / rel) if (target / rel).is_file() else None,
+                                  compat.content_hash(SOURCE_ROOT / rel),
                                   history.get(rel, set()) | {previous.get(rel)}, force) for rel in sources}
     removed = sorted(r for r in set(previous) | set(history)
                      if not (SOURCE_ROOT / r).exists() and (target / r).is_file() and intact(r))
@@ -975,7 +976,7 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
             dst = target / ".claude" / "state" / "upgrade" / rel  # the new version, beside the user's
         else:
             report[kind].append(rel)
-            new_record[rel] = sha256(src)
+            new_record[rel] = compat.content_hash(src)
         if kind != "unchanged" and not dry_run:
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(src.read_bytes())
@@ -1012,7 +1013,8 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
     if not dry_run:
         # With this version's agentic.py, pointed at the target: the repo's own may be an old one that was kept.
         r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "rules-sync"], cwd=target,
-                           capture_output=True, text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
         if r.returncode == 0:
             print(f"  rules: {', '.join(json.loads(r.stdout)['rules'])}")
         else:
@@ -1030,7 +1032,7 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
             print(f"warning: {problem}")
     elif (target / "architecture.md").exists():
         r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "validate"], cwd=target, capture_output=True,
-                           text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+                           text=True, encoding="utf-8", errors="replace", env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
         errors = [line.strip() for line in r.stderr.splitlines() if line.strip() and line.strip() != "Invalid manifest:"]
         print("validate: OK" if r.returncode == 0 else f"validate: FAILED: {(errors or ['no detail'])[0]}")
     print("RESULT: OK")
@@ -1040,7 +1042,8 @@ def run_command(cmd, timeout=900, scan=None):
     """Runs a manifest command without a shell. Returns (code, last lines of output). With a list in `scan`, the
     last 200 lines are appended to it, for attributing a failure to the packages that own what it mentions."""
     try:
-        r = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=timeout,
+        r = subprocess.run(compat.resolve(shlex.split(cmd)), cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout,
                            env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)))
         lines = (r.stdout + r.stderr).strip().splitlines()
         if scan is not None:
@@ -1094,7 +1097,7 @@ def run_steps(groups):
     results, ok = [], True
     for g in groups:
         r = subprocess.run([sys.executable, str(Path(__file__).resolve()), *g], cwd=ROOT, capture_output=True, text=True,
-                           env=dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT)))
+                           encoding="utf-8", errors="replace", env=dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT)))
         out = (r.stdout + r.stderr).strip()
         results.append({"cmd": " ".join(g), "exit_code": r.returncode,
                         "output": out if len(out) <= SEQ_OUTPUT_CAP else "[truncated]\n" + out[-SEQ_OUTPUT_CAP:]})
@@ -1152,7 +1155,7 @@ def structured_report(path, schema):
     """The structured answer of a `claude -p --output-format json --json-schema` run, or None. The CLI puts it in
     `structured_output`; older output may carry it as JSON text in `result`, so both are accepted."""
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         return None
     report = data.get("structured_output")
@@ -1193,14 +1196,14 @@ def run_pipeline(manifest, args):
     elif rest:
         die("Uso: run-pipeline [--start-wave N] [--resume]")
     if "--resume" in flags and start_wave is None and PIPELINE_STATE.exists():
-        done = json.loads(PIPELINE_STATE.read_text()).get("completed_waves", [])
+        done = json.loads(PIPELINE_STATE.read_text(encoding="utf-8")).get("completed_waves", [])
         start_wave = max(done) + 1 if done else None
     pipeline, spec, cfg = pipeline_module(), load_spec(), load_config()
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / "runs").mkdir(parents=True, exist_ok=True)
     counter = iter(range(1, 10 ** 6))
     completed = []
-    seen = len(USAGE.read_text().splitlines()) if USAGE.exists() else 0
+    seen = len(USAGE.read_text(encoding="utf-8").splitlines()) if USAGE.exists() else 0
 
     def gate(cmds, label):
         ok, results = run_steps([shlex.split(c) for c in cmds])
@@ -1215,7 +1218,7 @@ def run_pipeline(manifest, args):
 
     def wave_done(wave):
         completed.append(wave)
-        PIPELINE_STATE.write_text(json.dumps({"completed_waves": sorted(set(completed))}))
+        PIPELINE_STATE.write_text(json.dumps({"completed_waves": sorted(set(completed))}), encoding="utf-8")
 
     engine = pipeline.Pipeline(spec, gate, agent, log=lambda m: print(m, flush=True), start_wave=start_wave,
                                phase=lambda t: print(f"== {t}", flush=True), wave_done=wave_done)
@@ -1256,7 +1259,7 @@ def stage_label(arg):
 def open_stage(manifest, label):
     owners = sorted(o["id"] for o in stage_owners(manifest, label))
     if owners:
-        with open(os.devnull, "w") as quiet:  # the snapshot must not pollute the JSON output
+        with open(os.devnull, "w", encoding="utf-8") as quiet:  # the snapshot must not pollute the JSON output
             old, sys.stdout = sys.stdout, quiet
             try:
                 snapshot(label)
@@ -1310,7 +1313,7 @@ def write_fix_diffs(manifest, label, attempts):
     after = git_tree()
     if not tree_file.exists() or not after:
         return
-    before = tree_file.read_text().strip()
+    before = tree_file.read_text(encoding="utf-8").strip()
     table = wps(manifest)
     runs = STATE / "runs"
     runs.mkdir(parents=True, exist_ok=True)
@@ -1319,7 +1322,7 @@ def write_fix_diffs(manifest, label, attempts):
         if not files:
             continue
         r = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", before, after, "--", *files], cwd=ROOT,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         text = r.stdout
         if len(text) > MAX_DIFF_BYTES:
             text = text[:MAX_DIFF_BYTES] + "\n[diff truncated]\n"
@@ -1364,7 +1367,7 @@ def baseline(manifest):
     for ph in phases:
         ph.pop("_scan", None)
     STATE.mkdir(parents=True, exist_ok=True)
-    BASELINE.write_text(json.dumps({"phases": phases}, ensure_ascii=False, indent=2))
+    BASELINE.write_text(json.dumps({"phases": phases}, ensure_ascii=False, indent=2), encoding="utf-8")
     failing = [p["name"] for p in phases if p.get("passed") is False]
     ledger_stage("baseline", "OK" if not failing else "with existing failures: " + ", ".join(failing))
     print(json.dumps({"phases": phases, "preexisting_failures": failing}, ensure_ascii=False))
@@ -1375,7 +1378,7 @@ def baseline(manifest):
 def verify(manifest):
     """The verify phases and green acceptance. With a baseline, a phase that already failed is a 'pre-existing failure'
     (reported, does not block) and one that passed and now fails is a 'regression' (blocks). JSON output."""
-    base = {p["name"]: p for p in json.loads(BASELINE.read_text()).get("phases", [])} if BASELINE.exists() else {}
+    base = {p["name"]: p for p in json.loads(BASELINE.read_text(encoding="utf-8")).get("phases", [])} if BASELINE.exists() else {}
     phases = run_phases(manifest)
     for ph in phases:
         if ph.get("skipped"):
@@ -1443,8 +1446,7 @@ def finish(manifest, label, statuses, expected):
 def locked_json(path, fn):
     """Runs fn(data) with the JSON file locked; if it returns a dict, saves it. Returns the previous data."""
     STATE.mkdir(parents=True, exist_ok=True)
-    with open(path, "a+") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
+    with open(path, "a+", encoding="utf-8") as fh, compat.locked(fh):
         fh.seek(0)
         raw = fh.read()
         data = json.loads(raw) if raw.strip() else {}
@@ -1502,7 +1504,7 @@ def stage_of(jid):
 
 
 def usage_records():
-    return [json.loads(line) for line in USAGE.read_text().splitlines() if line.strip()] if USAGE.exists() else []
+    return [json.loads(line) for line in USAGE.read_text(encoding="utf-8").splitlines() if line.strip()] if USAGE.exists() else []
 
 
 def usage_summary(records):
@@ -1544,13 +1546,6 @@ def ledger_render():
     LEDGER_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def kill_group(pid):
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        pass
-
-
 def stop(ids):
     d = ledger_read()
     targets = [k for k, v in d.items() if not k.startswith("_") and v.get("state") == "running"
@@ -1562,7 +1557,7 @@ def stop(ids):
         e = d[jid]
         ledger_update(jid, state="stopped", note="stopped on request")
         if e.get("pid"):
-            kill_group(e["pid"])
+            compat.kill_tree(e["pid"])
             print(f"{jid}: stopped (pid {e['pid']}).")
         else:
             print(f"{jid}: marked as stopped. It is a workflow agent: stop it from /workflows (key x).")
@@ -1702,7 +1697,7 @@ def hook():
     """Fails closed: any error inside a WP or QA blocks the tool."""
     restricted = bool(os.environ.get("AGENTIC_WP"))
     try:
-        data = json.load(sys.stdin)
+        data = json.loads(compat.read_stdin_text())
         restricted = restricted or bool(data.get("agent_id"))
         guard(data)
     except SystemExit:
@@ -1717,6 +1712,7 @@ def hook():
 # ---------- CLI ----------
 
 def main():
+    compat.utf8_stdio()
     if len(sys.argv) < 2:
         die(__doc__)
     cmd, args = sys.argv[1], sys.argv[2:]
@@ -1778,7 +1774,7 @@ def main():
         if src is not None and (src.resolve().parent != ROOT.resolve() or not src.is_file()):
             die("save-result: the file must exist and be at the repo root.")
         try:
-            data = json.loads(src.read_text(encoding="utf-8")) if src else json.load(sys.stdin)
+            data = json.loads(src.read_text(encoding="utf-8")) if src else json.loads(compat.read_stdin_text())
         except json.JSONDecodeError as e:
             die(f"save-result: not valid JSON: {e}")
         if src:
@@ -1824,7 +1820,8 @@ def main():
             data = upgrade.build_history(SOURCE_ROOT, INSTALL_GLOBS + upgrade.EXTRA_GLOBS)
         except ValueError as e:
             die(f"flow-history: {e}")
-        (SOURCE_ROOT / ".claude" / "flow-history.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        (SOURCE_ROOT / ".claude" / "flow-history.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n",
+                                                                       encoding="utf-8")
         print(json.dumps({"paths": len(data["files"]), "hashes": sum(len(h) for h in data["files"].values()),
                           "generated_from": data["generated_from"]}))
     elif cmd == "run-acceptance":

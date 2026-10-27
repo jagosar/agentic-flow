@@ -6,6 +6,7 @@ Each test works in a temporary git repo; the launcher uses a fake `claude`, with
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,11 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent / "agentic.py"
+sys.path.insert(0, str(SCRIPT.parent))
+import testutil  # noqa: E402
+
+# The manifests' commands run this interpreter: on Windows `python3` may be missing or the Store stub.
+PY = shlex.join([Path(sys.executable).as_posix()])
 AGENTS_DIR = SCRIPT.parents[1] / "agents"
 WORKFLOWS_DIR = SCRIPT.parents[1] / "workflows"
 FINDING = {"severity": "high", "wp": "WP-02", "file": "src/b/x.py", "problem": "p", "evidence": "e"}
@@ -23,7 +29,7 @@ FINDING = {"severity": "high", "wp": "WP-02", "file": "src/b/x.py", "problem": "
 MANIFEST = {
     "allow_bash": ["Bash(python3 -m unittest:*)"],
     "ignore": ["dist/"],
-    "acceptance": {"files": ["acceptance/"], "command": "python3 acc.py"},
+    "acceptance": {"files": ["acceptance/"], "command": f"{PY} acc.py"},
     "work_packages": [
         {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/a.py", "tests/test_a.py"]},
         {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["src/b/"]},
@@ -32,13 +38,15 @@ MANIFEST = {
 }
 
 FAKE_CLAUDE = textwrap.dedent("""\
-    #!/usr/bin/env python3
     import json, os, sys, time
     argv = sys.argv[1:]
+    prompt = sys.stdin.buffer.read().decode("utf-8")
     wp = os.environ["AGENTIC_WP"]
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".args"), "w") as f:
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".args"), "w", encoding="utf-8") as f:
         json.dump(argv, f)
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".env"), "w") as f:
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".prompt"), "w", encoding="utf-8") as f:
+        f.write(prompt)
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".env"), "w", encoding="utf-8") as f:
         json.dump({k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}, f)
     time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
     status = os.environ.get("FAKE_STATUS", "DONE" if wp != "QA" else "PASS")
@@ -52,16 +60,17 @@ class Repo:
     def __init__(self, manifest=MANIFEST, raw_manifest=None):
         self.dir = Path(tempfile.mkdtemp(prefix="agentic-test-"))
         body = raw_manifest if raw_manifest is not None else json.dumps(manifest, indent=2)
-        (self.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{body}\n```\n")
+        (self.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{body}\n```\n", encoding="utf-8")
         shutil.copytree(AGENTS_DIR, self.dir / ".claude" / "agents")
         shutil.copytree(WORKFLOWS_DIR, self.dir / ".claude" / "workflows")
         subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
         self.env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.dir))
-        self.env.pop("AGENTIC_WP", None)
+        for var in ("AGENTIC_WP", "AGENTIC_CLAUDE"):
+            self.env.pop(var, None)
 
     def run(self, *args, stdin=None, env=None):
         return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.dir, input=stdin,
-                              capture_output=True, text=True, env=dict(self.env, **(env or {})))
+                              capture_output=True, text=True, env=dict(self.env, **(env or {})), encoding="utf-8", errors="replace")
 
     def hook(self, payload, wp=None):
         return self.run("hook", stdin=json.dumps(payload), env={"AGENTIC_WP": wp} if wp else None).returncode
@@ -69,7 +78,7 @@ class Repo:
     def write(self, rel, text="x"):
         p = self.dir / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text)
+        p.write_text(text, encoding="utf-8")
 
     def cleanup(self):
         shutil.rmtree(self.dir, ignore_errors=True)
@@ -157,7 +166,7 @@ class HookWriteTests(Base):
 
     def test_relative_path_and_outside_the_repo(self):
         self.assertEqual(self.repo.hook({**write_payload("src/a.py"), "cwd": str(self.repo.dir)}, wp="WP-01"), 0)
-        self.assertEqual(self.repo.hook(write_payload("/tmp/outside.py"), wp="WP-01"), 2)
+        self.assertEqual(self.repo.hook(write_payload(str(Path(tempfile.gettempdir()) / "outside.py")), wp="WP-01"), 2)
         self.assertEqual(self.repo.hook(write_payload(str(self.repo.dir / "src/../src/b/x.py")), wp="WP-01"), 2)
 
     def test_qa_only_its_zone(self):
@@ -210,7 +219,7 @@ class V2EntityTests(Base):
         self.assertEqual(self.repo.hook(write_payload(self.p("src/a.py"), agent_id="a2")), 2)
 
     def write_manifest(self, m):
-        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```")
+        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```", encoding="utf-8")
 
     def test_v2_validations(self):
         cases = {
@@ -231,17 +240,17 @@ class V2EntityTests(Base):
         for name, wrong in (("test-author", "opus"), ("reviewer", "opus"), ("plan-reviewer", "sonnet")):
             with self.subTest(name):
                 f = agents / f"{name}.md"
-                original = f.read_text()
+                original = f.read_text(encoding="utf-8")
                 good = "model: opus" if name == "plan-reviewer" else "model: sonnet"
-                f.write_text(original.replace(good, f"model: {wrong}"))
+                f.write_text(original.replace(good, f"model: {wrong}"), encoding="utf-8")
                 r = self.repo.run("validate")
                 self.assertEqual(r.returncode, 1, r.stderr)
                 self.assertIn(name, r.stderr)
-                f.write_text(original)
+                f.write_text(original, encoding="utf-8")
         self.assertEqual(self.repo.run("validate").returncode, 0)
 
     def acc(self, code):
-        (self.repo.dir / "acc.py").write_text(f"import sys\nprint('tests')\nsys.exit({code})\n")
+        (self.repo.dir / "acc.py").write_text(f"import sys\nprint('tests')\nsys.exit({code})\n", encoding="utf-8")
 
     def test_acceptance_red_and_green(self):
         self.acc(1)
@@ -322,7 +331,7 @@ class WorkflowCommandTests(Base):
 
 class PipelineCommandTests(Base):
     """Commands the agentic-implement workflow uses (run by the gatekeeper)."""
-    manifest = dict(MANIFEST, verify={"tests": "python3 ok.py", "lint": "python3 lint.py"})
+    manifest = dict(MANIFEST, verify={"tests": f"{PY} ok.py", "lint": f"{PY} lint.py"})
 
     def setUp(self):
         super().setUp()
@@ -332,7 +341,7 @@ class PipelineCommandTests(Base):
 
     def test_pipeline_plan(self):
         (self.repo.dir / "architecture.md").write_text(
-            "# A\nType: fix · Size: small\n\n```json wp-manifest\n" + json.dumps(self.manifest) + "\n```\n")
+            "# A\nType: fix · Size: small\n\n```json wp-manifest\n" + json.dumps(self.manifest) + "\n```\n", encoding="utf-8")
         r = self.repo.run("pipeline-plan")
         self.assertEqual(r.returncode, 0, r.stderr)
         plan = json.loads(r.stdout)
@@ -345,14 +354,14 @@ class PipelineCommandTests(Base):
         self.assertEqual(plan["agents"]["WP-01"], "implementer")
 
     def test_open_and_close_stage_with_labels(self):
-        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(1)\n")  # before the snapshot: it belongs to nobody
+        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")  # before the snapshot: it belongs to nobody
         r = self.repo.run("open-stage", "acceptance")
         self.assertEqual(json.loads(r.stdout), {"stage": "acceptance", "owners": ["AT"]})
         self.repo.write("acceptance/test_ac_001.py")
         r = self.repo.run("close-stage", "acceptance", "AT=done", "--expect", "red")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("RED", r.stdout)
-        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(0)\n")
+        (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
         self.repo.run("open-stage", "acceptance")
         self.assertEqual(self.repo.run("close-stage", "acceptance", "AT=done", "--expect", "red").returncode, 3,
                          "if they already pass without code, wave 0 fails")
@@ -362,7 +371,7 @@ class PipelineCommandTests(Base):
         for _ in range(2):
             self.repo.run("open-stage", "1")
             self.repo.run("close-stage", "1", "WP-02=done", "--fix")
-        ledger = json.loads((self.repo.dir / ".claude/state/ledger.json").read_text())
+        ledger = json.loads((self.repo.dir / ".claude/state/ledger.json").read_text(encoding="utf-8"))
         self.assertEqual(ledger["WP-02"]["fix_count"], 2)
 
     def test_verify_json(self):
@@ -379,27 +388,27 @@ class PipelineCommandTests(Base):
 
     def test_verify_malformed(self):
         m = dict(self.manifest, verify={"deploy": "x"})
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```", encoding="utf-8")
         self.assertEqual(self.repo.run("validate").returncode, 1)
 
     def test_sync_permissions(self):
         local = self.repo.dir / ".claude/settings.local.json"
-        local.write_text(json.dumps({"permissions": {"allow": ["Read"]}, "otra": 1}))
+        local.write_text(json.dumps({"permissions": {"allow": ["Read"]}, "otra": 1}), encoding="utf-8")
         r = self.repo.run("sync-permissions")
         self.assertEqual(r.returncode, 0, r.stderr)
-        data = json.loads(local.read_text())
+        data = json.loads(local.read_text(encoding="utf-8"))
         allow = data["permissions"]["allow"]
-        for rule in ["Read", "Workflow(agentic-implement)", "Bash(python3 -m unittest:*)", "Bash(python3 acc.py)",
-                     "Bash(python3 ok.py:*)"]:
+        for rule in ["Read", "Workflow(agentic-implement)", "Bash(python3 -m unittest:*)", f"Bash({PY} acc.py)",
+                     f"Bash({PY} ok.py:*)"]:
             self.assertIn(rule, allow)
         self.assertEqual(data["otra"], 1, "keeps the rest of the file")
         self.repo.run("sync-permissions")
-        self.assertEqual(len(json.loads(local.read_text())["permissions"]["allow"]), len(allow), "idempotente")
+        self.assertEqual(len(json.loads(local.read_text(encoding="utf-8"))["permissions"]["allow"]), len(allow), "idempotente")
 
 
 class AttributionTests(Base):
     """verify names the work packages behind a failure; seq batches commands; fixes leave a diff for the next attempt."""
-    manifest = dict(MANIFEST, verify={"tests": "python3 fail.py"},
+    manifest = dict(MANIFEST, verify={"tests": f"{PY} fail.py"},
                     work_packages=[dict(wp, acs=["AC-00%d" % (i + 1)]) for i, wp in enumerate(MANIFEST["work_packages"])])
 
     def setUp(self):
@@ -440,7 +449,7 @@ class AttributionTests(Base):
         self.repo.write("src/b/x.py", "v2\n")
         self.repo.write("src/a.py", "a2\n")  # WP-01's, but this attempt only closes WP-02
         r = self.repo.run("close-stage", "1", "WP-02=done", "--fix")
-        diff = (self.repo.dir / ".claude/state/runs/WP-02.fix-1.diff").read_text()
+        diff = (self.repo.dir / ".claude/state/runs/WP-02.fix-1.diff").read_text(encoding="utf-8")
         self.assertIn("-v1", diff)
         self.assertIn("+v2", diff)
         self.assertNotIn("a2", diff)
@@ -465,7 +474,7 @@ class AttributionTests(Base):
         r = self.repo.run("validate")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         path = self.repo.dir / ".claude/agents/implementer.md"
-        path.write_text(path.read_text().replace("model: sonnet", "model: haiku"))
+        path.write_text(path.read_text(encoding="utf-8").replace("model: sonnet", "model: haiku"), encoding="utf-8")
         r = self.repo.run("validate")
         self.assertEqual(r.returncode, 1)
         self.assertIn("implementer", r.stdout + r.stderr)
@@ -473,10 +482,10 @@ class AttributionTests(Base):
 
 class BrownfieldTests(Base):
     """PRP-style plan (validated mirror references) and the regression baseline."""
-    manifest = dict(MANIFEST, verify={"tests": "python3 t.py", "lint": "python3 l.py"})
+    manifest = dict(MANIFEST, verify={"tests": f"{PY} t.py", "lint": f"{PY} l.py"})
 
     def set_manifest(self, m):
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```", encoding="utf-8")
 
     def test_mirror_validated(self):
         self.repo.write("legacy/orders.py", "\n".join(f"linea {i}" for i in range(1, 41)))
@@ -531,14 +540,14 @@ class BrownfieldTests(Base):
         payload = {"result": "OK", "qa": {"status": "PASS"}, "note": "ñandú"}
         r = self.repo.run("save-result", stdin=json.dumps(payload))
         self.assertEqual(r.returncode, 0, r.stderr)
-        saved = json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text())
+        saved = json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))
         self.assertEqual(saved, payload)
         self.assertEqual(self.repo.run("save-result", stdin="not json").returncode, 1)
-        (self.repo.dir / ".agentic-result.json").write_text(json.dumps({"result": "REVIEW"}))
+        (self.repo.dir / ".agentic-result.json").write_text(json.dumps({"result": "REVIEW"}), encoding="utf-8")
         r = self.repo.run("save-result", ".agentic-result.json")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse((self.repo.dir / ".agentic-result.json").exists(), "the temporary file is deleted")
-        self.assertEqual(json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text())["result"], "REVIEW")
+        self.assertEqual(json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))["result"], "REVIEW")
         self.repo.write("src/x.json", "{}")
         self.assertEqual(self.repo.run("save-result", "src/x.json").returncode, 1, "only from the root")
 
@@ -565,7 +574,7 @@ class RulesTests(Base):
         shutil.copytree(SCRIPT.parents[1] / "rules-library", self.repo.dir / ".claude" / "rules-library")
 
     def set_manifest(self, m):
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```", encoding="utf-8")
 
     def installed(self):
         return sorted(p.stem for p in (self.repo.dir / ".claude/rules/agentic").glob("*.md"))
@@ -590,8 +599,8 @@ class RulesTests(Base):
         out = json.loads(self.repo.run("rules-sync").stdout)
         self.assertEqual(self.installed(), ["common", "go"])
         self.assertEqual(sorted(out["removed"]), ["python", "rust"])
-        lib = (self.repo.dir / ".claude/rules-library/go.md").read_text()
-        self.assertEqual((self.repo.dir / ".claude/rules/agentic/go.md").read_text(), lib, "copia exacta: paths: arriba")
+        lib = (self.repo.dir / ".claude/rules-library/go.md").read_text(encoding="utf-8")
+        self.assertEqual((self.repo.dir / ".claude/rules/agentic/go.md").read_text(encoding="utf-8"), lib, "copia exacta: paths: arriba")
 
     def test_validate_rejects_a_stack_without_rules(self):
         self.set_manifest(dict(MANIFEST, stack=["cobol"]))
@@ -627,7 +636,7 @@ class LivingDocsTests(Base):
     manifest = dict(MANIFEST, docs={"files": ["README.md", "CHANGELOG.md", "docs/"]})
 
     def set_manifest(self, m):
-        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```")
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(m) + "\n```", encoding="utf-8")
 
     def test_validate_docs_zone(self):
         self.assertEqual(self.repo.run("validate").returncode, 0)
@@ -664,7 +673,7 @@ class LivingDocsTests(Base):
         first = json.loads(self.repo.run("codemap").stdout)
         self.assertEqual(first["path"], "docs/CODEMAP.md")
         self.assertTrue(first["changed"])
-        text = (self.repo.dir / "docs/CODEMAP.md").read_text()
+        text = (self.repo.dir / "docs/CODEMAP.md").read_text(encoding="utf-8")
         for sym in ("`publica`", "`Modelo`", "`hola`", "`Opciones`", "`Arranca`", "`Metodo`"):
             self.assertIn(sym, text)
         for hidden in ("_privada", "interna", "interno"):
@@ -713,9 +722,9 @@ class InstallTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
         (self.dir / ".claude").mkdir()
         (self.dir / ".claude/settings.json").write_text(json.dumps(
-            {"permissions": {"allow": ["Bash(make test)"]}, "hooks": {"PostToolUse": []}, "model": "sonnet"}))
-        (self.dir / ".gitignore").write_text("dist/\n")
-        (self.dir / "main.py").write_text("print(1)\n")
+            {"permissions": {"allow": ["Bash(make test)"]}, "hooks": {"PostToolUse": []}, "model": "sonnet"}), encoding="utf-8")
+        (self.dir / ".gitignore").write_text("dist/\n", encoding="utf-8")
+        (self.dir / "main.py").write_text("print(1)\n", encoding="utf-8")
         self.env = dict(os.environ)
         self.env.pop("CLAUDE_PROJECT_DIR", None)
 
@@ -724,7 +733,7 @@ class InstallTests(unittest.TestCase):
 
     def install(self, *flags):
         return subprocess.run([sys.executable, str(SCRIPT), "install", str(self.dir), *flags], capture_output=True,
-                              text=True, env=self.env)
+                              text=True, env=self.env, encoding="utf-8", errors="replace")
 
     def test_a_first_install_has_no_upgrade_notes(self):
         r = self.install()
@@ -738,7 +747,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("--allow-dirty", r.stderr)
         r = subprocess.run([sys.executable, str(SCRIPT), "flow-history", "extra"], capture_output=True, text=True,
-                           env=self.env)
+                           env=self.env, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 1)
         self.assertIn("Uso: flow-history", r.stderr)
 
@@ -750,15 +759,15 @@ class InstallTests(unittest.TestCase):
                     ".claude/rules/agentic/python.md", ".claude/agentic.json", ".claude/agentic-install.json"):
             self.assertTrue((self.dir / rel).exists(), rel)
         self.assertFalse((self.dir / ".claude/bin/test_agentic.py").exists(), "the flow's tests are not installed")
-        settings = json.loads((self.dir / ".claude/settings.json").read_text())
+        settings = json.loads((self.dir / ".claude/settings.json").read_text(encoding="utf-8"))
         self.assertEqual(settings["model"], "sonnet")
         self.assertIn("Bash(make test)", settings["permissions"]["allow"])
         self.assertIn("Workflow(agentic-implement)", settings["permissions"]["allow"])
         self.assertIn("Bash(rm -rf:*)", settings["permissions"]["deny"])
         self.assertTrue(settings["enableWorkflows"])
         self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
-        self.assertIn(".claude/state/", (self.dir / ".gitignore").read_text().splitlines())
-        self.assertTrue((self.dir / ".gitignore").read_text().startswith("dist/\n"))
+        self.assertIn(".claude/state/", (self.dir / ".gitignore").read_text(encoding="utf-8").splitlines())
+        self.assertTrue((self.dir / ".gitignore").read_text(encoding="utf-8").startswith("dist/\n"))
 
     def test_reinstalling_is_idempotent(self):
         self.install()
@@ -771,27 +780,27 @@ class InstallTests(unittest.TestCase):
     def test_update_does_not_overwrite_your_changes_except_with_force(self):
         self.install()
         mine = self.dir / ".claude/agents/reviewer.md"
-        mine.write_text(mine.read_text() + "\nTeam rule of our own.\n")
+        mine.write_text(mine.read_text(encoding="utf-8") + "\nTeam rule of our own.\n", encoding="utf-8")
         stale = self.dir / ".claude/agents/implementer.md"
-        stale.write_text("old version, untouched")
-        record = json.loads((self.dir / ".claude/agentic-install.json").read_text())
+        stale.write_text("old version, untouched", encoding="utf-8")
+        record = json.loads((self.dir / ".claude/agentic-install.json").read_text(encoding="utf-8"))
         record["files"][".claude/agents/implementer.md"] = hashlib.sha256(b"old version, untouched").hexdigest()
-        (self.dir / ".claude/agentic-install.json").write_text(json.dumps(record))
+        (self.dir / ".claude/agentic-install.json").write_text(json.dumps(record), encoding="utf-8")
         r = self.install()
         self.assertIn("modified by you (left alone): 1", r.stdout)
-        self.assertIn("Team rule of our own.", mine.read_text())
-        self.assertNotEqual(stale.read_text(), "old version, untouched", "what was not modified gets updated")
+        self.assertIn("Team rule of our own.", mine.read_text(encoding="utf-8"))
+        self.assertNotEqual(stale.read_text(encoding="utf-8"), "old version, untouched", "what was not modified gets updated")
         self.assertIn("modified by you", self.install().stdout, "still protected on the next update")
         self.install("--force")
-        self.assertNotIn("Team rule of our own.", mine.read_text())
+        self.assertNotIn("Team rule of our own.", mine.read_text(encoding="utf-8"))
 
     def test_old_copy_without_record_is_kept_and_rules_are_installed(self):
         old = self.dir / ".claude/bin/agentic.py"
         old.parent.mkdir(parents=True)
-        old.write_text("import sys\nprint('old version')\nsys.exit(1)\n")
+        old.write_text("import sys\nprint('old version')\nsys.exit(1)\n", encoding="utf-8")
         r = self.install()
         self.assertIn("modified by you (left alone): 1", r.stdout)
-        self.assertIn("old version", old.read_text(), "no record, different: not overwritten")
+        self.assertIn("old version", old.read_text(encoding="utf-8"), "no record, different: not overwritten")
         self.assertIn("rules: common, python", r.stdout)
         self.assertTrue((self.dir / ".claude/rules/agentic/python.md").exists())
 
@@ -803,21 +812,21 @@ class InstallTests(unittest.TestCase):
 
     def test_cannot_install_over_itself(self):
         r = subprocess.run([sys.executable, str(SCRIPT), "install", str(SCRIPT.parents[2])], capture_output=True,
-                           text=True, env=self.env)
+                           text=True, env=self.env, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 1)
 
     def test_installed_flow_works(self):
         self.install()
-        (self.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(dict(MANIFEST, stack=["python"])) + "\n```")
+        (self.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(dict(MANIFEST, stack=["python"])) + "\n```", encoding="utf-8")
         r = subprocess.run([sys.executable, ".claude/bin/agentic.py", "validate"], cwd=self.dir, capture_output=True,
-                           text=True, env=self.env)
+                           text=True, env=self.env, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stderr)
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
 class WorkflowLogicTests(unittest.TestCase):
     def test_workflow_scenarios(self):
-        r = subprocess.run(["node", str(SCRIPT.parent / "test_workflow.mjs")], capture_output=True, text=True)
+        r = subprocess.run(["node", str(SCRIPT.parent / "test_workflow.mjs")], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
@@ -910,11 +919,10 @@ class LauncherTests(Base):
     def setUp(self):
         super().setUp()
         self.bin = Path(tempfile.mkdtemp(prefix="fake-claude-"))
-        fake = self.bin / "claude"
-        fake.write_text(FAKE_CLAUDE)
-        fake.chmod(0o755)
+        fake = self.bin / "claude_fake.py"
+        fake.write_text(FAKE_CLAUDE, encoding="utf-8")
         self.logs = Path(tempfile.mkdtemp(prefix="fake-logs-"))
-        self.repo.env.update(PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}", FAKE_LOG_DIR=str(self.logs))
+        self.repo.env.update(AGENTIC_CLAUDE=testutil.claude_command(fake), FAKE_LOG_DIR=str(self.logs))
 
     def tearDown(self):
         super().tearDown()
@@ -922,7 +930,7 @@ class LauncherTests(Base):
         shutil.rmtree(self.logs, ignore_errors=True)
 
     def args(self, wp):
-        return json.loads((self.logs / f"{wp}.args").read_text())
+        return json.loads((self.logs / f"{wp}.args").read_text(encoding="utf-8"))
 
     def test_wave_runs_in_parallel(self):
         start = time.time()
@@ -944,7 +952,7 @@ class LauncherTests(Base):
         self.assertFalse((self.logs / "WP-03.args").exists(), "WP-03 belongs to wave 2")
 
     def test_model_cannot_be_changed(self):
-        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"models": {"qa": "claude-opus-5-5"}}))
+        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"models": {"qa": "claude-opus-5-5"}}), encoding="utf-8")
         self.repo.run("run-qa", env={"AGENTIC_QA_MODEL": "opus", "AGENTIC_IMPLEMENTER_MODEL": "opus"})
         a = self.args("QA")
         self.assertEqual(a[a.index("--model") + 1], "sonnet")
@@ -952,7 +960,7 @@ class LauncherTests(Base):
 
     def test_agent_with_another_model_does_not_validate(self):
         f = self.repo.dir / ".claude/agents/qa.md"
-        f.write_text(f.read_text().replace("model: sonnet", "model: claude-opus-5-5"))
+        f.write_text(f.read_text(encoding="utf-8").replace("model: sonnet", "model: claude-opus-5-5"), encoding="utf-8")
         r = self.repo.run("run-wave", "1")
         self.assertEqual(r.returncode, 1)
         self.assertIn("model: sonnet", r.stderr)
@@ -961,9 +969,9 @@ class LauncherTests(Base):
     def test_architect_must_be_opus(self):
         cmds = self.repo.dir / ".claude/commands"
         cmds.mkdir(parents=True, exist_ok=True)
-        (cmds / "architect.md").write_text("---\ndescription: x\nmodel: opus\n---\nx")
+        (cmds / "architect.md").write_text("---\ndescription: x\nmodel: opus\n---\nx", encoding="utf-8")
         self.assertEqual(self.repo.run("validate").returncode, 0)
-        (cmds / "architect.md").write_text("---\ndescription: x\nmodel: claude-opus-5-5\n---\nx")
+        (cmds / "architect.md").write_text("---\ndescription: x\nmodel: claude-opus-5-5\n---\nx", encoding="utf-8")
         r = self.repo.run("validate")
         self.assertEqual(r.returncode, 1)
         self.assertIn("latest Opus", r.stderr)
@@ -981,7 +989,7 @@ class LauncherTests(Base):
     def test_launcher_must_be_sonnet(self):
         cmds = self.repo.dir / ".claude/commands"
         cmds.mkdir(parents=True, exist_ok=True)
-        (cmds / "implement.md").write_text("---\ndescription: x\nmodel: opus\n---\nx")
+        (cmds / "implement.md").write_text("---\ndescription: x\nmodel: opus\n---\nx", encoding="utf-8")
         r = self.repo.run("validate")
         self.assertEqual(r.returncode, 1)
         self.assertIn("/implement", r.stderr)
@@ -989,16 +997,16 @@ class LauncherTests(Base):
     def test_specialised_agent_must_exist_and_be_sonnet(self):
         m = json.loads(json.dumps(MANIFEST))
         m["work_packages"][0]["agent"] = "frontend"
-        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```")
+        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```", encoding="utf-8")
         r = self.repo.run("validate")
         self.assertIn("does not exist", r.stderr)
-        (self.repo.dir / ".claude/agents/frontend.md").write_text("---\nname: frontend\nmodel: haiku\n---\nx")
+        (self.repo.dir / ".claude/agents/frontend.md").write_text("---\nname: frontend\nmodel: haiku\n---\nx", encoding="utf-8")
         self.assertIn("not 'haiku'", self.repo.run("validate").stderr)
-        (self.repo.dir / ".claude/agents/frontend.md").write_text("---\nname: frontend\nmodel: sonnet\n---\nx")
+        (self.repo.dir / ".claude/agents/frontend.md").write_text("---\nname: frontend\nmodel: sonnet\n---\nx", encoding="utf-8")
         self.assertEqual(self.repo.run("validate").returncode, 0)
 
     def env_of(self, wp):
-        return json.loads((self.logs / f"{wp}.env").read_text())
+        return json.loads((self.logs / f"{wp}.env").read_text(encoding="utf-8"))
 
     def test_subscription_does_not_inherit_api_key(self):
         self.repo.run("run-wave", "1", env={"ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_AUTH_TOKEN": "tok"})
@@ -1006,7 +1014,7 @@ class LauncherTests(Base):
 
     def test_auth_inherit_keeps_api_key(self):
         (self.repo.dir / ".claude").mkdir(exist_ok=True)
-        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"auth": "inherit"}))
+        (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"auth": "inherit"}), encoding="utf-8")
         self.repo.run("run-wave", "1", env={"ANTHROPIC_API_KEY": "sk-test"})
         self.assertEqual(self.env_of("WP-01")["ANTHROPIC_API_KEY"], "sk-test")
 
@@ -1017,12 +1025,12 @@ class LauncherTests(Base):
         self.assertEqual(self.repo.run("run-wave", "1", "WP-03").returncode, 1)
 
     def prompt_of(self, wp):
-        return self.args(wp)[1]
+        return (self.logs / f"{wp}.prompt").read_text(encoding="utf-8")
 
     def test_fix_only_when_requested(self):
         runs = self.repo.dir / ".claude/state/runs"
         runs.mkdir(parents=True, exist_ok=True)
-        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": [FINDING]}}))
+        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": [FINDING]}}), encoding="utf-8")
         self.repo.run("run-wave", "1", "WP-02")
         self.assertNotIn('"problem"', self.prompt_of("WP-02"), "without --fix it must not use an old report")
         self.repo.run("run-wave", "1", "WP-02", "--fix")
@@ -1066,12 +1074,12 @@ class LauncherTests(Base):
     def test_stop_stops_the_wave(self):
         proc = subprocess.Popen([sys.executable, str(SCRIPT), "run-wave", "1"], cwd=self.repo.dir,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                env=dict(self.repo.env, FAKE_SLEEP="30"))
+                                env=dict(self.repo.env, FAKE_SLEEP="30"), encoding="utf-8", errors="replace")
         ledger = self.repo.dir / ".claude/state/ledger.json"
         deadline = time.time() + 10
         while time.time() < deadline:
             try:
-                d = json.loads(ledger.read_text())
+                d = json.loads(ledger.read_text(encoding="utf-8"))
                 if all(d.get(w, {}).get("pid") for w in ("WP-01", "WP-02")):
                     break
             except (OSError, json.JSONDecodeError):
@@ -1094,7 +1102,7 @@ class LauncherTests(Base):
         self.assertEqual(a[a.index("--model") + 1], "sonnet")
 
     def test_review_without_write_tools(self):
-        (self.logs / "x").write_text("")
+        (self.logs / "x").write_text("", encoding="utf-8")
         r = self.repo.run("run-review", env={"FAKE_STATUS": "PASS"})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         a = self.args("REVIEW")
@@ -1104,13 +1112,13 @@ class LauncherTests(Base):
 
     def test_implementers_may_run_acceptance(self):
         self.repo.run("run-wave", "1")
-        self.assertIn("Bash(python3 acc.py:*)", self.args("WP-01"))
+        self.assertIn(f"Bash({PY} acc.py:*)", self.args("WP-01"))
 
     def test_fix_limit(self):
         runs = self.repo.dir / ".claude/state/runs"
         runs.mkdir(parents=True, exist_ok=True)
         findings = [FINDING, dict(FINDING, wp="WP-01")]
-        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": findings}}))
+        (runs / "REVIEW.json").write_text(json.dumps({"structured_output": {"status": "FAIL", "findings": findings}}), encoding="utf-8")
         for _ in range(2):
             self.assertEqual(self.repo.run("run-wave", "1", "WP-02", "--fix").returncode, 0)
             self.assertTrue(self.prompt_of("WP-02").startswith("Fix WP-02."))
@@ -1134,7 +1142,7 @@ class LauncherTests(Base):
     def test_invalid_manifest_does_not_launch(self):
         m = json.loads(json.dumps(MANIFEST))
         m["allow_bash"] = ["Bash(*)"]
-        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```")
+        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```", encoding="utf-8")
         self.assertEqual(self.repo.run("run-wave", "1").returncode, 1)
         self.assertFalse((self.logs / "WP-01.args").exists())
 

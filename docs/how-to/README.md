@@ -62,7 +62,7 @@ Models are set by alias and cannot be changed: `validate` fails if any piece dec
    ```
 
 3. **`git` and `python3` 3.9 or later.**
-4. **macOS, Linux or WSL 2.** Claude Code runs on native Windows, but `agentic.py` uses `fcntl`, which only exists on POSIX. On Windows, work inside WSL.
+4. **macOS, Linux, WSL 2 or Windows with Git for Windows.** The flow's tests run on Linux, macOS and Windows in CI. On native Windows, until the next release, the `python3` command must run Python 3.9+ (the python.org installer creates `python` and `py`, not `python3`); if it does not, work inside WSL.
 
 Check your setup:
 
