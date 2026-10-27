@@ -3,6 +3,7 @@ patching compat.IS_WINDOWS; the lock is also tested for real on the system that 
 
 Run: python3 -m unittest discover -s .claude/bin -p test_compat.py
 """
+import errno
 import io
 import json
 import os
@@ -49,7 +50,7 @@ class LockedTests(TempDir):
 
     def test_windows_branch_locks_byte_zero_and_retries(self):
         msvcrt = mock.Mock(LK_LOCK=1, LK_UNLCK=0)
-        msvcrt.locking.side_effect = [OSError("busy"), None, None]
+        msvcrt.locking.side_effect = [OSError(errno.EDEADLK, "busy"), None, None]
         fh = mock.Mock()
         fh.fileno.return_value = 7
         with mock.patch.object(compat, "IS_WINDOWS", True), mock.patch.dict(sys.modules, {"msvcrt": msvcrt}), \
@@ -60,6 +61,23 @@ class LockedTests(TempDir):
         calls = [c[0] for c in fh.method_calls]
         self.assertLess(calls.index("flush"), len(calls) - 1, "flushed before unlocking")
         self.assertEqual(fh.seek.call_args_list[0], mock.call(0))
+
+
+    def test_windows_branch_fails_on_errors_other_than_contention(self):
+        # Only "someone else holds it" is worth waiting for; anything else would spin forever.
+        msvcrt = mock.Mock(LK_LOCK=1, LK_UNLCK=0)
+        # a third attempt means it is retrying: stop there instead of hanging the suite
+        msvcrt.locking.side_effect = [OSError(errno.EBADF, "bad descriptor"), OSError(errno.EBADF, "bad descriptor"),
+                                      RuntimeError("it retried a non-contention error")]
+        fh = mock.Mock()
+        fh.fileno.return_value = 7
+        with mock.patch.object(compat, "IS_WINDOWS", True), mock.patch.dict(sys.modules, {"msvcrt": msvcrt}), \
+                mock.patch.object(compat.time, "sleep") as sleep:
+            with self.assertRaises(OSError):
+                with compat.locked(fh):
+                    pass
+        self.assertEqual(msvcrt.locking.call_count, 1)
+        sleep.assert_not_called()
 
 
 class ProcessTests(unittest.TestCase):

@@ -1203,7 +1203,7 @@ def run_pipeline(manifest, args):
     (STATE / "runs").mkdir(parents=True, exist_ok=True)
     counter = iter(range(1, 10 ** 6))
     completed = []
-    seen = len(USAGE.read_text(encoding="utf-8").splitlines()) if USAGE.exists() else 0
+    seen = len(usage_records())
 
     def gate(cmds, label):
         ok, results = run_steps([shlex.split(c) for c in cmds])
@@ -1504,7 +1504,13 @@ def stage_of(jid):
 
 
 def usage_records():
-    return [json.loads(line) for line in USAGE.read_text(encoding="utf-8").splitlines() if line.strip()] if USAGE.exists() else []
+    """The usage lines, read under the lock: on Windows a lock is mandatory, so reading while an agent appends would
+    raise PermissionError."""
+    if not USAGE.exists():
+        return []
+    with open(USAGE, encoding="utf-8") as fh, compat.locked(fh):
+        text = fh.read()
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
 def usage_summary(records):

@@ -15,6 +15,7 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parent / "agentic.py"
 sys.path.insert(0, str(SCRIPT.parent))
@@ -109,6 +110,27 @@ class Base(unittest.TestCase):
 
     def tearDown(self):
         self.repo.cleanup()
+
+
+class UsageLockTests(unittest.TestCase):
+    """On Windows a lock is mandatory: reading usage.jsonl while a finishing agent appends to it under the lock raises
+    PermissionError, so every reader must take the lock too."""
+
+    def test_usage_records_are_read_under_the_lock(self):
+        import agentic
+        tmp = Path(tempfile.mkdtemp(prefix="usage-lock-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        usage = tmp / "usage.jsonl"
+        usage.write_text('{"id": "WP-01"}\n', encoding="utf-8")
+        locked_paths, real_locked = [], agentic.compat.locked
+
+        def spy(fh):
+            locked_paths.append(Path(fh.name).name)
+            return real_locked(fh)
+
+        with mock.patch.object(agentic, "USAGE", usage), mock.patch.object(agentic.compat, "locked", spy):
+            self.assertEqual(agentic.usage_records(), [{"id": "WP-01"}])
+        self.assertIn("usage.jsonl", locked_paths)
 
 
 class ValidateTests(unittest.TestCase):
