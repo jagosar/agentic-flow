@@ -1020,7 +1020,9 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
     if report["modified by you (left alone)"]:
         print("kept files: " + ("run without --dry-run to get their new versions in .claude/state/upgrade/" if dry_run else
               "new versions in .claude/state/upgrade/ (compare with: diff -ru .claude/state/upgrade/.claude .claude)"))
-    notes = upgrade.notes_between(record.get("version"), flow_version())
+    # Notes are for upgrades: a repo that had no flow at all has nothing to adapt.
+    had_flow = bool(record) or bool(removed) or any(kind != "new" for kind in plan.values())
+    notes = upgrade.notes_between(record.get("version"), flow_version()) if had_flow else []
     if notes:
         print("upgrade notes:", *notes, sep="\n  - ")
     if dry_run:

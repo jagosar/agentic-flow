@@ -726,6 +726,12 @@ class InstallTests(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPT), "install", str(self.dir), *flags], capture_output=True,
                               text=True, env=self.env)
 
+    def test_a_first_install_has_no_upgrade_notes(self):
+        r = self.install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(r.stdout.startswith("agentic-flow unknown -> "))
+        self.assertNotIn("upgrade notes:", r.stdout)
+
     def test_flags_and_usage(self):
         self.assertEqual(self.install("--allow-dirty").returncode, 0)
         r = self.install("--everything")
