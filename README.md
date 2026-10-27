@@ -48,7 +48,7 @@ Then open `claude` in the project, accept the trust prompt, and:
 /implement
 ```
 
-**Requirements:** a Pro, Max, Team or Enterprise plan; Dynamic workflows enabled (on Pro, in `/config`); macOS, Linux, WSL 2 or Windows with Git for Windows (on Windows, the `python3` command must run Python 3.9+); `python3` 3.9+; `git`; an up-to-date Claude Code.
+**Requirements:** a Pro, Max, Team or Enterprise plan; Dynamic workflows enabled (on Pro, in `/config`); macOS, Linux, WSL 2 or Windows with Git for Windows ([details](docs/how-to/README.md#windows)); `python3` 3.9+; `git`; an up-to-date Claude Code.
 
 ## What's inside
 

@@ -48,7 +48,10 @@ FAKE_CLAUDE = textwrap.dedent("""\
         f.write(prompt)
     with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".env"), "w", encoding="utf-8") as f:
         json.dump({k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}, f)
+    started = time.time()
     time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".span"), "w", encoding="utf-8") as f:
+        json.dump([started, time.time()], f)
     status = os.environ.get("FAKE_STATUS", "DONE" if wp != "QA" else "PASS")
     required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
     values = {"status": status, "wp": wp, "blocker": None}
@@ -933,11 +936,11 @@ class LauncherTests(Base):
         return json.loads((self.logs / f"{wp}.args").read_text(encoding="utf-8"))
 
     def test_wave_runs_in_parallel(self):
-        start = time.time()
         r = self.repo.run("run-wave", "1", env={"FAKE_SLEEP": "1.5"})
-        elapsed = time.time() - start
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertLess(elapsed, 2.8, "the two WPs should run at the same time")
+        # Overlapping runs, not a wall-clock bound: starting processes is much slower on Windows.
+        (s1, e1), (s2, e2) = (json.loads((self.logs / f"{wp}.span").read_text(encoding="utf-8")) for wp in ("WP-01", "WP-02"))
+        self.assertTrue(s1 < e2 and s2 < e1, "the two WPs should run at the same time")
         self.assertNotIn("USD", r.stdout, "no cost information")
 
     def test_flags_of_each_agent(self):

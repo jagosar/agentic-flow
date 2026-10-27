@@ -9,7 +9,7 @@ Two situations, one command:
 | Has never used the flow | [`jagosar/islet`](https://github.com/jagosar/islet), a GNOME Shell extension in TypeScript | [A. A repo without the flow](#a-a-repo-without-the-flow-islet) |
 | Has an older version of the flow (from the template or the plugin) | `jagosar/finanzas-familiares`, a PWA created from the template, with 16 approved designs | [B. A repo with an older flow](#b-a-repo-with-an-older-flow-finanzas-familiares) |
 
-You need `git`, `python3` 3.9+ and Claude Code. For GitLab repos, see [gitlab.md](gitlab.md).
+You need `git`, `python3` 3.9+ and Claude Code. On Windows, see [README.md › Windows](README.md#windows). For GitLab repos, see [gitlab.md](gitlab.md).
 
 ## A. A repo without the flow: islet
 
@@ -146,7 +146,7 @@ If you had edited a flow file, it would be listed under `modified by you (left a
 |---|---|
 | `install: nothing was written` (exit 3) | A flow file has uncommitted changes, or a run is in progress. Commit or stash (or `--allow-dirty`), or `python3 .claude/bin/agentic.py stop` |
 | `not a git repository` | The flow needs git: `git init` and commit first |
-| Files under `modified by you` that you never touched | Line endings (`core.autocrlf`) or a formatter changed them. Compare with `.claude/state/upgrade/` and use `--force` if nothing is yours |
+| Files under `modified by you` that you never touched | A formatter changed them (line endings no longer count since 1.1.1). Compare with `.claude/state/upgrade/` and use `--force` if nothing is yours |
 | `validate: FAILED: …` after upgrading | The current plan predates a rule of the new version. Ask `/architect` to revise it |
 | The flow's tests fail on your own commands or agents | Fixed in 1.1.0: the flow's tests accept a project's extra commands and agents |
 
