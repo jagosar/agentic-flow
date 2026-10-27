@@ -38,9 +38,9 @@ While it runs:
 
 # 3. Present the result (the human gate)
 
-The workflow returns a JSON. Save it first, because it is the full record of the run, QA report included:
-1. Write it as it is with the Write tool to `.agentic-result.json`, at the repo root.
-2. Run `python3 .claude/bin/agentic.py save-result .agentic-result.json`, which moves it to `.claude/state/runs/workflow-result.json`.
+The workflow returns a JSON. Save it first, because it is the full record of the run, QA report included. The completion notice may truncate it, so take it from the task's output file (its path comes with the notice):
+1. Run `python3 .claude/bin/agentic.py save-result "<absolute path of the task's output file>"`. It reads the file without deleting it, removes the task's envelope (`summary`, `agentCount`, `agents`...) and saves the `result` to `.claude/state/runs/workflow-result.json`.
+2. If you only have the JSON itself, write it as it is with the Write tool to `.agentic-result.json`, at the repo root, and run `python3 .claude/bin/agentic.py save-result .agentic-result.json`, which moves it there.
 
 Do not write it directly into `.claude/`, which is a protected path, and do not pass it through a heredoc, because Bash's safety filter blocks it. (In the fallback mode the engine has already saved the same JSON there: read it and skip these two steps.)
 
@@ -62,6 +62,8 @@ Then present it like this:
   - **Fix limit reached (per WP), or no WP:** the user decides.
 
 If `result` is `OK`, propose the commit messages (one per logical block, in the format of section 7) and **wait for the user's approval**. Do not commit or push without it.
+
+**Relaunching one stage after a `REVIEW`** (for example a QA that stopped on a BLOCKER from its environment, once that is solved), with the user's agreement: `python3 .claude/bin/agentic.py open-stage <label>`, launch that stage's agent alone (`qa`, `reviewer`...), then `python3 .claude/bin/agentic.py close-stage <label> <ID>=<state>`. `open-stage` takes a fresh snapshot and starts with no claims, and `close-stage` checks ownership and records the result in the ledger. The docs stage does not run by itself after it: launch it the same way if the rest is OK.
 
 # 4. Fallback mode (no workflows)
 

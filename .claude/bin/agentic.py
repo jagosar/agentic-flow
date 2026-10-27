@@ -1323,6 +1323,10 @@ def close_stage(manifest, label, items):
         ledger_update(jid, state=state, stage=stage_of(jid), pid=None, note=state.upper() + (" (fix)" if fix else ""), **extra)
     if fix:
         write_fix_diffs(manifest, label, [(jid, ledger.get(jid, {}).get("fix_count", 0) + 1) for jid, _ in marks])
+    # A closed stage holds no claims: otherwise a run that stops here (a BLOCKER, a REVIEW) leaves them behind, and a
+    # relaunched agent of the same entity is refused as if another one still held it.
+    closed = {jid for jid, _ in marks}
+    with_claims(lambda claims: {agent: wanted for agent, wanted in claims.items() if wanted not in closed})
     ok = check_stage(manifest, label) and all(state in ("done", "pass") for _, state in marks)
     if expect:
         acc_ok, verdict = acceptance_check(manifest, expect, quiet=True)
@@ -1444,13 +1448,30 @@ def verify(manifest):
     sys.exit(0 if ok else 3)
 
 
+# Interpreters whose inline-code flag (-c, -Command, /c, -e...) runs the rest of the command line as code: a prefix
+# rule over such a command would allow anything appended to it (`... -Command X; Remove-Item ...`).
+INLINE_CODE_INTERPRETERS = {"powershell", "pwsh", "cmd", "bash", "sh", "zsh", "dash", "fish", "python", "python3",
+                            "node", "deno", "bun", "ruby", "perl", "php"}
+INLINE_CODE_FLAG = re.compile(r"[-/](c|k|e|p|eval|print|com\w*|enc\w*)", re.I)  # PowerShell abbreviates its flags
+
+
+def runs_inline_code(cmd):
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return True  # unparseable: do not widen it
+    exe = re.sub(r"\.exe$", "", tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()) if tokens else ""
+    return exe in INLINE_CODE_INTERPRETERS and any(INLINE_CODE_FLAG.fullmatch(t) for t in tokens[1:])
+
+
 def sync_permissions(manifest):
     """Writes to .claude/settings.local.json the permissions the agents need, so they do not ask."""
     rules = {"Workflow(" + WORKFLOW_NAME + ")", "Bash(python3 .claude/bin/agentic.py:*)"}
     rules |= set(manifest.get("allow_bash", [])) | set(qa_entity(manifest)["allow_bash"]) | set(at_entity(manifest)["allow_bash"])
     for cmd in [at_entity(manifest)["command"], *manifest.get("verify", {}).values()]:
         if cmd:
-            rules |= {f"Bash({cmd})", f"Bash({cmd}:*)"}
+            # The ":*" variant lets an agent add arguments (one test file, a filter); not when they would be code.
+            rules |= {f"Bash({cmd})"} if runs_inline_code(cmd) else {f"Bash({cmd})", f"Bash({cmd}:*)"}
     local = ROOT / ".claude" / "settings.local.json"
     data = json.loads(local.read_text(encoding="utf-8")) if local.exists() else {}
     allow = data.setdefault("permissions", {}).setdefault("allow", [])
@@ -1831,15 +1852,20 @@ def main():
         baseline(require_valid())
     elif cmd == "save-result":
         # The launcher cannot write in .claude/ (a protected path): this saves the workflow JSON here, read from stdin.
-        # With FILE (e.g. .agentic-result.json at the root), it reads and deletes it; without it, it reads stdin.
+        # With FILE at the root (e.g. .agentic-result.json), it reads and deletes it. With an absolute FILE outside
+        # the repo (the Workflow task's output file), it only reads it: the completion notice may be truncated, and
+        # that file holds the whole result wrapped in the task's envelope, which is removed below.
         src = (ROOT / args[0]) if args else None
-        if src is not None and (src.resolve().parent != ROOT.resolve() or not src.is_file()):
-            die("save-result: the file must exist and be at the repo root.")
+        outside = src is not None and ROOT.resolve() not in src.resolve().parents
+        if src is not None and (not src.is_file() or (not outside and src.resolve().parent != ROOT.resolve())):
+            die("save-result: the file must exist, at the repo root or outside the repo.")
         try:
             data = json.loads(src.read_text(encoding="utf-8")) if src else json.load(sys.stdin)
         except json.JSONDecodeError as e:
             die(f"save-result: not valid JSON: {e}")
-        if src:
+        if isinstance(data, dict) and isinstance(data.get("result"), dict) and {"agentCount", "agents"} & data.keys():
+            data = data["result"]  # the task's envelope: {summary, agentCount, logs, result, agents, ...}
+        if src and not outside:
             src.unlink()
         out = STATE / "runs" / "workflow-result.json"
         out.parent.mkdir(parents=True, exist_ok=True)

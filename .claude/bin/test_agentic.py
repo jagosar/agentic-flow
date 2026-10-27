@@ -344,6 +344,21 @@ class WorkflowCommandTests(Base):
         self.assertEqual(self.repo.run("open-stage", "1").returncode, 0)
         self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="new")), 0)
 
+    def test_closing_a_stage_releases_its_claims_even_on_a_blocker(self):
+        # A run that stops at a closed stage (here QA on a BLOCKER) must not leave its claim behind: relaunching that
+        # stage's agent was refused as "already claimed by another agent".
+        self.repo.run("open-stage", "qa")
+        self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim QA", agent_id="first")), 0)
+        self.repo.run("close-stage", "qa", "QA=blocker")
+        self.assertEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim QA", agent_id="second")), 0)
+
+    def test_closing_a_stage_keeps_the_claims_of_other_entities(self):
+        self.repo.run("open-stage", "1")
+        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="a"))
+        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-02", agent_id="b"))
+        self.repo.run("close-stage", "1", "WP-01=done")
+        self.assertNotEqual(self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim WP-02", agent_id="c")), 0)
+
 
 class PipelineCommandTests(Base):
     """Commands the agentic-implement workflow uses (run by the gatekeeper)."""
@@ -420,6 +435,32 @@ class PipelineCommandTests(Base):
         self.assertEqual(data["otra"], 1, "keeps the rest of the file")
         self.repo.run("sync-permissions")
         self.assertEqual(len(json.loads(local.read_text())["permissions"]["allow"]), len(allow), "idempotente")
+
+    def test_sync_permissions_does_not_widen_inline_code(self):
+        # With "-Command", PowerShell runs everything after it as code: "<cmd>:*" would allow "<cmd>; Remove-Item ...".
+        pester = "powershell -NoProfile -NonInteractive -Command Invoke-Pester -Path ./tests -EnableExit"
+        sh = "bash -c ./run-tests.sh"
+        (self.repo.dir / "architecture.md").write_text("```json wp-manifest\n" + json.dumps(
+            dict(self.manifest, verify={"tests": pester, "lint": sh})) + "\n```")
+        self.assertEqual(self.repo.run("sync-permissions").returncode, 0)
+        allow = json.loads((self.repo.dir / ".claude/settings.local.json").read_text())["permissions"]["allow"]
+        for cmd in (pester, sh):
+            with self.subTest(cmd=cmd):
+                self.assertIn(f"Bash({cmd})", allow)
+                self.assertNotIn(f"Bash({cmd}:*)", allow)
+        self.assertIn("Bash(python3 acc.py:*)", allow, "a plain command still gets its arguments")
+
+    def test_save_result_unwraps_the_task_output_file(self):
+        # The Workflow task's output file wraps the result; it lives outside the repo, so it is read and kept.
+        payload = {"result": "OK", "qa": {"status": "PASS"}}
+        outside = Path(tempfile.mkdtemp(prefix="task-output-")) / "task.output"
+        outside.write_text(json.dumps({"summary": "done", "agentCount": 12, "logs": [], "result": payload,
+                                       "agents": []}), encoding="utf-8")
+        r = self.repo.run("save-result", str(outside))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        saved = json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved, payload)
+        self.assertTrue(outside.exists(), "a file outside the repo is not deleted")
 
 
 class AttributionTests(Base):
