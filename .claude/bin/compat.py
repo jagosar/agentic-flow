@@ -5,6 +5,7 @@ Windows), UTF-8 standard streams and line-ending-independent content hashes. Eve
 call time, so tests can patch it and check both branches on any system.
 """
 import contextlib
+import errno
 import hashlib
 import os
 import shutil
@@ -15,6 +16,8 @@ from pathlib import Path
 
 IS_WINDOWS = os.name == "nt"
 LOCK_RETRY_S = 0.05  # msvcrt's LK_LOCK gives up after ~10 s with OSError: keep trying while another process holds it
+# The errors that mean "someone else holds the lock". Any other OSError is real and must not be retried forever.
+LOCK_BUSY_ERRNOS = {errno.EDEADLK, getattr(errno, "EDEADLOCK", errno.EDEADLK), errno.EACCES}
 
 
 @contextlib.contextmanager
@@ -27,7 +30,9 @@ def locked(fh):
             try:
                 msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
                 break
-            except OSError:
+            except OSError as e:
+                if e.errno not in LOCK_BUSY_ERRNOS:
+                    raise
                 time.sleep(LOCK_RETRY_S)
         try:
             yield fh
