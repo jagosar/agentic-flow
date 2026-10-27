@@ -262,6 +262,31 @@ class V2EntityTests(Base):
         self.assertEqual(r.returncode, 3)
         self.assertIn("ERROR", r.stdout)
 
+    def acc_prints(self, text, code=1):
+        (self.repo.dir / "acc.py").write_text(f"import sys\nprint({text!r})\nsys.exit({code})\n", encoding="utf-8")
+
+    def test_runner_blocked_by_execution_policy_is_not_red(self):
+        # What Pester prints when the execution policy stops it from loading a test file (de-DE console): the
+        # message is translated, the exception type and the error id are not.
+        self.acc_prints("Die Datei kann nicht geladen werden, da die Ausfuehrung von Skripts deaktiviert ist.\n"
+                        "    + CategoryInfo          : Sicherheitsfehler: (:) [], PSSecurityException\n"
+                        "    + FullyQualifiedErrorId : UnauthorizedAccess\n"
+                        "Passed: 0 Failed: 1 Skipped: 0 Pending: 0")
+        for expect in ("red", "green"):
+            with self.subTest(expect=expect):
+                r = self.repo.run("acceptance", "--expect", expect)
+                self.assertEqual(r.returncode, 3, r.stdout)
+                self.assertIn("ERROR: the test runner was blocked", r.stdout)
+        self.acc_prints("File cannot be loaded because running scripts is disabled on this system.")
+        self.assertIn("ERROR: the test runner was blocked", self.repo.run("acceptance", "--expect", "red").stdout)
+
+    def test_a_test_that_mentions_unauthorized_access_is_still_red(self):
+        self.acc_prints("[-] rejects a missing token  Expected exception UnauthorizedAccessException, got none\n"
+                        "Passed: 0 Failed: 1")
+        r = self.repo.run("acceptance", "--expect", "red")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("RED, as it should be", r.stdout)
+
 
 class ContentGuardTests(Base):
     """Content guardrails adapted from ECC: hook bypass, config, disabled tests and secrets."""

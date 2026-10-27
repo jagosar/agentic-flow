@@ -18,6 +18,11 @@ only ships `python.exe`. Copy it as `python3.exe` in the same folder (that folde
 neither are its tests: the suite's fake `claude` is a shebang script Windows cannot run. Run the suite with
 `PYTHONUTF8=1` there, since many tests read and write files in the platform's default encoding.
 
+**A PowerShell repo on Windows:** set the execution policy once, yourself: `Set-ExecutionPolicy -Scope CurrentUser
+RemoteSigned`. With the default (`Restricted`), Pester cannot load any test file, so the manifest's commands would
+need `-ExecutionPolicy Bypass`, which Claude Code's auto mode may deny to the agents as a security weakening. If a run
+is blocked anyway, `acceptance` reports an error rather than a red.
+
 ## A. A repo without the flow: islet
 
 ### 1. Start from a clean branch

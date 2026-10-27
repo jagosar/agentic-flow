@@ -198,7 +198,10 @@ class RulesLibraryTests(unittest.TestCase):
                 self.assertRegex(text, r'\A---\npaths:\n(  - "[^"]+"\n)+---\n', "paths: at the top, so they only "
                                  "load around files of that language")
                 self.assertIn("](common.md)", text, "it must point to the common rules")
-                self.assertIn("MIT License", text, "attribution to ECC")
+                provenance = re.search(r"^<!-- (.+) -->$", text, re.M)
+                self.assertIsNotNone(provenance, "a comment saying where the rules come from")
+                if "ECC" in provenance.group(1):
+                    self.assertIn("MIT License", provenance.group(1), "attribution to ECC")
                 positions = [text.find(h) for h in RULE_SECTIONS]
                 self.assertNotIn(-1, positions, "faltan secciones")
                 self.assertEqual(positions, sorted(positions), "the sections follow the common order")

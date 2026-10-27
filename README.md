@@ -92,7 +92,7 @@ The full decision diagram is in [How it works](docs/how-it-works.md#4-guardrails
 
 ## Language rules
 
-Common rules plus rules for Python, TypeScript/JavaScript, Go, Rust, Java, Kotlin, C#, Ruby, PHP and Swift, each with the same sections: style, errors, tests, security and the usual verify commands. `agentic.py stack` detects the languages in the repo, `rules-sync` installs the relevant ones in `.claude/rules/agentic/`, and every agent that writes or judges code receives them. When they disagree, `architecture.md` wins, then the existing code, then your own rules, then these.
+Common rules plus rules for Python, TypeScript/JavaScript, Go, Rust, Java, Kotlin, C#, Ruby, PHP, Swift and PowerShell, each with the same sections: style, errors, tests, security and the usual verify commands. `agentic.py stack` detects the languages in the repo, `rules-sync` installs the relevant ones in `.claude/rules/agentic/`, and every agent that writes or judges code receives them. When they disagree, `architecture.md` wins, then the existing code, then your own rules, then these.
 
 ## Status
 

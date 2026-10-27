@@ -154,7 +154,7 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 
 ## Language rules
 
-`.claude/rules-library/` holds the common rules (`common.md`) and rules for ten languages: Python, TypeScript/JavaScript, Go, Rust, Java, Kotlin, C#, Ruby, PHP and Swift, adapted from ECC. Each has the same sections: style, errors, tests, security and the usual commands for `verify`.
+`.claude/rules-library/` holds the common rules (`common.md`) and rules for eleven languages: Python, TypeScript/JavaScript, Go, Rust, Java, Kotlin, C#, Ruby, PHP and Swift, adapted from ECC, and PowerShell, written for the flow. Each has the same sections: style, errors, tests, security and the usual commands for `verify`.
 
 - **Installed by** `rules-sync`, when `/architect` finishes and when `/implement` starts. It copies to `.claude/rules/agentic/` the common rules, the rules of the manifest's `stack` and those of the languages it detects.
 - **Delivered to the agents twice:** Claude Code loads `.claude/rules/` by itself (language rules only around files of that language, thanks to `paths:`), and the workflow also passes the list in every agent's prompt.

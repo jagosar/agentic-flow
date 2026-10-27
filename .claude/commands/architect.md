@@ -203,7 +203,7 @@ At the end of section 8 goes the manifest the guardrails read. It is mandatory a
 
 The manifest's fields:
 
-- **`stack` (recommended):** the project's languages, named after their file in `.claude/rules-library/` (`python`, `typescript`, `go`, `rust`, `java`, `kotlin`, `csharp`, `ruby`, `php`, `swift`). `validate` rejects one without rules. With it, every agent receives the common rules and its language's.
+- **`stack` (recommended):** the project's languages, named after their file in `.claude/rules-library/` (`python`, `typescript`, `go`, `rust`, `java`, `kotlin`, `csharp`, `ruby`, `php`, `swift`, `powershell`). `validate` rejects one without rules. With it, every agent receives the common rules and its language's.
 - **`files`:** paths relative to the repo. A path ending in `/` owns the whole directory. It must match section 4.
 - **`acceptance` (mandatory except in a refactor):** `files` is the test-author's zone and `command` is the command, run without a shell, that executes the acceptance tests. Pick a command that works even if the modules do not exist yet (imports will fail, and that counts as red). In a refactor, `command` is the existing suite.
 - **`allow_bash`:** the only commands the agents may run without asking (build, lint and test from section 3). Minimal and concrete: `validate` rejects rules that allow arbitrary execution.

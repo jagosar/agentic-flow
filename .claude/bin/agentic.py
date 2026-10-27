@@ -112,6 +112,7 @@ STACK_SIGNALS = {
     "ruby": (("Gemfile",), (".rb", ".rake")),
     "php": (("composer.json",), (".php",)),
     "swift": (("Package.swift",), (".swift",)),
+    "powershell": ((), (".ps1", ".psm1", ".psd1")),
 }
 SKIP_DIRS = {".git", ".claude", "node_modules", "vendor", ".venv", "venv", "env", "dist", "build", "target", "out",
              "__pycache__", ".tox", ".mypy_cache", ".pytest_cache", ".next", "coverage"}
@@ -126,6 +127,7 @@ SYMBOL_RES = {
         r"^(?:public\s+|internal\s+|open\s+|final\s+|abstract\s+|sealed\s+|data\s+|static\s+|partial\s+|readonly\s+)*"
         r"(?:class|interface|record|enum|object|struct|protocol|trait)\s+(\w+)"),
     (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
+    (".ps1", ".psm1"): re.compile(r"^function\s+([A-Za-z][\w-]*)", re.I),
 }
 # What `install` puts in another repo: the flow, without the flow's own tests.
 INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
@@ -1067,18 +1069,34 @@ def run_command(cmd, timeout=900, scan=None):
         return 124, [f"the command exceeded {timeout // 60} minutes"]
 
 
+# Output meaning the runner never ran the tests: the environment blocked it, so a non-zero exit is not a red test.
+# PowerShell's execution policy is the known case: with it, Pester fails to load every test file and exits non-zero,
+# which looked exactly like a valid red in wave 0. Matched on locale-independent identifiers (the exception type and
+# the error id); the English message is a fallback. A test that merely mentions UnauthorizedAccessException does not
+# match, because the id must follow "FullyQualifiedErrorId".
+RUNNER_BLOCKED = re.compile(r"\bPSSecurityException\b|FullyQualifiedErrorId\s*:\s*UnauthorizedAccess\b"
+                            r"|running scripts is disabled on this system")
+
+
 def acceptance_check(manifest, expect, quiet=False, scan=None):
     """red: they must fail (wave 0). green: they must pass (after the waves). Returns (ok, verdict)."""
     cmd = at_entity(manifest)["command"]
     if not cmd:
         die("The manifest has no 'acceptance' section.")
-    code, tail = run_command(cmd, scan=scan)
+    output = []
+    code, tail = run_command(cmd, scan=output)
+    if scan is not None:
+        scan.extend(output)
     if not quiet:
         print(f"$ {cmd}  ->  exit {code}")
         for line in tail:
             print("  " + line)
     if code in (124, 126, 127):
         ok, verdict = False, "ERROR: the command could not be run; that counts as neither red nor green"
+    elif code != 0 and RUNNER_BLOCKED.search("\n".join(output)):
+        ok, verdict = False, ("ERROR: the test runner was blocked (PowerShell execution policy) and ran no test; "
+                              "that counts as neither red nor green. Ask the user to run "
+                              "`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`")
     elif expect == "red":
         ok = code != 0
         verdict = "RED, as it should be before the code" if ok else "ALREADY PASS WITHOUT CODE: the tests prove nothing"
