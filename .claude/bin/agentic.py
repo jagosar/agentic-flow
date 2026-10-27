@@ -53,7 +53,11 @@ compaction and is the source for answering "how is it going?".
 The manifest is a ```json wp-manifest``` block inside architecture.md.
 Launcher timeout and authentication: .claude/agentic.json (optional) and AGENTIC_* variables.
 """
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows has no fcntl: locked_json() locks with msvcrt instead.
+    fcntl = None
+    import msvcrt
 import fnmatch
 import hashlib
 import json
@@ -66,6 +70,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+# Text-mode subprocess output, decoded as UTF-8 on every platform (Windows would use the ANSI code page).
+TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}
+
+if sys.platform == "win32":
+    # Piped output defaults to the ANSI code page on Windows: a character outside it (→, ·, ñ...) would crash a print,
+    # and Claude Code and this script's own subprocess callers read the output as UTF-8.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8")
 
 ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().parents[2])
 ARCH = ROOT / "architecture.md"
@@ -515,14 +529,14 @@ def git_tree():
     that the real one is left alone. None if this is not a git repo."""
     try:
         git_index = subprocess.run(["git", "rev-parse", "--git-path", "index"], cwd=ROOT, capture_output=True,
-                                   text=True, check=True).stdout.strip()
+                                   **TEXT, check=True).stdout.strip()
         tmp = STATE / "tree.idx"
         tmp.unlink(missing_ok=True)
         if (ROOT / git_index).exists():
             shutil.copyfile(ROOT / git_index, tmp)
         env = dict(os.environ, GIT_INDEX_FILE=str(tmp))
         subprocess.run(["git", "add", "-A"], cwd=ROOT, env=env, capture_output=True, check=True)
-        tree = subprocess.run(["git", "write-tree"], cwd=ROOT, env=env, capture_output=True, text=True,
+        tree = subprocess.run(["git", "write-tree"], cwd=ROOT, env=env, capture_output=True, **TEXT,
                               check=True).stdout.strip()
         tmp.unlink(missing_ok=True)
         return tree
@@ -532,10 +546,10 @@ def git_tree():
 
 def snapshot(label):
     STATE.mkdir(parents=True, exist_ok=True)
-    (STATE / f"snapshot-{label}.json").write_text(json.dumps(digest()))
+    (STATE / f"snapshot-{label}.json").write_text(json.dumps(digest()), encoding="utf-8")
     tree = git_tree()
     if tree:  # what a fix attempt changed is later diffed against this
-        (STATE / f"tree-{label}.txt").write_text(tree)
+        (STATE / f"tree-{label}.txt").write_text(tree, encoding="utf-8")
     CLAIMS.unlink(missing_ok=True)  # every stage starts with no claims
     ledger_stage(label, "in progress")
     print(f"Snapshot of stage {label} saved.")
@@ -545,7 +559,7 @@ def check_stage(manifest, label):
     snap_file = STATE / f"snapshot-{label}.json"
     if not snap_file.exists():
         die(f"There is no snapshot of stage {label}. Run `snapshot {label}` before launching it.")
-    before = json.loads(snap_file.read_text())
+    before = json.loads(snap_file.read_text(encoding="utf-8"))
     after = digest()
     patterns = DEFAULT_IGNORE + manifest.get("ignore", [])
     changed = sorted(p for p in before.keys() | after.keys()
@@ -586,7 +600,7 @@ def load_spec():
 def usage_of(path):
     """Token usage and cost of a `claude -p --output-format json` output; zeros/None if there is none."""
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         data = None
     data = data if isinstance(data, dict) else {}
@@ -607,7 +621,7 @@ def run_agent(manifest, cfg, spec, agent_type, ident, label, prompt, out_path, f
     tracked = agent_type not in READ_ONLY_AGENTS and ident in entities(manifest)
     report, status = None, "NO REPORT"
     try:
-        with open(out_path, "w") as out, open(out_path.with_suffix(".log"), "w") as err:
+        with open(out_path, "w", encoding="utf-8") as out, open(out_path.with_suffix(".log"), "w", encoding="utf-8") as err:
             proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
                                     start_new_session=True)  # its own group: stop and timeout kill it whole
             if tracked:
@@ -627,7 +641,7 @@ def run_agent(manifest, cfg, spec, agent_type, ident, label, prompt, out_path, f
     except OSError as e:
         status = f"ERROR ({e})"
     usage = usage_of(out_path)
-    with open(USAGE, "a") as f:  # one short write: atomic enough for parallel agents
+    with open(USAGE, "a", encoding="utf-8") as f:  # one short write: atomic enough for parallel agents
         f.write(json.dumps({"id": ident or agent_type, "agent": agent_type, "label": label, **usage}) + "\n")
     if final and tracked:
         ledger_update(ident, state=status_to_state(status), pid=None, note=status)
@@ -892,7 +906,8 @@ def docs_check(manifest):
 # ---------- installing in another repo (plugin) ----------
 
 def sha256(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Same rule as upgrade.content_hash (CRLF read as LF), so a Windows checkout of a flow file matches its history."""
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def flow_version():
@@ -1012,7 +1027,7 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
     if not dry_run:
         # With this version's agentic.py, pointed at the target: the repo's own may be an old one that was kept.
         r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "rules-sync"], cwd=target,
-                           capture_output=True, text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+                           capture_output=True, **TEXT, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
         if r.returncode == 0:
             print(f"  rules: {', '.join(json.loads(r.stdout)['rules'])}")
         else:
@@ -1030,7 +1045,7 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
             print(f"warning: {problem}")
     elif (target / "architecture.md").exists():
         r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "validate"], cwd=target, capture_output=True,
-                           text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+                           **TEXT, env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
         errors = [line.strip() for line in r.stderr.splitlines() if line.strip() and line.strip() != "Invalid manifest:"]
         print("validate: OK" if r.returncode == 0 else f"validate: FAILED: {(errors or ['no detail'])[0]}")
     print("RESULT: OK")
@@ -1040,7 +1055,7 @@ def run_command(cmd, timeout=900, scan=None):
     """Runs a manifest command without a shell. Returns (code, last lines of output). With a list in `scan`, the
     last 200 lines are appended to it, for attributing a failure to the packages that own what it mentions."""
     try:
-        r = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=timeout,
+        r = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, **TEXT, timeout=timeout,
                            env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)))
         lines = (r.stdout + r.stderr).strip().splitlines()
         if scan is not None:
@@ -1093,7 +1108,7 @@ def run_steps(groups):
     Returns (ok, [{"cmd", "exit_code", "output"}])."""
     results, ok = [], True
     for g in groups:
-        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), *g], cwd=ROOT, capture_output=True, text=True,
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), *g], cwd=ROOT, capture_output=True, **TEXT,
                            env=dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT)))
         out = (r.stdout + r.stderr).strip()
         results.append({"cmd": " ".join(g), "exit_code": r.returncode,
@@ -1152,7 +1167,7 @@ def structured_report(path, schema):
     """The structured answer of a `claude -p --output-format json --json-schema` run, or None. The CLI puts it in
     `structured_output`; older output may carry it as JSON text in `result`, so both are accepted."""
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         return None
     report = data.get("structured_output")
@@ -1193,14 +1208,14 @@ def run_pipeline(manifest, args):
     elif rest:
         die("Uso: run-pipeline [--start-wave N] [--resume]")
     if "--resume" in flags and start_wave is None and PIPELINE_STATE.exists():
-        done = json.loads(PIPELINE_STATE.read_text()).get("completed_waves", [])
+        done = json.loads(PIPELINE_STATE.read_text(encoding="utf-8")).get("completed_waves", [])
         start_wave = max(done) + 1 if done else None
     pipeline, spec, cfg = pipeline_module(), load_spec(), load_config()
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE / "runs").mkdir(parents=True, exist_ok=True)
     counter = iter(range(1, 10 ** 6))
     completed = []
-    seen = len(USAGE.read_text().splitlines()) if USAGE.exists() else 0
+    seen = len(USAGE.read_text(encoding="utf-8").splitlines()) if USAGE.exists() else 0
 
     def gate(cmds, label):
         ok, results = run_steps([shlex.split(c) for c in cmds])
@@ -1215,7 +1230,7 @@ def run_pipeline(manifest, args):
 
     def wave_done(wave):
         completed.append(wave)
-        PIPELINE_STATE.write_text(json.dumps({"completed_waves": sorted(set(completed))}))
+        PIPELINE_STATE.write_text(json.dumps({"completed_waves": sorted(set(completed))}), encoding="utf-8")
 
     engine = pipeline.Pipeline(spec, gate, agent, log=lambda m: print(m, flush=True), start_wave=start_wave,
                                phase=lambda t: print(f"== {t}", flush=True), wave_done=wave_done)
@@ -1310,7 +1325,7 @@ def write_fix_diffs(manifest, label, attempts):
     after = git_tree()
     if not tree_file.exists() or not after:
         return
-    before = tree_file.read_text().strip()
+    before = tree_file.read_text(encoding="utf-8").strip()
     table = wps(manifest)
     runs = STATE / "runs"
     runs.mkdir(parents=True, exist_ok=True)
@@ -1319,7 +1334,7 @@ def write_fix_diffs(manifest, label, attempts):
         if not files:
             continue
         r = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", before, after, "--", *files], cwd=ROOT,
-                           capture_output=True, text=True)
+                           capture_output=True, **TEXT)
         text = r.stdout
         if len(text) > MAX_DIFF_BYTES:
             text = text[:MAX_DIFF_BYTES] + "\n[diff truncated]\n"
@@ -1364,7 +1379,7 @@ def baseline(manifest):
     for ph in phases:
         ph.pop("_scan", None)
     STATE.mkdir(parents=True, exist_ok=True)
-    BASELINE.write_text(json.dumps({"phases": phases}, ensure_ascii=False, indent=2))
+    BASELINE.write_text(json.dumps({"phases": phases}, ensure_ascii=False, indent=2), encoding="utf-8")
     failing = [p["name"] for p in phases if p.get("passed") is False]
     ledger_stage("baseline", "OK" if not failing else "with existing failures: " + ", ".join(failing))
     print(json.dumps({"phases": phases, "preexisting_failures": failing}, ensure_ascii=False))
@@ -1375,7 +1390,7 @@ def baseline(manifest):
 def verify(manifest):
     """The verify phases and green acceptance. With a baseline, a phase that already failed is a 'pre-existing failure'
     (reported, does not block) and one that passed and now fails is a 'regression' (blocks). JSON output."""
-    base = {p["name"]: p for p in json.loads(BASELINE.read_text()).get("phases", [])} if BASELINE.exists() else {}
+    base = {p["name"]: p for p in json.loads(BASELINE.read_text(encoding="utf-8")).get("phases", [])} if BASELINE.exists() else {}
     phases = run_phases(manifest)
     for ph in phases:
         if ph.get("skipped"):
@@ -1440,20 +1455,45 @@ def finish(manifest, label, statuses, expected):
 
 # ---------- hook PreToolUse ----------
 
+def _lock(fh):
+    """Exclusive lock on fh: flock on POSIX (released on close), msvcrt on Windows (see _unlock)."""
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        return
+    fh.seek(0)
+    while True:
+        try:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # retries ~10s itself, then raises
+            return
+        except OSError:
+            time.sleep(0.05)
+
+
+def _unlock(fh):
+    """Windows only: msvcrt locks must be released explicitly, after the data is on disk."""
+    if fcntl is None:
+        fh.flush()
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def locked_json(path, fn):
     """Runs fn(data) with the JSON file locked; if it returns a dict, saves it. Returns the previous data."""
     STATE.mkdir(parents=True, exist_ok=True)
-    with open(path, "a+") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        fh.seek(0)
-        raw = fh.read()
-        data = json.loads(raw) if raw.strip() else {}
-        new = fn(data)
-        if new is not None:
+    with open(path, "a+", encoding="utf-8") as fh:
+        _lock(fh)
+        try:
             fh.seek(0)
-            fh.truncate()
-            fh.write(json.dumps(new, indent=2))
-        return data
+            raw = fh.read()
+            data = json.loads(raw) if raw.strip() else {}
+            new = fn(data)
+            if new is not None:
+                fh.seek(0)
+                fh.truncate()
+                fh.write(json.dumps(new, indent=2))
+            return data
+        finally:
+            _unlock(fh)
 
 
 def with_claims(fn):
@@ -1502,7 +1542,7 @@ def stage_of(jid):
 
 
 def usage_records():
-    return [json.loads(line) for line in USAGE.read_text().splitlines() if line.strip()] if USAGE.exists() else []
+    return [json.loads(line) for line in USAGE.read_text(encoding="utf-8").splitlines() if line.strip()] if USAGE.exists() else []
 
 
 def usage_summary(records):
@@ -1824,7 +1864,7 @@ def main():
             data = upgrade.build_history(SOURCE_ROOT, INSTALL_GLOBS + upgrade.EXTRA_GLOBS)
         except ValueError as e:
             die(f"flow-history: {e}")
-        (SOURCE_ROOT / ".claude" / "flow-history.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        (SOURCE_ROOT / ".claude" / "flow-history.json").write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
         print(json.dumps({"paths": len(data["files"]), "hashes": sum(len(h) for h in data["files"].values()),
                           "generated_from": data["generated_from"]}))
     elif cmd == "run-acceptance":

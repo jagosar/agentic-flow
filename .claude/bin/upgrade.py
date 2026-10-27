@@ -37,9 +37,17 @@ def leftovers(shipped, present):
     return (set(present) | suite) if set(present) & suite else set(present)
 
 
+def content_hash(data):
+    """sha256 of a file's bytes with CRLF read as LF. A Windows checkout (core.autocrlf=true) holds the same content as
+    the LF blobs flow-history.json was built from, so it must hash the same to count as intact."""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
+
+
 def git(cwd, *args, **kw):
+    # Explicit UTF-8: without it, Windows decodes git's output with the ANSI code page.
+    text_kw = {"text": True, "encoding": "utf-8", "errors": "replace"} if kw.get("text", True) else {}
     try:
-        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, **({"text": True} | kw))
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, **(text_kw | kw))
     except FileNotFoundError:
         return subprocess.CompletedProcess(args, 127, "", "")
 
@@ -117,7 +125,7 @@ def build_history(repo_root, globs):
     for blob in blobs:  # each answer: "<sha> blob <size>\n<content>\n"
         end = out.index(b"\n", pos)
         size = int(out[pos:end].split()[2])
-        digest = hashlib.sha256(out[end + 1:end + 1 + size]).hexdigest()
+        digest = content_hash(out[end + 1:end + 1 + size])
         pos = end + 1 + size + 1
         for path in paths_of[blob]:
             files.setdefault(path, set()).add(digest)

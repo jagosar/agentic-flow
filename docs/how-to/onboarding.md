@@ -11,6 +11,13 @@ Two situations, one command:
 
 You need `git`, `python3` 3.9+ and Claude Code. For GitLab repos, see [gitlab.md](gitlab.md).
 
+**On Windows (native, not WSL):** the flow's hook, permissions and commands call `python3`, and the python.org installer
+only ships `python.exe`. Copy it as `python3.exe` in the same folder (that folder must come before
+`%LOCALAPPDATA%\Microsoft\WindowsApps` in `PATH`, or `python3` stays the Microsoft Store shortcut). `/architect` and
+`/implement` (the native workflow) work; `run-pipeline` (one `claude -p` per agent) is not supported on Windows yet, and
+neither are its tests: the suite's fake `claude` is a shebang script Windows cannot run. Run the suite with
+`PYTHONUTF8=1` there, since many tests read and write files in the platform's default encoding.
+
 ## A. A repo without the flow: islet
 
 ### 1. Start from a clean branch
