@@ -130,6 +130,14 @@ class AgentDefinitionTests(unittest.TestCase):
         body = (AGENTS_DIR / "gatekeeper.md").read_text(encoding="utf-8")
         self.assertIn("python3 .claude/bin/agentic.py", body)
 
+    def test_gatekeeper_does_not_poll_for_long_commands(self):
+        # A `pgrep -f` wait loop matches its own command line and never ends: the stall seen at close-stage.
+        body = (AGENTS_DIR / "gatekeeper.md").read_text(encoding="utf-8")
+        section = body.split("# Long commands", 1)[1]
+        for rule in ("timeout: 600000", "Do not use `run_in_background`", "Never write a wait loop",
+                     "`pgrep -f`", "`exit_code: 124`", "do not run the command again"):
+            self.assertIn(rule, section)
+
 
 class CommandAndWorkflowTests(unittest.TestCase):
     def test_commands_and_models(self):
