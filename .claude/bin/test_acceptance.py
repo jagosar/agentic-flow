@@ -53,13 +53,15 @@ def document(m, contract_extra=""):
 FENCED = "```text\n## 10. Decisions\n#### WP-02 · fake\nFENCED-LINE\n```\n"
 
 FAKE_CLAUDE = textwrap.dedent("""\
-    import json, os, sys
+    import json, os, sys, time
     argv = sys.argv[1:]
     prompt = sys.stdin.buffer.read().decode("utf-8")
     agent = argv[argv.index("--agent") + 1]
     ident = os.environ.get("AGENTIC_WP")
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], "calls.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps({"agent": agent, "id": ident, "argv": argv, "prompt": prompt}) + "\\n")
+    # One file per call: parallel appends to a shared file can lose a line on Windows.
+    t = time.time_ns()
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{t}-{os.getpid()}.json"), "w", encoding="utf-8") as f:
+        json.dump({"t": t, "agent": agent, "id": ident, "argv": argv, "prompt": prompt}, f)
     mode = os.environ.get("FAKE_MODE", "structured")
     if mode == "text":
         print(json.dumps({"result": "STATUS: DONE"}))
@@ -101,8 +103,8 @@ class Project(Repo):
                         FAKE_LOG_DIR=str(self.logs))
 
     def calls(self):
-        f = self.logs / "calls.jsonl"
-        return [json.loads(line) for line in f.read_text(encoding="utf-8").splitlines()] if f.exists() else []
+        found = [json.loads(f.read_text(encoding="utf-8")) for f in self.logs.glob("call-*.json")]
+        return sorted(found, key=lambda c: c["t"])
 
     def files(self):
         return {p.relative_to(self.dir).as_posix() for p in self.dir.rglob("*")

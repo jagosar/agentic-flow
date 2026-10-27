@@ -631,7 +631,7 @@ def run_agent(manifest, cfg, spec, agent_type, ident, label, prompt, out_path, f
     except OSError as e:
         status = f"ERROR ({e})"
     usage = usage_of(out_path)
-    with open(USAGE, "a", encoding="utf-8") as f:  # one short write: atomic enough for parallel agents
+    with open(USAGE, "a", encoding="utf-8") as f, compat.locked(f):  # agents finish in parallel threads
         f.write(json.dumps({"id": ident or agent_type, "agent": agent_type, "label": label, **usage}) + "\n")
     if final and tracked:
         ledger_update(ident, state=status_to_state(status), pid=None, note=status)

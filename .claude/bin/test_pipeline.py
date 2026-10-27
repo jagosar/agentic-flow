@@ -189,13 +189,15 @@ class EngineTests(unittest.TestCase):
 
 
 FAKE_CLAUDE = textwrap.dedent("""\
-    import json, os, sys
+    import json, os, sys, time
     argv = sys.argv[1:]
     prompt = sys.stdin.buffer.read().decode("utf-8")
     agent = argv[argv.index("--agent") + 1]
     ident = os.environ.get("AGENTIC_WP")
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], "calls.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps({"agent": agent, "id": ident, "argv": argv, "prompt": prompt}) + "\\n")
+    # One file per call: parallel appends to a shared file can lose a line on Windows.
+    t = time.time_ns()
+    with open(os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{t}-{os.getpid()}.json"), "w", encoding="utf-8") as f:
+        json.dump({"t": t, "agent": agent, "id": ident, "argv": argv, "prompt": prompt}, f)
     def write(rel):
         os.makedirs(os.path.dirname(rel) or ".", exist_ok=True)
         open(rel, "w", encoding="utf-8").write("x = 1\\n")
@@ -246,7 +248,8 @@ class RunPipelineEndToEndTests(unittest.TestCase):
         shutil.rmtree(self.logs, ignore_errors=True)
 
     def calls(self):
-        return [json.loads(line) for line in (self.logs / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+        found = [json.loads(f.read_text(encoding="utf-8")) for f in self.logs.glob("call-*.json")]
+        return sorted(found, key=lambda c: c["t"])
 
     def saved(self):
         return json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))
@@ -298,7 +301,8 @@ class RunPipelineEndToEndTests(unittest.TestCase):
         state = self.repo.dir / ".claude/state/pipeline.json"
         self.assertFalse(state.exists() and json.loads(state.read_text(encoding="utf-8"))["completed_waves"])
         state.write_text(json.dumps({"completed_waves": [1]}), encoding="utf-8")
-        (self.logs / "calls.jsonl").unlink()
+        for f in self.logs.glob("call-*.json"):
+            f.unlink()
         self.repo.write("src/a.py")
         self.repo.write("src/b/x.py")
         r = self.repo.run("run-pipeline", "--resume")
