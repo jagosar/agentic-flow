@@ -265,7 +265,7 @@ Tests run on every OS of the CI matrix; the local run here is Linux only.
 - Wave 1. Files: `.claude/settings.json`, `.claude/workflows/agentic-implement.js`, `.claude/agents/*.md`, `.claude/commands/*.md`, `plugin/commands/init.md`, `.claude/bin/test_workflow.mjs`, `.claude/bin/test_definitions.py`.
 - Implements the references of §5 and §6. In `test_definitions.py`: the drift regex also matches `sh .claude/bin/agentic <cmd>`; the plugin contract test expects `sh "${CLAUDE_PLUGIN_ROOT}/.claude/bin/agentic" install`; the gatekeeper test expects `sh .claude/bin/agentic`.
 - ACs: AC-011.
-- Patterns to mirror: `.claude/agents/gatekeeper.md:1-20`, `.claude/bin/test_definitions.py:295-310`.
+- Patterns to mirror: `.claude/agents/gatekeeper.md:1-18`, `.claude/bin/test_definitions.py:295-310`.
 - Gotchas: `test_workflow.mjs:43` splits prompts on `agentic.py `; the JS spec copies are untouched (no interpreter in prompts); keep `architect.md`'s manifest example commands (`python3 -m pytest`) — those are the project's commands, not the flow's.
 - Validation: `node .claude/bin/test_workflow.mjs` and `python3 -m unittest discover -s .claude/bin -p test_definitions.py`.
 
@@ -300,7 +300,7 @@ Tests run on every OS of the CI matrix; the local run here is Linux only.
      "acs": ["AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-008", "AC-009", "AC-010"],
      "mirror": [".claude/bin/agentic.py:906-926", ".claude/bin/agentic.py:1443-1458", ".claude/bin/test_agentic.py:700-740"]},
     {"id": "WP-04", "wave": 1, "depends_on": [], "files": [".claude/settings.json", ".claude/workflows/agentic-implement.js", ".claude/agents/", ".claude/commands/", "plugin/commands/init.md", ".claude/bin/test_workflow.mjs", ".claude/bin/test_definitions.py"],
-     "acs": ["AC-011"], "mirror": [".claude/agents/gatekeeper.md:1-20", ".claude/bin/test_definitions.py:295-310"]},
+     "acs": ["AC-011"], "mirror": [".claude/agents/gatekeeper.md:1-18", ".claude/bin/test_definitions.py:295-310"]},
     {"id": "WP-05", "wave": 1, "depends_on": [], "files": [".claude/bin/testutil.py", ".claude/bin/test_pipeline.py", ".claude/bin/test_acceptance.py", ".claude/bin/test_acceptance_upgrade.py", ".github/workflows/agentic-flow-ci.yml"],
      "acs": ["AC-012"], "mirror": [".claude/bin/test_pipeline.py:188-237", ".github/workflows/agentic-flow-ci.yml:20-44"]},
     {"id": "WP-06", "wave": 3, "depends_on": ["WP-03", "WP-04"], "files": ["README.md", "docs/how-it-works.md", "docs/how-to/", ".claude-plugin/plugin.json", ".claude/flow-history.json"],
