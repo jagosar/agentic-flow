@@ -10,7 +10,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
@@ -52,42 +51,6 @@ def document(m, contract_extra=""):
 
 FENCED = "```text\n## 10. Decisions\n#### WP-02 · fake\nFENCED-LINE\n```\n"
 
-FAKE_CLAUDE = textwrap.dedent("""\
-    import json, os, sys, time
-    argv = sys.argv[1:]
-    prompt = sys.stdin.buffer.read().decode("utf-8")
-    agent = argv[argv.index("--agent") + 1]
-    ident = os.environ.get("AGENTIC_WP")
-    # One file per call: parallel appends to a shared file can lose a line on Windows.
-    t = time.time_ns()
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{t}-{os.getpid()}.json"), "w", encoding="utf-8") as f:
-        json.dump({"t": t, "agent": agent, "id": ident, "argv": argv, "prompt": prompt}, f)
-    mode = os.environ.get("FAKE_MODE", "structured")
-    if mode == "text":
-        print(json.dumps({"result": "STATUS: DONE"}))
-        sys.exit(0)
-    if agent == "implementer":
-        files = {"WP-01": "src/a.py", "WP-02": "src/b/x.py", "WP-03": "src/c.py"}
-        if os.environ.get("FAKE_WRITE"):
-            os.makedirs(os.path.dirname(files[ident]), exist_ok=True)
-            open(files[ident], "w", encoding="utf-8").write("x = 1\\n")
-        report = {"status": "DONE", "wp": ident, "files": [], "checks": [], "internal_decisions": [], "blocker": None}
-    elif agent == "test-author":
-        report = {"status": "DONE", "coverage": [{"ac": "AC-001", "tests": ["t"]}], "blocker": None}
-    elif agent in ("test-auditor", "reviewer"):
-        report = {"status": "PASS", "findings": []}
-    elif agent == "qa":
-        report = {"status": "PASS", "plan": [], "defects": [], "gaps": []}
-    else:
-        report = {}
-    out = {"type": "result", "structured_output": report}
-    if mode == "structured":
-        out.update(usage={"input_tokens": 100, "cache_creation_input_tokens": 20, "cache_read_input_tokens": 300,
-                          "output_tokens": 50}, total_cost_usd=0.01, num_turns=3)
-    print(json.dumps(out))
-""")
-
-
 class Project(Repo):
     """A temporary git repo with an architecture.md, the workflows folder (the spec) and a fake `claude` (AGENTIC_CLAUDE)."""
 
@@ -97,14 +60,11 @@ class Project(Repo):
         (self.dir / "architecture.md").write_text(doc if doc is not None else document(m), encoding="utf-8")
         shutil.copytree(ROOT / ".claude" / "workflows", self.dir / ".claude" / "workflows", dirs_exist_ok=True)
         self.fake_bin = Path(tempfile.mkdtemp(prefix="fake-claude-"))
-        (self.fake_bin / "claude_fake.py").write_text(FAKE_CLAUDE, encoding="utf-8")
         self.logs = Path(tempfile.mkdtemp(prefix="fake-logs-"))
-        self.env.update(AGENTIC_CLAUDE=testutil.claude_command(self.fake_bin / "claude_fake.py"),
-                        FAKE_LOG_DIR=str(self.logs))
+        self.env.update(AGENTIC_CLAUDE=testutil.install_fake_claude(self.fake_bin), FAKE_LOG_DIR=str(self.logs))
 
     def calls(self):
-        found = [json.loads(f.read_text(encoding="utf-8")) for f in self.logs.glob("call-*.json")]
-        return sorted(found, key=lambda c: c["t"])
+        return testutil.fake_calls(self.logs)
 
     def files(self):
         return {p.relative_to(self.dir).as_posix() for p in self.dir.rglob("*")

@@ -38,28 +38,6 @@ MANIFEST = {
     ],
 }
 
-FAKE_CLAUDE = textwrap.dedent("""\
-    import json, os, sys, time
-    argv = sys.argv[1:]
-    prompt = sys.stdin.buffer.read().decode("utf-8")
-    wp = os.environ["AGENTIC_WP"]
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".args"), "w", encoding="utf-8") as f:
-        json.dump(argv, f)
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".prompt"), "w", encoding="utf-8") as f:
-        f.write(prompt)
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".env"), "w", encoding="utf-8") as f:
-        json.dump({k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}, f)
-    started = time.time()
-    time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".span"), "w", encoding="utf-8") as f:
-        json.dump([started, time.time()], f)
-    status = os.environ.get("FAKE_STATUS", "DONE" if wp != "QA" else "PASS")
-    required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
-    values = {"status": status, "wp": wp, "blocker": None}
-    print(json.dumps({"structured_output": {k: values.get(k, []) for k in required}}))
-""")
-
-
 class Repo:
     def __init__(self, manifest=MANIFEST, raw_manifest=None):
         self.dir = Path(tempfile.mkdtemp(prefix="agentic-test-"))
@@ -125,14 +103,14 @@ class CommandTimeoutTests(unittest.TestCase):
         script.write_text(textwrap.dedent(f"""\
             import subprocess, sys, time
             subprocess.Popen([sys.executable, "-c",
-                              "import time, pathlib; time.sleep(3); pathlib.Path({str(marker)!r}).write_text('x')"])
+                              "import time, pathlib; time.sleep(1.5); pathlib.Path({str(marker)!r}).write_text('x')"])
             time.sleep(60)
         """), encoding="utf-8")
         start = time.time()
         code, tail = agentic.run_command(shlex.join([Path(sys.executable).as_posix(), script.as_posix()]), timeout=1)
         self.assertEqual(code, 124, tail)
         self.assertLess(time.time() - start, 15, "it must return soon after the timeout")
-        time.sleep(4)
+        time.sleep(2)
         self.assertFalse(marker.exists(), "the grandchild kept running after the timeout")
 
 
@@ -981,24 +959,28 @@ class LauncherTests(Base):
     def setUp(self):
         super().setUp()
         self.bin = Path(tempfile.mkdtemp(prefix="fake-claude-"))
-        fake = self.bin / "claude_fake.py"
-        fake.write_text(FAKE_CLAUDE, encoding="utf-8")
         self.logs = Path(tempfile.mkdtemp(prefix="fake-logs-"))
-        self.repo.env.update(AGENTIC_CLAUDE=testutil.claude_command(fake), FAKE_LOG_DIR=str(self.logs))
+        self.repo.env.update(AGENTIC_CLAUDE=testutil.install_fake_claude(self.bin), FAKE_LOG_DIR=str(self.logs))
 
     def tearDown(self):
         super().tearDown()
         shutil.rmtree(self.bin, ignore_errors=True)
         shutil.rmtree(self.logs, ignore_errors=True)
 
+    def last_call(self, wp):
+        return testutil.fake_calls(self.logs, wp)[-1]
+
     def args(self, wp):
-        return json.loads((self.logs / f"{wp}.args").read_text(encoding="utf-8"))
+        return self.last_call(wp)["argv"]
+
+    def called(self, wp):
+        return bool(testutil.fake_calls(self.logs, wp))
 
     def test_wave_runs_in_parallel(self):
         r = self.repo.run("run-wave", "1", env={"FAKE_SLEEP": "1.5"})
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         # Overlapping runs, not a wall-clock bound: starting processes is much slower on Windows.
-        (s1, e1), (s2, e2) = (json.loads((self.logs / f"{wp}.span").read_text(encoding="utf-8")) for wp in ("WP-01", "WP-02"))
+        (s1, e1), (s2, e2) = ((self.last_call(wp)["t"], self.last_call(wp)["end"]) for wp in ("WP-01", "WP-02"))
         self.assertTrue(s1 < e2 and s2 < e1, "the two WPs should run at the same time")
         self.assertNotIn("USD", r.stdout, "no cost information")
 
@@ -1011,7 +993,7 @@ class LauncherTests(Base):
         self.assertIn("--strict-mcp-config", a)
         self.assertIn("Bash(python3 -m unittest:*)", a)
         self.assertNotIn("Bash", a, "never unrestricted Bash")
-        self.assertFalse((self.logs / "WP-03.args").exists(), "WP-03 belongs to wave 2")
+        self.assertFalse(self.called("WP-03"), "WP-03 belongs to wave 2")
 
     def test_model_cannot_be_changed(self):
         (self.repo.dir / ".claude/agentic.json").write_text(json.dumps({"models": {"qa": "claude-opus-5-5"}}), encoding="utf-8")
@@ -1026,7 +1008,7 @@ class LauncherTests(Base):
         r = self.repo.run("run-wave", "1")
         self.assertEqual(r.returncode, 1)
         self.assertIn("model: sonnet", r.stderr)
-        self.assertFalse((self.logs / "WP-01.args").exists())
+        self.assertFalse(self.called("WP-01"))
 
     def test_architect_must_be_opus(self):
         cmds = self.repo.dir / ".claude/commands"
@@ -1068,7 +1050,7 @@ class LauncherTests(Base):
         self.assertEqual(self.repo.run("validate").returncode, 0)
 
     def env_of(self, wp):
-        return json.loads((self.logs / f"{wp}.env").read_text(encoding="utf-8"))
+        return self.last_call(wp)["env"]
 
     def test_subscription_does_not_inherit_api_key(self):
         self.repo.run("run-wave", "1", env={"ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_AUTH_TOKEN": "tok"})
@@ -1083,11 +1065,11 @@ class LauncherTests(Base):
     def test_only_one_wp(self):
         r = self.repo.run("run-wave", "1", "WP-02")
         self.assertEqual(r.returncode, 0)
-        self.assertFalse((self.logs / "WP-01.args").exists())
+        self.assertFalse(self.called("WP-01"))
         self.assertEqual(self.repo.run("run-wave", "1", "WP-03").returncode, 1)
 
     def prompt_of(self, wp):
-        return (self.logs / f"{wp}.prompt").read_text(encoding="utf-8")
+        return self.last_call(wp)["prompt"]
 
     def test_fix_only_when_requested(self):
         runs = self.repo.dir / ".claude/state/runs"
@@ -1206,7 +1188,7 @@ class LauncherTests(Base):
         m["allow_bash"] = ["Bash(*)"]
         (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```", encoding="utf-8")
         self.assertEqual(self.repo.run("run-wave", "1").returncode, 1)
-        self.assertFalse((self.logs / "WP-01.args").exists())
+        self.assertFalse(self.called("WP-01"))
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 Used by test_agentic.py, test_pipeline.py, test_acceptance*.py. On Windows a script with a shebang cannot be run
 directly, so a fake program is a `.py` file with a `.cmd` beside it; on POSIX it is an executable script.
 """
+import json
 import shlex
 import sys
 from pathlib import Path
@@ -29,3 +30,65 @@ def fake_exe(directory, name: str, python_source: str) -> Path:
 def claude_command(fake_py) -> str:
     """The AGENTIC_CLAUDE value that runs the Python file fake_py with this interpreter."""
     return shlex.join([Path(sys.executable).as_posix(), Path(fake_py).as_posix()])
+
+
+# The fake `claude -p` every launcher test runs, through AGENTIC_CLAUDE. It logs each call to its own file in
+# FAKE_LOG_DIR (parallel appends to one shared file can lose a line on Windows) and answers with the fields the
+# schema requires. Environment knobs:
+#   FAKE_STATUS  the status to report (default: PASS for judges, DONE for the rest)
+#   FAKE_SLEEP   seconds to wait before answering
+#   FAKE_WRITE   implementers write their package's file;  FAKE_ROGUE  WP-02 also writes a file nobody owns
+#   FAKE_MODE    "structured" (default, with token usage), "nousage", or "text" (the old STATUS: format)
+FAKE_CLAUDE = """\
+import json, os, sys, time
+argv = sys.argv[1:]
+prompt = sys.stdin.buffer.read().decode("utf-8")
+agent = argv[argv.index("--agent") + 1]
+ident = os.environ.get("AGENTIC_WP")
+start = time.time_ns()
+log = os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{start}-{os.getpid()}.json")
+call = {"t": start, "agent": agent, "id": ident, "argv": argv, "prompt": prompt,
+        "env": {k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}}
+def save():
+    with open(log, "w", encoding="utf-8") as f:
+        json.dump(call, f)
+save()
+time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
+call["end"] = time.time_ns()
+save()
+mode = os.environ.get("FAKE_MODE", "structured")
+if mode == "text":
+    print(json.dumps({"result": "STATUS: DONE"}))
+    sys.exit(0)
+def write(rel):
+    os.makedirs(os.path.dirname(rel) or ".", exist_ok=True)
+    with open(rel, "w", encoding="utf-8") as f:
+        f.write("x = 1\\n")
+if agent == "implementer" and os.environ.get("FAKE_WRITE"):
+    write({"WP-01": "src/a.py", "WP-02": "src/b/x.py", "WP-03": "src/c.py"}[ident])
+    if os.environ.get("FAKE_ROGUE") and ident == "WP-02":
+        write("other.py")
+judges = ("qa", "reviewer", "test-auditor")
+values = {"status": os.environ.get("FAKE_STATUS", "PASS" if agent in judges else "DONE"), "wp": ident, "blocker": None,
+          "coverage": [{"ac": "AC-001", "tests": ["t"]}]}
+required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
+out = {"type": "result", "structured_output": {k: values.get(k, []) for k in required}}
+if mode == "structured":
+    out.update(usage={"input_tokens": 100, "cache_creation_input_tokens": 20, "cache_read_input_tokens": 300,
+                      "output_tokens": 50}, total_cost_usd=0.01, num_turns=3)
+print(json.dumps(out))
+"""
+
+
+def install_fake_claude(directory) -> str:
+    """Writes FAKE_CLAUDE in directory and returns the AGENTIC_CLAUDE value that runs it."""
+    fake = Path(directory) / "claude_fake.py"
+    fake.write_text(FAKE_CLAUDE, encoding="utf-8")
+    return claude_command(fake)
+
+
+def fake_calls(log_dir, ident=None) -> list:
+    """The fake's calls, oldest first (optionally only those of one AGENTIC_WP)."""
+    calls = sorted((json.loads(f.read_text(encoding="utf-8")) for f in Path(log_dir).glob("call-*.json")),
+                   key=lambda c: c["t"])
+    return [c for c in calls if ident is None or c["id"] == ident]

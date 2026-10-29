@@ -12,7 +12,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
@@ -21,19 +20,6 @@ ROOT = BIN.parents[1]
 SCRIPT = BIN / "agentic.py"
 GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false"]
 FLOW_MODULES = ["agentic.py", "upgrade.py", "pipeline.py", "brief.py", "compat.py"]
-
-FAKE_CLAUDE = textwrap.dedent("""\
-    import json, os, sys
-    argv = sys.argv[1:]
-    prompt = sys.stdin.buffer.read().decode("utf-8")
-    wp = os.environ["AGENTIC_WP"]
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], wp + ".json"), "w", encoding="utf-8") as f:
-        json.dump({"argv": argv, "stdin": prompt}, f)
-    required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
-    values = {"status": "DONE", "wp": wp, "blocker": None}
-    print(json.dumps({"structured_output": {k: values.get(k, []) for k in required}}))
-""")
-
 
 def testutil():
     sys.path.insert(0, str(BIN))
@@ -252,16 +238,15 @@ class UpgradeTests(Portable):
 class LauncherTests(Portable):
     def test_ac_008_prompt_on_stdin(self):
         p = self.project()
-        logs, fake = self.tmpdir(), self.tmpdir() / "claude_fake.py"
-        fake.write_text(FAKE_CLAUDE, encoding="utf-8")
-        r = p.run("run-wave", "1", env={"AGENTIC_CLAUDE": testutil().claude_command(fake), "FAKE_LOG_DIR": str(logs)})
-        calls = sorted(logs.glob("*.json"))
-        self.assertEqual([c.stem for c in calls], ["WP-01", "WP-02"], r.stdout + r.stderr)
+        logs = self.tmpdir()
+        r = p.run("run-wave", "1", env={"AGENTIC_CLAUDE": testutil().install_fake_claude(self.tmpdir()),
+                                        "FAKE_LOG_DIR": str(logs)})
+        calls = testutil().fake_calls(logs)
+        self.assertEqual(sorted(c["id"] for c in calls), ["WP-01", "WP-02"], r.stdout + r.stderr)
         for call in calls:
-            data = json.loads(call.read_text(encoding="utf-8"))
-            self.assertTrue(data["stdin"].startswith("Implement WP-0"), data["stdin"][:80])
-            self.assertFalse(any("\n" in arg for arg in data["argv"]), data["argv"])
-            self.assertIn("--json-schema", data["argv"])
+            self.assertTrue(call["prompt"].startswith("Implement WP-0"), call["prompt"][:80])
+            self.assertFalse(any("\n" in arg for arg in call["argv"]), call["argv"])
+            self.assertIn("--json-schema", call["argv"])
 
 
 class NoVisibleChangeTests(unittest.TestCase):

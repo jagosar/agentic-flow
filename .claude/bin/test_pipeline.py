@@ -11,7 +11,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
@@ -191,34 +190,6 @@ class EngineTests(unittest.TestCase):
         self.assertIsNone(agentic.structured_report(tmp / "missing.json", schema))
 
 
-FAKE_CLAUDE = textwrap.dedent("""\
-    import json, os, sys, time
-    argv = sys.argv[1:]
-    prompt = sys.stdin.buffer.read().decode("utf-8")
-    agent = argv[argv.index("--agent") + 1]
-    ident = os.environ.get("AGENTIC_WP")
-    # One file per call: parallel appends to a shared file can lose a line on Windows.
-    t = time.time_ns()
-    with open(os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{t}-{os.getpid()}.json"), "w", encoding="utf-8") as f:
-        json.dump({"t": t, "agent": agent, "id": ident, "argv": argv, "prompt": prompt}, f)
-    def write(rel):
-        os.makedirs(os.path.dirname(rel) or ".", exist_ok=True)
-        open(rel, "w", encoding="utf-8").write("x = 1\\n")
-    report = {}
-    if agent == "implementer":
-        write({"WP-01": "src/a.py", "WP-02": "src/b/x.py", "WP-03": "src/c.py"}[ident])
-        if os.environ.get("FAKE_ROGUE") and ident == "WP-02":
-            write("other.py")  # a file nobody owns
-        report = {"status": "DONE", "wp": ident, "files": [], "checks": [], "internal_decisions": [], "blocker": None}
-    elif agent == "test-author":
-        report = {"status": "DONE", "coverage": [{"ac": "AC-001", "tests": ["t"]}], "blocker": None}
-    elif agent in ("test-auditor", "reviewer"):
-        report = {"status": "PASS", "findings": []}
-    elif agent == "qa":
-        report = {"status": "PASS", "plan": [], "defects": [], "gaps": []}
-    print(json.dumps({"type": "result", "structured_output": report}))
-""")
-
 E2E_MANIFEST = {
     "allow_bash": ["Bash(python3 -m unittest:*)"],
     "acceptance": {"files": ["acceptance/"], "command": f"{PY} acc.py"},
@@ -236,10 +207,9 @@ class RunPipelineEndToEndTests(unittest.TestCase):
     def setUp(self):
         self.repo = Repo(E2E_MANIFEST)
         self.bin = Path(tempfile.mkdtemp(prefix="fake-claude-"))
-        (self.bin / "claude_fake.py").write_text(FAKE_CLAUDE, encoding="utf-8")
         self.logs = Path(tempfile.mkdtemp(prefix="fake-logs-"))
-        self.repo.env.update(AGENTIC_CLAUDE=testutil.claude_command(self.bin / "claude_fake.py"),
-                             FAKE_LOG_DIR=str(self.logs))
+        self.repo.env.update(AGENTIC_CLAUDE=testutil.install_fake_claude(self.bin), FAKE_LOG_DIR=str(self.logs),
+                             FAKE_WRITE="1", FAKE_MODE="nousage")
         # red until the three packages exist
         self.repo.write("acc.py", "import os, sys\nsys.exit(0 if all(os.path.exists(p) for p in ('src/a.py', 'src/b/x.py', 'src/c.py')) else 1)\n")
         subprocess.run(["git", "add", "-A"], cwd=self.repo.dir, check=True)
@@ -251,8 +221,7 @@ class RunPipelineEndToEndTests(unittest.TestCase):
         shutil.rmtree(self.logs, ignore_errors=True)
 
     def calls(self):
-        found = [json.loads(f.read_text(encoding="utf-8")) for f in self.logs.glob("call-*.json")]
-        return sorted(found, key=lambda c: c["t"])
+        return testutil.fake_calls(self.logs)
 
     def saved(self):
         return json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))
