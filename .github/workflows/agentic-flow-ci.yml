@@ -5,7 +5,10 @@
 # persisted in the checkout, nothing third-party installed, bounded concurrency and timeout.
 name: agentic-flow-ci
 on:
+  # Pushes to other branches are covered by their pull request: running both doubled the jobs (and the scarce macOS
+  # runners) for every change.
   push:
+    branches: [main]
     paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml"]
   pull_request:
     paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml"]
