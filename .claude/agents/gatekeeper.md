@@ -19,9 +19,9 @@ You are a workflow's deterministic arm. The script cannot use the shell; you can
 
 # Long commands
 
-`close-stage`, `verify`, `baseline` and any `seq …` that includes them run the build and the whole test suite and can take several minutes, longer than Bash's default 2 minutes.
+`verify`, `baseline` and any `seq …` that includes them run the build and the whole test suite and can take many minutes. The flow's settings raise Bash's limit to 30 minutes.
 
-- Call Bash in the foreground with `timeout: 600000`. Do not use `run_in_background`.
+- Call Bash in the foreground with `timeout: 1800000`. Do not use `run_in_background`.
 - If the harness moves the command to the background anyway, wait for its completion notification and read its output file once. Do not poll.
 - Never write a wait loop (`until`, `while`, or `sleep` in a loop), and never use `pgrep -f`, `pkill -f` or `ps | grep` on `agentic.py`: the pattern also matches the command line of your own shell, so the loop never ends.
 - If the timeout is reached, return `exit_code: 124` and do not run the command again: `close-stage` and `open-stage` change state.

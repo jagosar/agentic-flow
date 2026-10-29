@@ -919,6 +919,14 @@ def merge_settings(dst, src):
                for e in pre for h in e.get("hooks", [])):
         pre.extend(src["hooks"]["PreToolUse"])
         added.append("hook PreToolUse")
+    # Bash timeouts: only where the project has not set its own value.
+    env = data.setdefault("env", {})
+    for key, value in src.get("env", {}).items():
+        if key not in env:
+            env[key] = value
+            added.append(f"env {key}")
+    if not env:
+        data.pop("env")
     if data.get("enableWorkflows") is not True:
         data["enableWorkflows"] = True
         added.append("enableWorkflows")
@@ -1042,17 +1050,22 @@ def run_command(cmd, timeout=900, scan=None):
     """Runs a manifest command without a shell. Returns (code, last lines of output). With a list in `scan`, the
     last 200 lines are appended to it, for attributing a failure to the packages that own what it mentions."""
     try:
-        r = subprocess.run(compat.resolve(shlex.split(cmd)), cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=timeout,
-                           env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)))
-        lines = (r.stdout + r.stderr).strip().splitlines()
-        if scan is not None:
-            scan.extend(lines[-200:])
-        return r.returncode, lines[-8:]
+        # Its own process group: on timeout the whole tree is ended (`npm test` would otherwise leave `vitest` running).
+        proc = subprocess.Popen(compat.resolve(shlex.split(cmd)), cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
+                                env=child_env(load_config(), CLAUDE_PROJECT_DIR=str(ROOT)), **compat.group_kwargs())
     except FileNotFoundError:
         return 127, [f"command not found: {cmd}"]
+    try:
+        out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        return 124, [f"the command exceeded {timeout // 60} minutes"]
+        compat.kill_tree(proc.pid)
+        proc.communicate()
+        return 124, [f"the command exceeded {max(timeout // 60, 1)} minute(s)"]
+    lines = (out + err).strip().splitlines()
+    if scan is not None:
+        scan.extend(lines[-200:])
+    return proc.returncode, lines[-8:]
 
 
 def acceptance_check(manifest, expect, quiet=False, scan=None):

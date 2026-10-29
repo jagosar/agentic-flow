@@ -62,6 +62,8 @@ def world(decl):
 
     def gate(cmds, label):
         state["gate_calls"] += 1
+        if any(c.startswith(prefix) for prefix in decl.get("gate_lost", []) for c in cmds):
+            raise RuntimeError("gatekeeper returned nothing")  # a timeout or a dead agent
         steps = []
         for c in cmds:
             r = respond(c)
@@ -102,7 +104,8 @@ def summarize(result, state):
         seen[key] = seen.get(key, 0) + 1
         prompts[f"{key}#{seen[key]}"] = prompt
         agents.append(key)
-    return {"result": result["result"], "failed_stage": result.get("failed_stage"), "fix_cycles": result["fix_cycles"],
+    return {"result": result["result"], "failed_stage": result.get("failed_stage"), "detail": result.get("detail"),
+            "fix_cycles": result["fix_cycles"],
             "pending": sorted(p.get("type") for p in result.get("pending", [])), "gates": state["gates"],
             "gate_calls": state["gate_calls"], "agents": sorted(agents), "prompts": prompts}
 
@@ -129,7 +132,7 @@ class ConformanceTests(unittest.TestCase):
         for decl in CONFORMANCE["scenarios"]:
             with self.subTest(scenario=decl["name"]):
                 mine, theirs = run_scenario(decl), self.workflow[decl["name"]]
-                for key in ("result", "failed_stage", "fix_cycles", "pending", "gates", "gate_calls", "agents"):
+                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents"):
                     self.assertEqual(mine[key], theirs[key], key)
                 self.assertEqual(mine["prompts"], theirs["prompts"], "the agents must receive the same prompts")
 

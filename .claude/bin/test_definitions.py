@@ -134,7 +134,7 @@ class AgentDefinitionTests(unittest.TestCase):
         # A `pgrep -f` wait loop matches its own command line and never ends: the stall seen at close-stage.
         body = (AGENTS_DIR / "gatekeeper.md").read_text(encoding="utf-8")
         section = body.split("# Long commands", 1)[1]
-        for rule in ("timeout: 600000", "Do not use `run_in_background`", "Never write a wait loop",
+        for rule in ("timeout: 1800000", "Do not use `run_in_background`", "Never write a wait loop",
                      "`pgrep -f`", "`exit_code: 124`", "do not run the command again"):
             self.assertIn(rule, section)
 

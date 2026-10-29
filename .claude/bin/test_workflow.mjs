@@ -41,6 +41,9 @@ async function simulate(scenario = {}, args = {}) {
       case 'gatekeeper': {
         gateCalls += 1
         const cmd = prompt.split('agentic.py ')[1].trim()
+        const cmds = cmd.startsWith('seq ') ? cmd.slice(4).split(' + ') : [cmd]
+        // A lost gatekeeper call: a timeout or a dead agent, so the script gets nothing back.
+        if ((scenario.lost || []).some(prefix => cmds.some(c => c.startsWith(prefix)))) throw new Error('gatekeeper returned nothing')
         if (!cmd.startsWith('seq ')) return respond(cmd)
         if (scenario.garble) return { exit_code: 0, output: 'sorry, here is a summary instead' }
         const steps = []
@@ -185,10 +188,11 @@ test('baseline with a pre-existing failure: does not block; a command that canno
   assert.equal(broken.result.failed_stage, 'baseline')
 })
 
-test('pipeline-plan, the briefs and the baseline travel in one gatekeeper call', async () => {
+test('pipeline-plan and the briefs travel in one gatekeeper call; the baseline goes next, alone', async () => {
   const { calls } = await simulate()
-  const first = calls.find(c => c.type === 'gatekeeper')
-  assert.ok(first.prompt.endsWith('agentic.py seq pipeline-plan + briefs + baseline'))
+  const [first, second] = calls.filter(c => c.type === 'gatekeeper')
+  assert.ok(first.prompt.endsWith('agentic.py seq pipeline-plan + briefs'))
+  assert.ok(second.prompt.endsWith('agentic.py baseline'))
 })
 
 test('start_wave: skips the baseline, wave 0 and earlier waves', async () => {
@@ -284,15 +288,25 @@ test('language rules: reach the agents that write or judge code', async () => {
 })
 
 
-test('gatekeeper calls are batched: close-stage travels with the next open-stage, and verify with the last wave', async () => {
+test('gatekeeper calls are batched: close-stage travels with the next open-stage', async () => {
   const { gates, gateCalls } = await simulate()
-  assert.equal(gateCalls, 8, `a run with two waves needs 8 gatekeeper calls, not one per command (${gates.length} commands)`)
+  assert.equal(gateCalls, 10, `a run with two waves needs 10 gatekeeper calls, not one per command (${gates.length} commands)`)
   assert.deepEqual(gates, [
     'pipeline-plan', 'briefs', 'baseline', 'open-stage acceptance', 'close-stage acceptance AT=done --expect red', 'open-stage 1',
     'close-stage 1 WP-01=done WP-02=done', 'open-stage 2',
     'close-stage 2 WP-03=done', 'verify', 'open-stage review',
     'close-stage review REVIEW=pass', 'open-stage qa', 'close-stage qa QA=pass',
   ])
+})
+
+test('baseline and verify run the whole suite: each travels without another long command', async () => {
+  // One Bash call per long command keeps each within the gatekeeper's timeout; bundling them could exceed it.
+  const { calls } = await simulate()
+  const prompts = calls.filter(c => c.type === 'gatekeeper').map(c => c.prompt.split('agentic.py ')[1])
+  const withBaseline = prompts.filter(p => /(^|[ +])baseline( |$)/.test(p))
+  const withVerify = prompts.filter(p => /(^|[ +])verify( |$)/.test(p))
+  assert.deepEqual(withBaseline, ['baseline'])
+  assert.deepEqual(withVerify, ['seq verify + open-stage review'])
 })
 
 test('briefs that cannot be written stop the run before anything starts', async () => {
@@ -440,6 +454,7 @@ function fromDecl(d) {
       }
       return null
     },
+    lost: d.gate_lost,
     testAuthor: d.test_author,
     audit: d.audit ? round => pickRound(d.audit, round) : undefined,
     review: d.review ? round => pickRound(d.review, round) : undefined,
@@ -459,7 +474,7 @@ const summarize = ({ result, calls, gates, gateCalls }) => {
     agents.push(key)
   }
   return {
-    result: result.result, failed_stage: result.failed_stage ?? null, fix_cycles: result.fix_cycles,
+    result: result.result, failed_stage: result.failed_stage ?? null, detail: result.detail ?? null, fix_cycles: result.fix_cycles,
     pending: (result.pending || []).map(p => p.type).sort(), gates, gate_calls: gateCalls, agents: agents.sort(), prompts,
   }
 }
@@ -497,6 +512,14 @@ test('every conformance scenario ends as described in its name', async () => {
   assert.equal((await run1('verification fails on a package: it is fixed and verified again')).fix_cycles, 1)
   assert.equal((await run1('the test-auditor returns nothing')).failed_stage, 'wave 0')
   assert.equal((await run1('the fix limit is per package')).result, 'REVIEW')
+  // A lost gatekeeper call is reported as such, not as blockers, an ownership breach or an unowned failure.
+  for (const [name, stage] of [['a lost gatekeeper call at the baseline stops the run', 'baseline'],
+    ['a lost gatekeeper call when closing the last wave stops the run', 'wave 2'],
+    ['a lost gatekeeper call at verification stops the run', 'verification']]) {
+    const r = await run1(name)
+    assert.equal(r.failed_stage, stage, name)
+    assert.match(r.detail || '', /^the gatekeeper returned no usable result/, name)
+  }
 })
 
 let failed = 0
