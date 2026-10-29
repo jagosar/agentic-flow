@@ -47,7 +47,10 @@ def threaded(thunks):
         return list(pool.map(lambda t: t(), thunks))
 
 
+# verify and baseline run the whole suite: each goes in a gatekeeper call of its own, so it fits in one Bash timeout.
 WAVE_TAIL = ["verify", "open-stage review"]
+LOST = ("the gatekeeper returned no usable result (a timeout or garbled output); the command may have run anyway: "
+        "check `agentic.py status` before resuming")
 
 
 class Halted(BaseException):
@@ -152,7 +155,7 @@ class Pipeline:
 
     def _execute(self):
         self.phase("Prepare")
-        first = self.seq(["pipeline-plan", "briefs"] + ([] if self.start_wave is not None else ["baseline"]), "prepare")
+        first = self.seq(["pipeline-plan", "briefs"], "prepare")
         plan_step = self.step(first, 0)
         self.plan = lines_json(plan_step["output"]) if self.ok(plan_step) else None
         if not self.plan:
@@ -164,8 +167,10 @@ class Pipeline:
                       if plan.get("rules") else "")
         if self.start_wave is None:
             self.phase("Baseline")
-            base = self.step(first, 2)
-            self.run["baseline"] = lines_json(base["output"]) if base else None
+            base = self.step(self.seq(["baseline"], "baseline"), 0)
+            if not base:
+                return self.stop("baseline", LOST)
+            self.run["baseline"] = lines_json(base["output"])
             if not self.ok(base):
                 return self.stop("baseline", "a verify command could not be run (it does not exist or timed out)", gate=base)
 
@@ -269,8 +274,10 @@ class Pipeline:
                     return {"stopped": self.stop(f"{'fix ' if fixing else ''}wave {wave}", "the stage could not be opened")}
             close_cmd = self.launch_wave(wave, by_wave[wave], defects_by_wp)
             last = i == len(waves) - 1
-            res = self.seq([close_cmd] + (WAVE_TAIL if last else [f"open-stage {waves[i + 1]}"]), f"close-stage {wave}")
+            res = self.seq([close_cmd] + ([] if last else [f"open-stage {waves[i + 1]}"]), f"close-stage {wave}")
             close = self.step(res, 0)
+            if not close:
+                return {"stopped": self.stop(f"fix wave {wave}" if fixing else f"wave {wave}", LOST)}
             good = self.ok(close)
             self.run["stages"].append({"stage": f"wave {wave} (fix)" if fixing else f"wave {wave}", "ok": good,
                                        "check": close and close["output"]})
@@ -281,7 +288,8 @@ class Pipeline:
             if not fixing:
                 self.wave_done(wave)
             if last:
-                return {"post": res["steps"][1:]}
+                tail = self.seq(WAVE_TAIL, "verify")
+                return {"post": (tail and tail["steps"]) or []}
             if not self.ok(self.step(res, 1)):
                 return {"stopped": self.stop(f"wave {waves[i + 1]}", "the stage could not be opened")}
             opened = True
@@ -304,7 +312,9 @@ class Pipeline:
         while True:
             self.phase("Verification")
             v = post[0] if post else None
-            run["verification"] = lines_json(v["output"]) if v else None
+            if not v:
+                return self.stop("verification", LOST)
+            run["verification"] = lines_json(v["output"])
             if not self.ok(v):
                 # A phase fails: the packages that own what it mentions get it as a defect; if nobody owns it, a person decides.
                 defects = self.verification_defects(run["verification"])

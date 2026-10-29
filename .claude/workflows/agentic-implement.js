@@ -128,7 +128,9 @@ const BLOCKING = new Set(['critical', 'high'])
 // Each agent reads the slice of architecture.md that `agentic.py briefs` wrote for it, not the whole document.
 const brief = id => `.claude/state/briefs/${id}.md`
 const REFUTE_CONFIDENCE = 0.7
+// verify and baseline run the whole suite: each goes in a gatekeeper call of its own, so it fits in one Bash timeout.
 const WAVE_TAIL = ['verify', 'open-stage review']
+const LOST = 'the gatekeeper returned no usable result (a timeout or garbled output); the command may have run anyway: check `agentic.py status` before resuming'
 // Files that close-stage saw change for an ID ("WP-01: 2 file(s) changed: a, b"). Used to compare what an agent
 // says it did with what is on disk.
 const changedBy = (out, id) => {
@@ -236,7 +238,7 @@ async function launchWave(wave, wpIds, defectsByWp) {
 }
 
 // Runs a list of waves in order. Each close-stage travels in the same gatekeeper call as the open-stage of the next
-// wave; the last one also carries verify and open-stage review. `opened`: the first wave is already open.
+// wave; after the last one, verify and open-stage review go in a call of their own. `opened`: the first wave is open.
 // Returns { post: [verify step, open-stage review step] } or { stopped }.
 async function runWaves(waves, byWave, defectsByWp, opened) {
   const fixing = !!defectsByWp
@@ -252,8 +254,9 @@ async function runWaves(waves, byWave, defectsByWp, opened) {
     }
     const { closeCmd } = await launchWave(wave, byWave[wave], defectsByWp)
     const last = i === waves.length - 1
-    const res = await seq([closeCmd, ...(last ? WAVE_TAIL : [`open-stage ${waves[i + 1]}`])], `close-stage ${wave}`)
+    const res = await seq([closeCmd, ...(last ? [] : [`open-stage ${waves[i + 1]}`])], `close-stage ${wave}`)
     const close = step(res, 0)
+    if (!close) return { stopped: stop(fixing ? `fix wave ${wave}` : `wave ${wave}`, LOST) }
     const good = ok(close)
     run.stages.push({ stage: fixing ? `wave ${wave} (fix)` : `wave ${wave}`, ok: good, check: close && close.output })
     if (!good) {
@@ -261,7 +264,10 @@ async function runWaves(waves, byWave, defectsByWp, opened) {
         ? 'the fix ended with blockers or writes outside ownership'
         : 'the wave ended with blockers, missing reports or writes outside ownership') }
     }
-    if (last) return { post: res.steps.slice(1) }
+    if (last) {
+      const t = await seq(WAVE_TAIL, 'verify')
+      return { post: (t && t.steps) || [] }
+    }
     if (!ok(step(res, 1))) return { stopped: stop(`wave ${waves[i + 1]}`, 'the stage could not be opened') }
     opened = true
   }
@@ -288,7 +294,7 @@ async function fixCycle(defects, opened) {
 // touching anything: that way a phase that already failed at the end is a "pre-existing failure" and is blamed on no
 // package. When resuming from a wave (start_wave), the original run's baseline is kept.
 phase('Prepare')
-const first = await seq(startWave === null ? ['pipeline-plan', 'briefs', 'baseline'] : ['pipeline-plan', 'briefs'], 'prepare')
+const first = await seq(['pipeline-plan', 'briefs'], 'prepare')
 const planStep = step(first, 0)
 const plan = ok(planStep) ? lastJson(planStep.output) : null
 if (!plan) return stop('prepare', 'pipeline-plan failed: the manifest is not valid', { gate: planStep })
@@ -297,8 +303,9 @@ if (!ok(step(first, 1))) return stop('prepare', 'briefs failed', { gate: step(fi
 const RULES = plan.rules && plan.rules.length ? ` Rules you must follow (language and common): ${plan.rules.join(', ')}.` : ''
 if (startWave === null) {
   phase('Baseline')
-  const base = step(first, 2)
-  run.baseline = base ? lastJson(base.output) : null
+  const base = step(await seq(['baseline'], 'baseline'), 0)
+  if (!base) return stop('baseline', LOST)
+  run.baseline = lastJson(base.output)
   if (!ok(base)) return stop('baseline', 'a verify command could not be run (it does not exist or timed out)', { gate: base })
 }
 
@@ -354,7 +361,8 @@ let post = wavesRun.post
 while (true) {
   phase('Verification')
   const v = post[0]
-  run.verification = v ? lastJson(v.output) : null
+  if (!v) return stop('verification', LOST)
+  run.verification = lastJson(v.output)
   if (!ok(v)) {
     // A phase fails: if what it mentions belongs to packages, they get the failure as a defect and go through a fix
     // cycle; if it belongs to nobody (a pre-existing, environmental or cross-cutting failure), a person decides.

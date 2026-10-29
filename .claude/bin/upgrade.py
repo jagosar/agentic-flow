@@ -26,6 +26,10 @@ NOTES = {
         "install now updates the flow's own tests and CI copied from the template when they are intact, and keeps "
         "edited files with the new version in .claude/state/upgrade/.",
     ],
+    "1.1.4": [
+        "settings.json gets env.BASH_DEFAULT_TIMEOUT_MS and BASH_MAX_TIMEOUT_MS (30 minutes) where the project has not set "
+        "them, so the agents' long test runs stay in the foreground instead of being moved to the background.",
+    ],
 }
 
 

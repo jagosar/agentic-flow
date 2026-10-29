@@ -503,6 +503,24 @@
      "output": "boom"
     }
    ]
+  },
+  {
+   "name": "a lost gatekeeper call at the baseline stops the run",
+   "gate_lost": [
+    "baseline"
+   ]
+  },
+  {
+   "name": "a lost gatekeeper call when closing the last wave stops the run",
+   "gate_lost": [
+    "close-stage 2"
+   ]
+  },
+  {
+   "name": "a lost gatekeeper call at verification stops the run",
+   "gate_lost": [
+    "verify"
+   ]
   }
  ]
 }

@@ -112,6 +112,30 @@ class Base(unittest.TestCase):
         self.repo.cleanup()
 
 
+class CommandTimeoutTests(unittest.TestCase):
+    """A manifest command that exceeds its time is ended with every process it started: `npm test` leaves `vitest`
+    running otherwise, competing with the next step (and on Windows, subprocess.run would wait for it)."""
+
+    def test_a_timeout_ends_the_whole_process_tree(self):
+        import agentic
+        tmp = Path(tempfile.mkdtemp(prefix="cmd-timeout-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        marker = tmp / "grandchild-survived"
+        script = tmp / "parent.py"
+        script.write_text(textwrap.dedent(f"""\
+            import subprocess, sys, time
+            subprocess.Popen([sys.executable, "-c",
+                              "import time, pathlib; time.sleep(3); pathlib.Path({str(marker)!r}).write_text('x')"])
+            time.sleep(60)
+        """), encoding="utf-8")
+        start = time.time()
+        code, tail = agentic.run_command(shlex.join([Path(sys.executable).as_posix(), script.as_posix()]), timeout=1)
+        self.assertEqual(code, 124, tail)
+        self.assertLess(time.time() - start, 15, "it must return soon after the timeout")
+        time.sleep(4)
+        self.assertFalse(marker.exists(), "the grandchild kept running after the timeout")
+
+
 class UsageLockTests(unittest.TestCase):
     """On Windows a lock is mandatory: reading usage.jsonl while a finishing agent appends to it under the lock raises
     PermissionError, so every reader must take the lock too."""
@@ -793,6 +817,19 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(len(settings["hooks"]["PreToolUse"]), 1)
         self.assertIn(".claude/state/", (self.dir / ".gitignore").read_text(encoding="utf-8").splitlines())
         self.assertTrue((self.dir / ".gitignore").read_text(encoding="utf-8").startswith("dist/\n"))
+
+    def test_raises_the_bash_timeouts_without_overriding_the_project(self):
+        # Long suites must run in the foreground: a backgrounded command invites agents to improvise wait loops.
+        settings_path = self.dir / ".claude/settings.json"
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+        data["env"] = {"BASH_DEFAULT_TIMEOUT_MS": "300000", "OTHER": "x"}
+        settings_path.write_text(json.dumps(data), encoding="utf-8")
+        r = self.install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        env = json.loads(settings_path.read_text(encoding="utf-8"))["env"]
+        self.assertEqual(env, {"BASH_DEFAULT_TIMEOUT_MS": "300000", "OTHER": "x", "BASH_MAX_TIMEOUT_MS": "1800000"})
+        self.assertIn("env BASH_MAX_TIMEOUT_MS", r.stdout)
+        self.assertNotIn("env BASH_DEFAULT_TIMEOUT_MS", r.stdout, "the project's own value is kept")
 
     def test_reinstalling_is_idempotent(self):
         self.install()

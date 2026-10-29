@@ -80,7 +80,7 @@ flowchart TD
 
 ## 2. One run, step by step
 
-`/implement` validates and launches the native workflow `agentic-implement`, which runs in the background. The script decides what comes next; the deterministic steps are run by the `gatekeeper` agent through `agentic.py`, several at a time (`agentic.py seq a + b + c` stops at the first that fails), so a run with two waves and no docs section needs 8 gatekeeper calls instead of 13 (9 instead of 17 with docs). Dashed arrows are replies, each one validated against a JSON Schema.
+`/implement` validates and launches the native workflow `agentic-implement`, which runs in the background. The script decides what comes next; the deterministic steps are run by the `gatekeeper` agent through `agentic.py`, several at a time (`agentic.py seq a + b + c` stops at the first that fails), so a run with two waves and no docs section needs 10 gatekeeper calls instead of 13 (11 instead of 17 with docs). `baseline` and `verify` run the whole suite, so each goes in a call of its own: bundled with other commands, a long suite could exceed one Bash timeout. The flow's `settings.json` raises Bash's limit to 30 minutes (`env.BASH_DEFAULT_TIMEOUT_MS` and `BASH_MAX_TIMEOUT_MS`), so long test runs stay in the foreground instead of being moved to the background, for the gatekeeper and for every other agent. Dashed arrows are replies, each one validated against a JSON Schema.
 
 ```mermaid
 sequenceDiagram
@@ -108,7 +108,8 @@ sequenceDiagram
     O->>O: validate, sync-permissions, rules-sync
     O->>W: launch agentic-implement (background)
     O-->>U: started, follow it in /workflows
-    W->>G: pipeline-plan + briefs + baseline (the suite before any change)
+    W->>G: pipeline-plan + briefs
+    W->>G: baseline (the suite before any change, alone)
     W->>G: open-stage acceptance
     W->>AG: test-author
     AG-->>W: coverage of each criterion
@@ -123,7 +124,7 @@ sequenceDiagram
         AG-->>W: reports (status, files, checks)
         W->>G: close-stage N + open-stage N+1 (ownership + ledger)
     end
-    Note over W,G: the last wave's close-stage also carries verify (phases against the baseline + acceptance) and open-stage review
+    W->>G: verify + open-stage review (phases against the baseline + acceptance, alone)
     W->>AG: reviewer
     AG-->>W: findings
     par one verifier per serious finding
@@ -135,7 +136,8 @@ sequenceDiagram
     opt a defect, or a failed verification that a WP owns (at most 2 attempts per WP)
         W->>G: close-stage qa + open-stage N
         W->>AG: Fix WP-NN, with its defects (and the first attempt's diff from the second one on)
-        W->>G: close-stage N --fix + verify + open-stage review
+        W->>G: close-stage N --fix
+        W->>G: verify + open-stage review
         Note over W,AG: then review and QA again
     end
     opt docs section and accepted code
