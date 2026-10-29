@@ -39,6 +39,7 @@ def claude_command(fake_py) -> str:
 #   FAKE_SLEEP   seconds to wait before answering
 #   FAKE_WRITE   implementers write their package's file;  FAKE_ROGUE  WP-02 also writes a file nobody owns
 #   FAKE_MODE    "structured" (default, with token usage), "nousage", or "text" (the old STATUS: format)
+#   FAKE_REVIEW_FINDING / FAKE_QA_DEFECT  a WP: the reviewer / QA reports one high defect on it, on its first call only
 FAKE_CLAUDE = """\
 import json, os, sys, time
 argv = sys.argv[1:]
@@ -71,6 +72,17 @@ if agent == "implementer" and os.environ.get("FAKE_WRITE"):
 judges = ("qa", "reviewer", "test-auditor")
 values = {"status": os.environ.get("FAKE_STATUS", "PASS" if agent in judges else "DONE"), "wp": ident, "blocker": None,
           "coverage": [{"ac": "AC-001", "tests": ["t"]}]}
+once = {"reviewer": "FAKE_REVIEW_FINDING", "qa": "FAKE_QA_DEFECT"}.get(agent)
+first = once and os.environ.get(once) and not os.path.exists(os.path.join(os.environ["FAKE_LOG_DIR"], once))
+if first:
+    open(os.path.join(os.environ["FAKE_LOG_DIR"], once), "w").close()
+    wp = os.environ[once]
+    if agent == "reviewer":
+        values.update(status="FAIL", findings=[{"severity": "high", "wp": wp, "file": "src/a.py", "problem": "p",
+                                                 "evidence": "e"}])
+    else:
+        values.update(status="FAIL", defects=[{"id": "D1", "severity": "high", "wp": wp, "kind": "implementation",
+                                                "section": "6", "repro": "r"}])
 required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
 out = {"type": "result", "structured_output": {k: values.get(k, []) for k in required}}
 if mode == "structured":
