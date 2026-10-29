@@ -206,6 +206,15 @@ class HookWriteTests(Base):
         self.assertEqual(self.repo.hook(write_payload(str(self.repo.dir / "src/a.py"), agent_id="ag1")), 0)
         self.assertEqual(self.repo.hook(write_payload(str(self.repo.dir / "src/c.py"), agent_id="ag1")), 2)
 
+    def test_a_claim_is_only_the_whole_command(self):
+        # A claim inside a longer command must not carry the rest past the Bash rules.
+        claim = "python3 .claude/bin/agentic.py claim WP-01"
+        self.assertEqual(self.repo.hook(bash_payload(claim, agent_id="ag1")), 0)
+        for cmd in (f"{claim} && git push origin HEAD --force", "git commit -am x # agentic claim WP-01",
+                    f"git commit -am x; {claim}"):
+            self.assertEqual(self.repo.hook(bash_payload(cmd, agent_id="ag1")), 2, cmd)
+        self.assertEqual(self.repo.hook(bash_payload("sh .claude/bin/agentic claim WP-02", agent_id="ag2")), 0)
+
     def test_claim_is_exclusive(self):
         claim = "python3 .claude/bin/agentic.py claim WP-01"
         self.assertEqual(self.repo.hook(bash_payload(claim, agent_id="ag1")), 0)
@@ -735,6 +744,20 @@ class LivingDocsTests(Base):
         self.repo.write("src/a.py", "x = 2")
         self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3, "outside its zone")
 
+    def test_a_judge_stage_that_fails_closes_cleanly(self):
+        # review, qa and docs record a fail or a blocker in the ledger; only a write outside the zone is an error.
+        for label, state in (("review", "REVIEW=fail"), ("qa", "QA=fail"), ("docs", "DOCS=blocker")):
+            self.repo.run("open-stage", label)
+            r = self.repo.run("close-stage", label, state)
+            self.assertEqual(r.returncode, 0, f"{label}: {r.stdout}")
+            self.assertEqual(json.loads((self.repo.dir / ".claude/state/ledger.json").read_text(encoding="utf-8"))
+                             [state.split("=")[0]]["state"], state.split("=")[1])
+        self.repo.run("open-stage", "qa")
+        self.repo.write("src/a.py", "x = 3")
+        self.assertEqual(self.repo.run("close-stage", "qa", "QA=fail").returncode, 3, "outside its zone")
+        self.repo.run("open-stage", "1")
+        self.assertEqual(self.repo.run("close-stage", "1", "WP-01=blocker").returncode, 3, "a wave still stops on a blocker")
+
     def test_no_docs_section_means_no_stage(self):
         self.set_manifest(MANIFEST)
         self.assertFalse(json.loads(self.repo.run("pipeline-plan").stdout)["docs"])
@@ -808,6 +831,23 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(env, {"BASH_DEFAULT_TIMEOUT_MS": "300000", "OTHER": "x", "BASH_MAX_TIMEOUT_MS": "1800000"})
         self.assertIn("env BASH_MAX_TIMEOUT_MS", r.stdout)
         self.assertNotIn("env BASH_DEFAULT_TIMEOUT_MS", r.stdout, "the project's own value is kept")
+
+    def test_removes_only_flow_files_inside_the_target(self):
+        # The install record comes from the target repo: it must not make install delete anything else.
+        victim = self.dir.parent / f"{self.dir.name}-victim.txt"
+        victim.write_text("precious", encoding="utf-8")
+        self.addCleanup(victim.unlink, missing_ok=True)
+        (self.dir / "notes.txt").write_text("mine", encoding="utf-8")
+        record = {"version": "1.0.0", "files": {f"../{victim.name}": hashlib.sha256(b"precious").hexdigest(),
+                                                "notes.txt": hashlib.sha256(b"mine").hexdigest()}}
+        (self.dir / ".claude/agentic-install.json").write_text(json.dumps(record), encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=self.dir, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i"], cwd=self.dir, check=True)
+        r = self.install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(victim.exists(), "a file outside the target was deleted")
+        self.assertTrue((self.dir / "notes.txt").exists(), "a file the flow never shipped was deleted")
+        self.assertNotRegex(r.stdout, r"(?m)^  removed:")
 
     def test_reinstalling_is_idempotent(self):
         self.install()

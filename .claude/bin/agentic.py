@@ -149,7 +149,8 @@ DEFAULT_IGNORE = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".r
 
 MANIFEST_RE = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
 AC_RE = re.compile(r"AC-\d+")
-CLAIM_RE = re.compile(r"agentic(?:\.py)?\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\b")
+# A claim is the whole command, never part of one: `claim WP-01 && git push` must still meet the Bash rules.
+CLAIM_RE = re.compile(r"\s*(?:(?:python3?|sh)\s+)?[\w./-]*agentic(?:\.py)?\s+claim\s+(WP-\d+|QA|AT|REVIEW|DOCS)\s*")
 # A write subcommand in the same command as `git`, even with options in front (`git -C . commit`)
 # or inside quotes (`sh -c "git commit"`). Requires a space before it so `src/add.py` is not mistaken.
 GIT_WRITE_RE = re.compile(
@@ -960,8 +961,12 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
     plan = {rel: upgrade.classify(compat.content_hash(target / rel) if (target / rel).is_file() else None,
                                   compat.content_hash(SOURCE_ROOT / rel),
                                   history.get(rel, set()) | {previous.get(rel)}, force) for rel in sources}
+    # The record comes from the target repo: only paths the flow ships, inside the target, may be removed.
+    flow_globs = INSTALL_GLOBS + upgrade.EXTRA_GLOBS
     removed = sorted(r for r in set(previous) | set(history)
-                     if not (SOURCE_ROOT / r).exists() and (target / r).is_file() and intact(r))
+                     if ".." not in Path(r).parts and not Path(r).is_absolute()
+                     and any(fnmatch.fnmatch(r, g) for g in flow_globs)
+                     and not (SOURCE_ROOT / r).exists() and (target / r).is_file() and intact(r))
     guarded = [r for r in sources if (target / r).exists()] + removed + [
         ".claude/settings.json", ".gitignore", ".claude/agentic.json", INSTALL_RECORD]
     problems = upgrade.guard_problems(target, guarded)
@@ -1306,7 +1311,9 @@ def close_stage(manifest, label, items):
         ledger_update(jid, state=state, stage=stage_of(jid), pid=None, note=state.upper() + (" (fix)" if fix else ""), **extra)
     if fix:
         write_fix_diffs(manifest, label, [(jid, ledger.get(jid, {}).get("fix_count", 0) + 1) for jid, _ in marks])
-    ok = check_stage(manifest, label) and all(state in ("done", "pass") for _, state in marks)
+    # In the judge stages a fail or a blocker is a verdict, already in the ledger: only a write outside the zone stops.
+    judged = label in ("review", "qa", "docs")
+    ok = check_stage(manifest, label) and (judged or all(state in ("done", "pass") for _, state in marks))
     if expect:
         acc_ok, verdict = acceptance_check(manifest, expect, quiet=True)
         print(f"ACCEPTANCE ({expect}): {verdict}")
@@ -1670,7 +1677,7 @@ def guard(data):
               "If a hook fails, fix the cause or ask the user to decide.")
 
     if tool == "Bash" and agent_id and not owner_id:
-        m = CLAIM_RE.search(tinput.get("command", ""))
+        m = CLAIM_RE.fullmatch(tinput.get("command", ""))
         if m:
             claim(agent_id, m.group(1))
             return

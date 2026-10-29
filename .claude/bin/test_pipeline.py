@@ -282,6 +282,20 @@ class RunPipelineEndToEndTests(unittest.TestCase):
         self.assertEqual([c["id"] for c in self.calls() if c["agent"] == "implementer"], ["WP-03"], "only wave 2 runs")
         self.assertNotIn("test-author", [c["agent"] for c in self.calls()], "no wave 0 again")
 
+    def test_a_confirmed_review_finding_goes_through_a_fix_cycle(self):
+        # The real close-stage: a failed review is a judgement, not a write outside ownership.
+        r = self.repo.run("run-pipeline", env={"FAKE_REVIEW_FINDING": "WP-01"})
+        result = self.saved()
+        self.assertEqual((result["result"], result.get("failed_stage"), result["fix_cycles"]), ("OK", None, 1), r.stdout)
+        self.assertIn("WP-01 (fix)", [c["prompt"].split(".")[0].replace("Fix ", "") + " (fix)" for c in self.calls()
+                                      if c["prompt"].startswith("Fix ")])
+
+    def test_a_blocking_qa_defect_goes_through_a_fix_cycle(self):
+        r = self.repo.run("run-pipeline", env={"FAKE_QA_DEFECT": "WP-02"})
+        result = self.saved()
+        self.assertEqual((result["result"], result.get("failed_stage"), result["fix_cycles"]), ("OK", None, 1), r.stdout)
+        self.assertTrue(any(c["prompt"].startswith("Fix WP-02.") for c in self.calls()))
+
     def test_usage_errors(self):
         self.assertEqual(self.repo.run("run-pipeline", "--wave", "2").returncode, 1)
         self.assertEqual(self.repo.run("run-pipeline", "--start-wave", "x").returncode, 1)
