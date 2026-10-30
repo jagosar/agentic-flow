@@ -118,7 +118,8 @@ SYMBOL_RES = {
 INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/compat.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
                  ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
-INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
+RESULT_FILE = ".agentic-result.json"  # where the workflow leaves its result for save-result
+INSTALL_GITIGNORE = [".claude/state/", RESULT_FILE]
 VERIFY_PHASES = ("build", "types", "lint", "tests")
 # A phase that already failed at baseline is compared failure by failure: the lines that name a failure, without the
 # durations that change from run to run. A line not seen at baseline is a regression.
@@ -359,18 +360,32 @@ def validate(manifest):
             errors.append(f"{wp['id']}: 'config_edit' must be true or false.")
         if not isinstance(wp.get("wave", 0), int):
             errors.append(f"{wp['id']}: 'wave' must be an integer.")
+        if not isinstance(wp.get("depends_on", []), list):
+            errors.append(f"{wp['id']}: 'depends_on' must be a list of WP IDs.")
+            continue
         for dep in wp.get("depends_on", []):
             if dep not in table:
                 errors.append(f"{wp['id']}: depends on {dep}, which does not exist.")
+            elif not isinstance(table[dep].get("wave", 0), int) or not isinstance(wp.get("wave", 0), int):
+                continue  # the wave type is already reported
             elif table[dep].get("wave", 0) >= wp.get("wave", 0):
                 errors.append(f"{wp['id']} (wave {wp.get('wave')}) depends on {dep} (wave {table[dep].get('wave')}): it must be in an earlier wave.")
     for ent in entities(manifest).values():
-        for f in ent.get("files", []):
+        files = ent.get("files", [])
+        if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+            errors.append(f"{ent['id']}: 'files' must be a list of paths.")
+            continue
+        for f in files:
+            # Paths are compared as text, so they are written as git shows them.
+            if "\\" in f or "//" in f or f.startswith("./") or "/./" in f:
+                errors.append(f"{ent['id']}: write the path as git shows it (no ./, // or backslashes): {f}")
+                continue
             if f.startswith("/") or ".." in Path(f).parts:
                 errors.append(f"{ent['id']}: path not relative to the repo: {f}")
             if f == "architecture.md" or f.startswith(".claude/") or f.startswith(ARCHIVE_DIR) or f in ("", "./", "/"):
                 errors.append(f"{ent['id']}: cannot own '{f}'.")
-    owners = [(f, e["id"]) for e in entities(manifest).values() for f in e.get("files", [])]
+    owners = [(f, e["id"]) for e in entities(manifest).values() if isinstance(e.get("files"), list)
+              for f in e["files"] if isinstance(f, str)]
     for i, (fa, wa) in enumerate(owners):
         for fb, wb in owners[i + 1:]:
             if wa != wb and owner_conflict(fa, fb):
@@ -381,6 +396,12 @@ def validate(manifest):
         elif open_ended_rule(rule):
             errors.append(f"allow_bash: rule too broad (it would allow arbitrary execution): {rule}. "
                           "Use the specific command, e.g. Bash(npm test:*) or Bash(python3 -m pytest:*).")
+    commands = [at_entity(manifest)["command"]] + list(manifest.get("verify", {}).values()
+                                                       if isinstance(manifest.get("verify", {}), dict) else [])
+    for cmd in commands:
+        if isinstance(cmd, str) and cmd.strip() and open_ended_rule(f"Bash({cmd}:*)"):
+            errors.append(f"command too broad: '{cmd}' would let the agents run anything (Bash({cmd}:*)). "
+                          "Use the specific command, e.g. python3 -m pytest.")
     if not isinstance(manifest.get("ignore", []), list):
         errors.append("'ignore' must be a list of patterns.")
     verify_cfg = manifest.get("verify", {})
@@ -1478,11 +1499,16 @@ def run_phases(manifest):
 def attribute(manifest, lines):
     """Maps the output of a failure to the work packages that own what it mentions: a file of theirs (by path) or one
     of their criteria (AC-NNN in a test name, through the WP's "acs"). Deterministic; no model."""
-    text = "\n".join(lines)
-    seen = {f"AC-{int(n):03d}" for n in re.findall(r"(?<![A-Za-z])AC[-_ ]?(\d+)", text, re.I)}
+    text = "\n".join(lines).replace(ROOT.as_posix() + "/", "")  # absolute paths read as the repo's relative ones
+    # Whole criteria and whole paths: 0x7f91ac30 is not AC-030, src/a.pyx is not src/a.py, lib/util.py is not util.py.
+    seen = {f"AC-{int(n):03d}" for n in re.findall(r"(?<![A-Za-z0-9])AC[-_ ]?(\d+)", text, re.I)}
+
+    def mentioned(f):
+        return re.search(r"(?<![\w./-])" + re.escape(f) + ("" if f.endswith("/") else r"(?![\w-])"), text)
+
     found = {}
     for wid, wp in sorted(wps(manifest).items()):
-        files = [f for f in wp.get("files", []) if f in text]
+        files = [f for f in wp.get("files", []) if mentioned(f)]
         acs = [a for a in wp.get("acs", []) if f"AC-{int(a[3:]):03d}" in seen]
         if files or acs:
             found[wid] = {"files": files, "acs": acs}
@@ -1962,8 +1988,8 @@ def main():
         # The launcher cannot write in .claude/ (a protected path): this saves the workflow JSON here, read from stdin.
         # With FILE (e.g. .agentic-result.json at the root), it reads and deletes it; without it, it reads stdin.
         src = (ROOT / args[0]) if args else None
-        if src is not None and (src.resolve().parent != ROOT.resolve() or not src.is_file()):
-            die("save-result: the file must exist and be at the repo root.")
+        if src is not None and (Path(args[0]).as_posix() != RESULT_FILE or not src.is_file()):
+            die(f"save-result: only {RESULT_FILE}, at the repo root, is read (and then deleted).")
         try:
             data = json.loads(src.read_text(encoding="utf-8")) if src else json.loads(compat.read_stdin_text())
         except json.JSONDecodeError as e:
@@ -1989,6 +2015,9 @@ def main():
             manifest = load_manifest()
         except ManifestError:
             manifest = None  # the architect may generate it before the plan exists
+        if args and (not args[0].endswith(".md") or Path(args[0]).is_absolute() or ".." in Path(args[0]).parts
+                     or args[0] == "architecture.md" or args[0].startswith((".claude/", ARCHIVE_DIR))):
+            die(f"codemap: the map is a .md path inside the repo, outside .claude/, {ARCHIVE_DIR} and architecture.md.")
         codemap(manifest, args[0] if args else None)
     elif cmd == "docs-check":
         try:

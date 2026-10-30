@@ -141,6 +141,31 @@ class ValidateTests(unittest.TestCase):
         import agentic
         return agentic.validate(manifest)
 
+    def with_wp(self, **fields):
+        m = json.loads(json.dumps(MANIFEST))
+        m["work_packages"][0].update(fields)
+        return m
+
+    def test_paths_must_be_written_as_the_repo_shows_them(self):
+        # The hook and close-stage compare paths as text: './src/a.py' would never match the file it means.
+        for f in ("./src/a.py", "src//a.py", "src\\a.py", "./.claude/x", "./architecture.md"):
+            with self.subTest(f=f):
+                self.assertTrue(self.errors(self.with_wp(files=[f])), f)
+
+    def test_wrong_types_are_errors_not_crashes(self):
+        for fields in ({"files": "src/a.py"}, {"files": [None]}, {"wave": "1"}, {"depends_on": "WP-02"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.errors(self.with_wp(**fields)))
+        m = self.with_wp(wave="1")
+        m["work_packages"][2]["depends_on"] = ["WP-01"]
+        self.assertTrue(self.errors(m))
+
+    def test_commands_that_would_allow_anything_are_rejected(self):
+        # The acceptance and verify commands become permissions: 'python3' alone would mean Bash(python3:*).
+        self.assertTrue(self.errors(dict(MANIFEST, acceptance={"files": ["acceptance/"], "command": "python3"})))
+        self.assertTrue(self.errors(dict(MANIFEST, verify={"tests": "bash"})))
+        self.assertEqual(self.errors(dict(MANIFEST, verify={"tests": "npm test"})), [])
+
     def test_valid_manifest(self):
         self.assertEqual(self.errors(MANIFEST), [])
 
@@ -504,6 +529,17 @@ class AttributionTests(Base):
         suspects = json.loads(self.repo.run("verify").stdout)["suspects"]
         self.assertEqual(list(suspects), ["WP-03"])
 
+    def test_attribution_matches_whole_paths(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        import agentic
+        m = {"work_packages": [{"id": "WP-01", "files": ["src/a.py"], "acs": ["AC-030"]},
+                               {"id": "WP-02", "files": ["util.py", "src/a.pyx"]}]}
+        self.assertEqual(list(agentic.attribute(m, ["FAILED src/a.pyx::test"])), ["WP-02"])
+        self.assertEqual(agentic.attribute(m, ["error in lib/util.py"]), {}, "lib/util.py is not util.py")
+        self.assertEqual(agentic.attribute(m, ["<object at 0x7f91ac30e2b0>"]), {}, "a hex address is not AC-030")
+        self.assertEqual(list(agentic.attribute(m, [f"{agentic.ROOT}/src/a.py:3: AssertionError"])), ["WP-01"])
+        self.assertEqual(list(agentic.attribute(m, ["test_ac_030_total FAILED"])), ["WP-01"])
+
     def test_bad_acs_rejected(self):
         sys.path.insert(0, str(SCRIPT.parent))
         import agentic
@@ -668,6 +704,16 @@ class BrownfieldTests(Base):
         self.assertEqual(json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))["result"], "REVIEW")
         self.repo.write("src/x.json", "{}")
         self.assertEqual(self.repo.run("save-result", "src/x.json").returncode, 1, "only from the root")
+        self.repo.write("package.json", '{"name": "app"}')
+        self.assertEqual(self.repo.run("save-result", "package.json").returncode, 1, "only the workflow's own file")
+        self.assertTrue((self.repo.dir / "package.json").exists(), "a project file is never deleted")
+
+    def test_codemap_writes_only_a_map_inside_the_repo(self):
+        for target in ("../outside.md", "architecture.md", ".claude/x.md", "docs/architecture/m.md", "/tmp/m.md", "map.txt"):
+            with self.subTest(target=target):
+                self.assertEqual(self.repo.run("codemap", target).returncode, 1)
+        self.assertFalse((self.repo.dir.parent / "outside.md").exists())
+        self.assertNotIn("Code map", (self.repo.dir / "architecture.md").read_text(encoding="utf-8"))
 
     def test_ledger_order(self):
         self.scripts(0, 0)
