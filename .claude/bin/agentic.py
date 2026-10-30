@@ -120,6 +120,11 @@ INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/compat.py", ".claude/bin
 INSTALL_RECORD = ".claude/agentic-install.json"
 INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
 VERIFY_PHASES = ("build", "types", "lint", "tests")
+# A phase that already failed at baseline is compared failure by failure: the lines that name a failure, without the
+# durations that change from run to run. A line not seen at baseline is a regression.
+FAILURE_LINE_RE = re.compile(r"(?i)\b(?:fail(?:ed|ure|ures|ing|s)?|errors?)\b|[✕✗×❌]")
+DURATION_RE = re.compile(r"\(?\b\d+(?:\.\d+)?\s?(?:ms|s|sec|secs|seconds)\b\)?|\b0x[0-9a-fA-F]+\b")  # and addresses
+MAX_TAIL_LINE = 300  # a failure line can be thousands of characters long; the JSON report keeps it short
 BASELINE = STATE / "baseline.json"
 MIRROR_RE = re.compile(r"^([^:]+?)(?::(\d+)(?:-(\d+))?)?$")  # path[:start[-end]]
 WORKFLOW_NAME = "agentic-implement"
@@ -1070,7 +1075,7 @@ def run_command(cmd, timeout=900, scan=None):
     lines = (out + err).strip().splitlines()
     if scan is not None:
         scan.extend(lines[-200:])
-    return proc.returncode, lines[-8:]
+    return proc.returncode, [line[:MAX_TAIL_LINE] for line in lines[-8:]]
 
 
 def acceptance_check(manifest, expect, quiet=False, scan=None):
@@ -1109,6 +1114,18 @@ SEQ_COMMANDS = {"pipeline-plan", "briefs", "baseline", "open-stage", "close-stag
                 "acceptance"}
 
 
+def cap_output(out):
+    """A step's output within SEQ_OUTPUT_CAP. A JSON last line is the verdict the engines parse: it is kept whole and
+    only the text before it is cut."""
+    if len(out) <= SEQ_OUTPUT_CAP:
+        return out
+    head, _, last = out.rpartition("\n")
+    if last.lstrip().startswith("{"):
+        room = max(SEQ_OUTPUT_CAP - len(last), 0)
+        return "[truncated]\n" + (head[-room:] + "\n" if room else "") + last
+    return "[truncated]\n" + out[-SEQ_OUTPUT_CAP:]
+
+
 def run_steps(groups):
     """Runs each command (an argv list) as its own process, in order, and stops at the first that fails.
     Returns (ok, [{"cmd", "exit_code", "output"}])."""
@@ -1118,7 +1135,7 @@ def run_steps(groups):
                            encoding="utf-8", errors="replace", env=dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT)))
         out = (r.stdout + r.stderr).strip()
         results.append({"cmd": " ".join(g), "exit_code": r.returncode,
-                        "output": out if len(out) <= SEQ_OUTPUT_CAP else "[truncated]\n" + out[-SEQ_OUTPUT_CAP:]})
+                        "output": cap_output(out)})
         if r.returncode != 0:
             ok = False
             break
@@ -1349,6 +1366,16 @@ def write_fix_diffs(manifest, label, attempts):
         (runs / f"{jid}.fix-{n}.diff").write_text(text or "(this attempt changed no file)\n", encoding="utf-8")
 
 
+def normal_failure(line):
+    """A failure line without durations or repeated spaces: the same failure reads the same in every run."""
+    return " ".join(DURATION_RE.sub("", line).split())[:MAX_TAIL_LINE]
+
+
+def failure_lines(lines):
+    """The lines of an output that name a failure, normalised, without repeats."""
+    return sorted({normal_failure(line) for line in lines if FAILURE_LINE_RE.search(line)} - {""})
+
+
 def run_phases(manifest):
     cfg = manifest.get("verify", {})
     phases = []
@@ -1384,10 +1411,12 @@ def baseline(manifest):
         print(json.dumps({"phases": [], "preexisting_failures": [], "skipped": True}))
         sys.exit(0)
     phases = run_phases(manifest)
+    saved = []
     for ph in phases:
-        ph.pop("_scan", None)
+        scan = ph.pop("_scan", None)
+        saved.append(dict(ph, failures=failure_lines(scan)) if ph.get("passed") is False else ph)
     STATE.mkdir(parents=True, exist_ok=True)
-    BASELINE.write_text(json.dumps({"phases": phases}, ensure_ascii=False, indent=2), encoding="utf-8")
+    BASELINE.write_text(json.dumps({"phases": saved}, ensure_ascii=False, indent=2), encoding="utf-8")
     failing = [p["name"] for p in phases if p.get("passed") is False]
     ledger_stage("baseline", "OK" if not failing else "with existing failures: " + ", ".join(failing))
     print(json.dumps({"phases": phases, "preexisting_failures": failing}, ensure_ascii=False))
@@ -1405,10 +1434,17 @@ def verify(manifest):
             continue
         was = base.get(ph["name"], {}).get("passed")
         ph["baseline_passed"] = was
+        known = base.get(ph["name"], {}).get("failures")  # absent in a baseline from an earlier version
+        new = [f for f in failure_lines(ph["_scan"]) if f not in set(known)] if known is not None else []
         if ph["passed"]:
             ph["status"] = "ok"
-        elif was is False:
+        elif was is False and not new:
             ph["status"] = "pre-existing failure"
+        elif was is False:
+            ph["status"] = "regression"
+            ph["new_failures"] = new[:10]
+            # only the new failures say who broke something: the old ones belong to nobody in this run
+            ph["_scan"] = [line for line in ph["_scan"] if normal_failure(line) in new]
         else:
             ph["status"] = "regression" if was else "fails"
     if at_entity(manifest)["command"]:
