@@ -73,10 +73,10 @@ def write_payload(path, agent_id=None, tool="Write"):
     return data
 
 
-def bash_payload(command, agent_id=None):
+def bash_payload(command, agent_id=None, agent_type="implementer"):
     data = {"tool_name": "Bash", "tool_input": {"command": command}}
     if agent_id:
-        data.update(agent_id=agent_id, agent_type="implementer")
+        data.update(agent_id=agent_id, agent_type=agent_type)
     return data
 
 
@@ -140,6 +140,31 @@ class ValidateTests(unittest.TestCase):
         sys.path.insert(0, str(SCRIPT.parent))
         import agentic
         return agentic.validate(manifest)
+
+    def with_wp(self, **fields):
+        m = json.loads(json.dumps(MANIFEST))
+        m["work_packages"][0].update(fields)
+        return m
+
+    def test_paths_must_be_written_as_the_repo_shows_them(self):
+        # The hook and close-stage compare paths as text: './src/a.py' would never match the file it means.
+        for f in ("./src/a.py", "src//a.py", "src\\a.py", "./.claude/x", "./architecture.md"):
+            with self.subTest(f=f):
+                self.assertTrue(self.errors(self.with_wp(files=[f])), f)
+
+    def test_wrong_types_are_errors_not_crashes(self):
+        for fields in ({"files": "src/a.py"}, {"files": [None]}, {"wave": "1"}, {"depends_on": "WP-02"}):
+            with self.subTest(fields=fields):
+                self.assertTrue(self.errors(self.with_wp(**fields)))
+        m = self.with_wp(wave="1")
+        m["work_packages"][2]["depends_on"] = ["WP-01"]
+        self.assertTrue(self.errors(m))
+
+    def test_commands_that_would_allow_anything_are_rejected(self):
+        # The acceptance and verify commands become permissions: 'python3' alone would mean Bash(python3:*).
+        self.assertTrue(self.errors(dict(MANIFEST, acceptance={"files": ["acceptance/"], "command": "python3"})))
+        self.assertTrue(self.errors(dict(MANIFEST, verify={"tests": "bash"})))
+        self.assertEqual(self.errors(dict(MANIFEST, verify={"tests": "npm test"})), [])
 
     def test_valid_manifest(self):
         self.assertEqual(self.errors(MANIFEST), [])
@@ -215,6 +240,16 @@ class HookWriteTests(Base):
             self.assertEqual(self.repo.hook(bash_payload(cmd, agent_id="ag1")), 2, cmd)
         self.assertEqual(self.repo.hook(bash_payload("sh .claude/bin/agentic claim WP-02", agent_id="ag2")), 0)
 
+    def test_a_claim_matches_the_agent_type(self):
+        # An implementer claims a package, QA claims QA, and so on: no agent takes another kind's zone.
+        cases = [("implementer", "QA", 2), ("qa", "WP-01", 2), ("test-author", "REVIEW", 2), ("doc-updater", "WP-02", 2),
+                 ("qa", "QA", 0), ("verifier", "REVIEW", 0), ("test-auditor", "REVIEW", 0)]
+        for i, (kind, ident, expected) in enumerate(cases):
+            with self.subTest(kind=kind, ident=ident):
+                payload = bash_payload(f"python3 .claude/bin/agentic.py claim {ident}", agent_id=f"k{i}", agent_type=kind)
+                self.assertEqual(self.repo.hook(payload), expected)
+                self.repo.run("snapshot", "1")
+
     def test_claim_is_exclusive(self):
         claim = "python3 .claude/bin/agentic.py claim WP-01"
         self.assertEqual(self.repo.hook(bash_payload(claim, agent_id="ag1")), 0)
@@ -249,8 +284,9 @@ class V2EntityTests(Base):
         self.assertEqual(self.repo.hook(bash_payload("git diff"), wp="REVIEW"), 0)
 
     def test_claim_at_and_review_in_workflow_mode(self):
-        for ident, agent in (("AT", "a1"), ("REVIEW", "a2")):
-            self.assertEqual(self.repo.hook(bash_payload(f"python3 .claude/bin/agentic.py claim {ident}", agent_id=agent)), 0)
+        for ident, agent, kind in (("AT", "a1", "test-author"), ("REVIEW", "a2", "reviewer")):
+            self.assertEqual(self.repo.hook(bash_payload(f"python3 .claude/bin/agentic.py claim {ident}", agent_id=agent,
+                                                         agent_type=kind)), 0)
         self.assertEqual(self.repo.hook(write_payload(self.p("acceptance/t.py"), agent_id="a1")), 0)
         self.assertEqual(self.repo.hook(write_payload(self.p("src/a.py"), agent_id="a2")), 2)
 
@@ -328,7 +364,13 @@ class ContentGuardTests(Base):
                     "git push --no-verify"]:
             with self.subTest(cmd=cmd):
                 self.assertEqual(self.repo.hook(bash_payload(cmd)), 2, "in the main session too")
-        for cmd in ["git commit -m 'arregla -n'", "git log -n 5", "git commit -m x"]:
+        for cmd in ["git commit -nm x", "git commit -an -m x", "git commit --no-verif -m x", "git commit --no-veri -m x",
+                    'git -c "core.hooksPath=/dev/null" commit -m x',
+                    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x"]:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.repo.hook(bash_payload(cmd)), 2, "a variant of the same bypass")
+        for cmd in ["git commit -m 'arregla -n'", "git log -n 5", "git commit -m x", "git config core.hooksPath .githooks",
+                    "git commit --amend -m x"]:
             with self.subTest(cmd=cmd):
                 self.assertEqual(self.repo.hook(bash_payload(cmd)), 0)
 
@@ -347,6 +389,22 @@ class ContentGuardTests(Base):
         self.assertEqual(self.w("src/a.py", "# pytest.mark.skip in a code comment\n"), 0, "only in test files")
         self.assertEqual(self.w("tests/test_a.py", "@unittest.skip('was already there')\nX", tool="Edit",
                                 old="@unittest.skip('was already there')\n"), 0, "what already existed does not count")
+
+    def test_unconditional_skips_in_other_forms(self):
+        for body in ["self.skipTest('x')", "raise unittest.SkipTest('x')", "@unittest.skipIf(True, 'x')",
+                     "@pytest.mark.skipif(True, reason='x')", "@unittest.skipUnless(False, 'x')"]:
+            with self.subTest(body=body):
+                self.assertEqual(self.w("tests/test_a.py", f"{body}\ndef test(): pass\n"), 2)
+
+    def test_an_edit_is_checked_by_the_file_it_leaves(self):
+        # Checking only the edited fragment let two harmless-looking edits assemble a secret or a skip.
+        self.repo.write("src/a.py", "K = 'AKIAQQ'\n")
+        self.assertEqual(self.w("src/a.py", "QQ" + "X" * 14 + "'", tool="Edit", old="QQ'"), 2)
+        self.repo.write("tests/test_a.py", "import unittest\n@unittest.sk\ndef test(): pass\n")
+        self.assertEqual(self.w("tests/test_a.py", "skip('x')\n", tool="Edit", old="sk\n"), 2)
+        fixture = "K = 'AKIA" + "Q" * 16 + "'\n"
+        self.repo.write("src/a.py", fixture)
+        self.assertEqual(self.w("src/a.py", fixture + "Y = 1\n"), 0, "a key that was already there is not new")
 
     def test_secrets(self):
         for secret in ["AKIA" + "A" * 16, "ghp_" + "a" * 36, "sk-ant-" + "a" * 30,
@@ -470,6 +528,18 @@ class AttributionTests(Base):
         self.repo.write("fail.py", "raise SystemExit(0)\n")
         suspects = json.loads(self.repo.run("verify").stdout)["suspects"]
         self.assertEqual(list(suspects), ["WP-03"])
+
+    def test_attribution_matches_whole_paths(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        import agentic
+        m = {"work_packages": [{"id": "WP-01", "files": ["src/a.py"], "acs": ["AC-030"]},
+                               {"id": "WP-02", "files": ["util.py", "src/a.pyx"]}]}
+        self.assertEqual(list(agentic.attribute(m, ["FAILED src/a.pyx::test"])), ["WP-02"])
+        self.assertEqual(agentic.attribute(m, ["error in lib/util.py"]), {}, "lib/util.py is not util.py")
+        self.assertEqual(agentic.attribute(m, ["<object at 0x7f91ac30e2b0>"]), {}, "a hex address is not AC-030")
+        self.assertEqual(list(agentic.attribute(m, [f"{agentic.ROOT}/src/a.py:3: AssertionError"])), ["WP-01"])
+        self.assertEqual(list(agentic.attribute(m, ["test_ac_030_total FAILED"])), ["WP-01"])
+        self.assertEqual(list(agentic.attribute(m, ["src\\a.py:3: AssertionError"])), ["WP-01"], "as Windows prints it")
 
     def test_bad_acs_rejected(self):
         sys.path.insert(0, str(SCRIPT.parent))
@@ -635,6 +705,16 @@ class BrownfieldTests(Base):
         self.assertEqual(json.loads((self.repo.dir / ".claude/state/runs/workflow-result.json").read_text(encoding="utf-8"))["result"], "REVIEW")
         self.repo.write("src/x.json", "{}")
         self.assertEqual(self.repo.run("save-result", "src/x.json").returncode, 1, "only from the root")
+        self.repo.write("package.json", '{"name": "app"}')
+        self.assertEqual(self.repo.run("save-result", "package.json").returncode, 1, "only the workflow's own file")
+        self.assertTrue((self.repo.dir / "package.json").exists(), "a project file is never deleted")
+
+    def test_codemap_writes_only_a_map_inside_the_repo(self):
+        for target in ("../outside.md", "architecture.md", ".claude/x.md", "docs/architecture/m.md", "/tmp/m.md", "map.txt"):
+            with self.subTest(target=target):
+                self.assertEqual(self.repo.run("codemap", target).returncode, 1)
+        self.assertFalse((self.repo.dir.parent / "outside.md").exists())
+        self.assertNotIn("Code map", (self.repo.dir / "architecture.md").read_text(encoding="utf-8"))
 
     def test_ledger_order(self):
         self.scripts(0, 0)
@@ -739,7 +819,7 @@ class LivingDocsTests(Base):
         self.assertEqual(self.repo.run("validate").returncode, 0)
 
     def test_hook_docs_zone_and_paths_nobody_writes(self):
-        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim DOCS", agent_id="d1"))
+        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim DOCS", agent_id="d1", agent_type="doc-updater"))
         doc = lambda path: dict(write_payload(path, agent_id="d1"), agent_type="doc-updater")
         self.assertEqual(self.repo.hook(doc("README.md")), 0)
         self.assertEqual(self.repo.hook(doc("docs/guide.md")), 0)
@@ -777,6 +857,32 @@ class LivingDocsTests(Base):
         kinds = sorted(b["kind"] for b in json.loads(r.stdout)["broken"])
         self.assertEqual(kinds, ["anchor", "link", "path"], "`http/v1/x` is not a folder of the repo: it does not count")
 
+    def test_docs_check_accepts_links_that_work_on_github(self):
+        self.repo.write("docs/guide.md", "# Guide\n\n## Usage\n\n## Usage\n")
+        self.repo.write("docs/my guide.md", "# Other\n")
+        self.repo.write("README.md", "[second](docs/guide.md#usage-1) [root](/docs/guide.md) [space](docs/my%20guide.md)\n")
+        r = self.repo.run("docs-check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.repo.write("README.md", "[third](docs/guide.md#usage-2)\n")
+        self.assertEqual(self.repo.run("docs-check").returncode, 3)
+
+    def test_a_corrupt_ledger_is_set_aside(self):
+        state = self.repo.dir / ".claude/state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "ledger.json").write_text('{"WP-01": {"state": "runn', encoding="utf-8")
+        r = self.repo.run("status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((state / "ledger.json.corrupt").exists(), "the broken copy is kept for inspection")
+
+    def test_rules_sync_ignores_stack_names_that_are_not_names(self):
+        shutil.copytree(SCRIPT.parents[1] / "rules-library", self.repo.dir / ".claude/rules-library")
+        m = dict(json.loads(json.dumps(MANIFEST)), stack=["python", "../../architecture"])
+        (self.repo.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{json.dumps(m)}\n```\n",
+                                                       encoding="utf-8")
+        self.repo.run("rules-sync")
+        self.assertFalse((self.repo.dir / ".claude/architecture.md").exists(), "nothing is written outside the rules")
+        self.assertTrue((self.repo.dir / ".claude/rules/agentic/python.md").exists())
+
     def test_docs_check_ignores_the_decision_archive(self):
         self.repo.write("docs/architecture/0001-x.md", "[old](../../src/deleted.py)\n")
         self.assertEqual(self.repo.run("docs-check").returncode, 0)
@@ -792,6 +898,17 @@ class LivingDocsTests(Base):
         self.repo.run("open-stage", "docs")
         self.repo.write("src/a.py", "x = 2")
         self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3, "outside its zone")
+
+    def test_the_decision_archive_and_the_plan_are_nobodys(self):
+        # The docs zone includes docs/ by prefix; the hook already blocks docs/architecture/, close-stage must too.
+        self.repo.run("open-stage", "docs")
+        self.repo.write("docs/architecture/0001-x.md", "rewritten")
+        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3)
+        (self.repo.dir / "docs/architecture/0001-x.md").unlink()
+        self.repo.run("open-stage", "docs")
+        with open(self.repo.dir / "architecture.md", "a", encoding="utf-8") as f:
+            f.write("\nA line nobody may add.\n")
+        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3)
 
     def test_a_judge_stage_that_fails_closes_cleanly(self):
         # review, qa and docs record a fail or a blocker in the ledger; only a write outside the zone is an error.
@@ -986,6 +1103,8 @@ class HookBashTests(Base):
         "sh -c 'git commit -m x'", 'bash -c "git checkout main"', "cd src && git add .", "git stash",
         "npm install lodash", "cd x && pnpm add zod", "pip install requests", "uv add httpx",
         "claude -p hola", "claude --print hola",
+        "pip3.12 install requests", "yarn", "python3 -m pip install x", "echo 'src/' >> .git/info/exclude",
+        "cp hook .git/hooks/pre-commit", "printf '[core]' >> .git/config",
     ]
     ALLOWED = [
         "git status", "git diff src/add.py", "git log --oneline -5", "git show HEAD:src/a.py",
@@ -1005,6 +1124,11 @@ class HookBashTests(Base):
 
     def test_main_thread_may_use_git(self):
         self.assertEqual(self.repo.hook(bash_payload("git commit -am x")), 0)
+
+    def test_a_command_too_long_to_check_is_blocked(self):
+        # The rules are regular expressions: a huge command could take longer than the hook may run.
+        self.assertEqual(self.repo.hook(bash_payload("echo " + "git " * 5000), wp="WP-01"), 2)
+        self.assertEqual(self.repo.hook(bash_payload("echo " + "x" * 20000)), 0, "the main thread is not limited")
 
 
 class CheckStageTests(Base):
@@ -1042,6 +1166,88 @@ class CheckStageTests(Base):
         self.repo.run("snapshot", "2")
         self.repo.write("src/a.py", "v3")
         self.assertEqual(self.repo.run("check-wave", "2").returncode, 3)
+
+
+class SafetyNetTests(Base):
+    """What close-stage catches whatever tool made the change (Bash included): the hook is the first line, this the second."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo.write("src/a.py", "v1\n")
+        self.repo.write("tests/test_a.py", "def test_a():\n    assert True\n")
+        self.repo.write("src/coverage/calc.py", "x = 1\n")  # tracked source in a folder named like an artefact
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 88\n")
+        subprocess.run(["git", "add", "-A"], cwd=self.repo.dir, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"], cwd=self.repo.dir,
+                       check=True)
+        self.repo.run("snapshot", "1")
+
+    def check(self):
+        return self.repo.run("check-wave", "1")
+
+    def test_a_commit_during_the_stage_is_caught(self):
+        self.repo.write("src/a.py", "v2\n")
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "x"], cwd=self.repo.dir,
+                       check=True)
+        r = self.check()
+        self.assertEqual(r.returncode, 3, r.stdout)
+        self.assertIn("git state changed", r.stdout)
+
+    def test_git_config_and_hooks_are_watched(self):
+        with open(self.repo.dir / ".git/config", "a", encoding="utf-8") as f:
+            f.write("[core]\n\thooksPath = /dev/null\n")
+        self.assertEqual(self.check().returncode, 3)
+
+    def test_the_baseline_cannot_be_rewritten(self):
+        state = self.repo.dir / ".claude/state"
+        (state / "baseline.json").write_text('{"phases": []}', encoding="utf-8")
+        self.repo.run("snapshot", "2")
+        (state / "baseline.json").write_text('{"phases": [{"name": "tests", "passed": false}]}', encoding="utf-8")
+        self.assertEqual(self.repo.run("check-wave", "2").returncode, 3)
+
+    def test_tracked_files_are_never_ignored(self):
+        self.repo.write("src/coverage/calc.py", "x = 2\n")
+        self.assertEqual(self.check().returncode, 3, "nobody owns src/coverage/calc.py")
+        self.repo.write("src/coverage/calc.py", "x = 1\n")
+        self.repo.write("coverage/lcov.info")  # an untracked artefact is still ignored
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_content_written_through_bash_is_checked(self):
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\n")
+        r = self.check()
+        self.assertEqual(r.returncode, 3, r.stdout)
+        self.assertIn("AWS access key", r.stdout)
+        self.repo.write("src/a.py", "v1\n")
+        self.repo.write("tests/test_a.py", "import unittest\n@unittest.skip('x')\ndef test_a():\n    assert True\n")
+        self.assertEqual(self.check().returncode, 3)
+
+    def test_a_secret_that_was_already_there_is_not_blamed(self):
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\n")
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "fixture"], cwd=self.repo.dir,
+                       check=True)
+        self.repo.run("snapshot", "2")
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\nY = 1\n")
+        self.assertEqual(self.repo.run("check-wave", "2").returncode, 3, "src/a.py is wave 1's") 
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\n")
+        self.repo.run("snapshot", "1")
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\nY = 1\n")
+        self.assertEqual(self.check().returncode, 0, "the key was there before the stage")
+
+    def test_existing_quality_config_needs_config_edit(self):
+        m = json.loads(json.dumps(MANIFEST))
+        m["work_packages"][0]["files"].append("pyproject.toml")
+        (self.repo.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{json.dumps(m)}\n```\n",
+                                                       encoding="utf-8")
+        self.repo.run("snapshot", "1")
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 300\n")
+        self.assertEqual(self.check().returncode, 3)
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 88\n")
+        m["work_packages"][0]["config_edit"] = True
+        (self.repo.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{json.dumps(m)}\n```\n",
+                                                       encoding="utf-8")
+        self.repo.run("snapshot", "1")
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 300\n")
+        self.assertEqual(self.check().returncode, 0)
 
 
 class LauncherTests(Base):

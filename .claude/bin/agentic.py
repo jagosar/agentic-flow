@@ -63,6 +63,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -118,7 +119,8 @@ SYMBOL_RES = {
 INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/compat.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
                  ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
-INSTALL_GITIGNORE = [".claude/state/", ".agentic-result.json"]
+RESULT_FILE = ".agentic-result.json"  # where the workflow leaves its result for save-result
+INSTALL_GITIGNORE = [".claude/state/", RESULT_FILE]
 VERIFY_PHASES = ("build", "types", "lint", "tests")
 # A phase that already failed at baseline is compared failure by failure: the lines that name a failure, without the
 # durations that change from run to run. A line not seen at baseline is a regression.
@@ -164,17 +166,23 @@ GIT_WRITE_RE = re.compile(
     r"submodule)(?=$|[\s\"';&|])")
 FORBIDDEN_BASH = [
     (GIT_WRITE_RE, "git operations that write are not allowed (only status, diff, log, show)"),
-    (re.compile(r"\b(npm|pnpm|yarn|bun)\s+(install|i|add|remove|uninstall|rm|ci)\b"),
+    (re.compile(r"\b(npm|pnpm|yarn|bun)\s+(install|i|add|remove|uninstall|rm|ci)\b|\byarn\s*(?:$|[;&|])"),
      "dependencies cannot be changed (section 3)"),
-    (re.compile(r"\b(pip3?|uv\s+pip)\s+install\b|\buv\s+(add|sync)\b|\bpoetry\s+(add|install)\b|\bcargo\s+add\b|\bgo\s+get\b"),
+    (re.compile(r"\b(pip[\d.]*|uv\s+pip)\s+install\b|\buv\s+(add|sync)\b|\bpoetry\s+(add|install)\b|\bcargo\s+add\b|\bgo\s+get\b"),
      "dependencies cannot be changed (section 3)"),
+    (re.compile(r"(?:^|[\s\"'=])\.git[/\\]"), "git's own files (.git/) are not touched"),
     (re.compile(r"\bclaude\b(?=.*(\s-p\b|\s--print\b))", re.S),
      "other Claude sessions cannot be launched"),
 ]
 # ---- Content guardrails (adapted from ECC: config-protection, block-no-verify, governance-capture) ----
 # Bypassing git hooks: forbidden for everyone, the main session included.
-GIT_HOOK_BYPASS_RE = re.compile(r"\bgit\b[^;&|\n]*?(\s--no-verify\b|\s-c\s*core\.hookspath=)", re.I)
-GIT_COMMIT_N_RE = re.compile(r"\bgit\b[^;&|\n]*?\scommit\b[^;&|\n]*?\s-n\b")  # applied without the quoted text
+# git accepts an unambiguous prefix of a long option (--no-veri), short options together (-an) and configuration
+# through the environment (GIT_CONFIG_KEY_0=core.hooksPath).
+GIT_HOOK_BYPASS_RE = re.compile(
+    r"\bgit\b[^;&|\n]*?(\s--no-veri(?:f|fy)?\b|\s-c\s*[\"']?core\.hookspath=)"
+    r"|\bGIT_CONFIG_(?:KEY_\d+\s*=\s*[\"']?core\.hookspath\b|PARAMETERS\s*=[^\n]*core\.hookspath)", re.I)
+GIT_COMMIT_N_RE = re.compile(r"\bgit\b[^;&|\n]*?\scommit\b[^;&|\n]*?\s-[a-zA-Z]*n[a-zA-Z]*\b")  # without the quoted text
+MAX_CHECKED_COMMAND = 10_000  # longer agent commands are refused: the rules are regexes, and the hook has a time limit
 QUOTED_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
 # Quality config: creating it is allowed; modifying existing config is not (unless "config_edit": true on the WP).
 PROTECTED_CONFIG_RE = re.compile(
@@ -188,7 +196,8 @@ SKIP_MARKER_RE = re.compile(
     r"@unittest\.skip\b(?!If|Unless)|\bunittest\.skip\(|@skip\(|\bexpectedFailure\b|"
     r"pytest\.mark\.(skip|xfail)\b(?!if)|\bpytest\.(skip|xfail)\(|"
     r"\b(it|test|describe|context)\.(skip|only|todo)\(|\bx(it|describe|test)\(|\bf(it|describe)\(|"
-    r"\bt\.Skip(Now)?\(|#\[ignore\]")
+    r"\bt\.Skip(Now)?\(|#\[ignore\]|"
+    r"\.skipTest\(|\braise\s+(?:unittest\.)?SkipTest\b|\bskip(?:If|if)\(\s*True\b|\bskipUnless\(\s*False\b")
 TEST_PATH_RE = re.compile(r"(^|/)(tests?|spec|__tests__|acceptance|qa)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
 SECRET_RES = [
     (re.compile(r"AKIA[0-9A-Z]{16}"), "an AWS access key"),
@@ -352,18 +361,32 @@ def validate(manifest):
             errors.append(f"{wp['id']}: 'config_edit' must be true or false.")
         if not isinstance(wp.get("wave", 0), int):
             errors.append(f"{wp['id']}: 'wave' must be an integer.")
+        if not isinstance(wp.get("depends_on", []), list):
+            errors.append(f"{wp['id']}: 'depends_on' must be a list of WP IDs.")
+            continue
         for dep in wp.get("depends_on", []):
             if dep not in table:
                 errors.append(f"{wp['id']}: depends on {dep}, which does not exist.")
+            elif not isinstance(table[dep].get("wave", 0), int) or not isinstance(wp.get("wave", 0), int):
+                continue  # the wave type is already reported
             elif table[dep].get("wave", 0) >= wp.get("wave", 0):
                 errors.append(f"{wp['id']} (wave {wp.get('wave')}) depends on {dep} (wave {table[dep].get('wave')}): it must be in an earlier wave.")
     for ent in entities(manifest).values():
-        for f in ent.get("files", []):
+        files = ent.get("files", [])
+        if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+            errors.append(f"{ent['id']}: 'files' must be a list of paths.")
+            continue
+        for f in files:
+            # Paths are compared as text, so they are written as git shows them.
+            if "\\" in f or "//" in f or f.startswith("./") or "/./" in f:
+                errors.append(f"{ent['id']}: write the path as git shows it (no ./, // or backslashes): {f}")
+                continue
             if f.startswith("/") or ".." in Path(f).parts:
                 errors.append(f"{ent['id']}: path not relative to the repo: {f}")
             if f == "architecture.md" or f.startswith(".claude/") or f.startswith(ARCHIVE_DIR) or f in ("", "./", "/"):
                 errors.append(f"{ent['id']}: cannot own '{f}'.")
-    owners = [(f, e["id"]) for e in entities(manifest).values() for f in e.get("files", [])]
+    owners = [(f, e["id"]) for e in entities(manifest).values() if isinstance(e.get("files"), list)
+              for f in e["files"] if isinstance(f, str)]
     for i, (fa, wa) in enumerate(owners):
         for fb, wb in owners[i + 1:]:
             if wa != wb and owner_conflict(fa, fb):
@@ -374,6 +397,12 @@ def validate(manifest):
         elif open_ended_rule(rule):
             errors.append(f"allow_bash: rule too broad (it would allow arbitrary execution): {rule}. "
                           "Use the specific command, e.g. Bash(npm test:*) or Bash(python3 -m pytest:*).")
+    commands = [at_entity(manifest)["command"]] + list(manifest.get("verify", {}).values()
+                                                       if isinstance(manifest.get("verify", {}), dict) else [])
+    for cmd in commands:
+        if isinstance(cmd, str) and cmd.strip() and open_ended_rule(f"Bash({cmd}:*)"):
+            errors.append(f"command too broad: '{cmd}' would let the agents run anything (Bash({cmd}:*)). "
+                          "Use the specific command, e.g. python3 -m pytest.")
     if not isinstance(manifest.get("ignore", []), list):
         errors.append("'ignore' must be a list of patterns.")
     verify_cfg = manifest.get("verify", {})
@@ -543,9 +572,64 @@ def snapshot(label):
     tree = git_tree()
     if tree:  # what a fix attempt changed is later diffed against this
         (STATE / f"tree-{label}.txt").write_text(tree, encoding="utf-8")
+    (STATE / f"gitstate-{label}.json").write_text(json.dumps(git_state()), encoding="utf-8")
     locked_json(CLAIMS, lambda c: {})  # every stage starts with no claims (emptied: Windows cannot delete an open file)
     ledger_stage(label, "in progress")
     print(f"Snapshot of stage {label} saved.")
+
+
+def git_state():
+    """What no agent may change during a stage, whatever tool it uses: the commit and the refs, git's own configuration,
+    hooks and excludes, and the baseline that verification compares against."""
+    def git(*args):
+        r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True)
+        return r.stdout if r.returncode == 0 else b""
+
+    def file_hash(path):
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+    common = git("rev-parse", "--git-common-dir").decode().strip()
+    git_dir = (ROOT / common) if common else None
+    hooks = sorted(p for p in (git_dir / "hooks").glob("*") if p.is_file()) if git_dir and (git_dir / "hooks").is_dir() else []
+    return {"HEAD": git("rev-parse", "-q", "--verify", "HEAD").decode().strip() or None,
+            "refs": hashlib.sha256(git("for-each-ref")).hexdigest(),
+            "config": file_hash(git_dir / "config") if git_dir else None,
+            "hooks": hashlib.sha256(b"".join(p.name.encode() + p.read_bytes() for p in hooks)).hexdigest(),
+            "info/exclude": file_hash(git_dir / "info" / "exclude") if git_dir else None,
+            "baseline": file_hash(BASELINE)}
+
+
+def index_files():
+    """The paths git tracks (the index): never treated as artefacts, whatever folder they are in."""
+    r = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True)
+    return set(r.stdout.decode().split("\0")) - {""} if r.returncode == 0 else set()
+
+
+def content_problems(manifest, label, changes):
+    """Secrets, unconditional test skips and relaxed quality configuration in what a stage changed, compared with the
+    content each file had when the stage opened. It catches what the hook cannot see (a write through Bash).
+    changes: [(path, owner entity)]."""
+    tree_file = STATE / f"tree-{label}.txt"
+    if not tree_file.exists():
+        return []
+    tree = tree_file.read_text(encoding="utf-8").strip()
+    problems = []
+    for path, ent in changes:
+        r = subprocess.run(["git", "cat-file", "-p", f"{tree}:{path}"], cwd=ROOT, capture_output=True)
+        existed = r.returncode == 0
+        old = r.stdout.decode("utf-8", "replace") if existed else ""
+        try:
+            new = (ROOT / path).read_text(encoding="utf-8", errors="replace") if (ROOT / path).is_file() else ""
+        except OSError:
+            new = ""
+        for rx, what in SECRET_RES:
+            if len(rx.findall(new)) > len(rx.findall(old)):
+                problems.append(f"{path}: looks like {what}")
+        if TEST_PATH_RE.search(path) and len(SKIP_MARKER_RE.findall(new)) > len(SKIP_MARKER_RE.findall(old)):
+            problems.append(f"{path}: a test was disabled (skip, xfail, only…)")
+        if existed and PROTECTED_CONFIG_RE.match(Path(path).name) and not ent.get("config_edit"):
+            problems.append(f"{path}: existing quality configuration changed without config_edit")
+    return problems
 
 
 def check_stage(manifest, label):
@@ -555,23 +639,47 @@ def check_stage(manifest, label):
     before = json.loads(snap_file.read_text(encoding="utf-8"))
     after = digest()
     patterns = DEFAULT_IGNORE + manifest.get("ignore", [])
+    tracked = index_files()
     changed = sorted(p for p in before.keys() | after.keys()
-                     if before.get(p) != after.get(p) and not ignored(p, patterns))
+                     if before.get(p) != after.get(p) and (p in tracked or not ignored(p, patterns)))
     owners = stage_owners(manifest, label)
     report = {o["id"]: [] for o in owners}
-    violations = []
+    violations, owned = [], []
+    nobodys = ("architecture.md", codemap_path(manifest))
     for path in changed:
-        owner = next((o["id"] for o in owners if any(owns(f, path) for f in o["files"])), None)
-        (report[owner] if owner else violations).append(path)
+        owner = next((o for o in owners if any(owns(f, path) for f in o["files"])), None)
+        # Nobody writes the plan, the flow, the decision archive or the code map, even inside a zone that covers them.
+        if owner and (path in nobodys or path.startswith((".claude/", ARCHIVE_DIR))):
+            owner = None
+        if owner:
+            report[owner["id"]].append(path)
+            owned.append((path, owner))
+        else:
+            violations.append(path)
     for oid, files in report.items():
         print(f"{oid}: {len(files)} file(s) changed" + (": " + ", ".join(files) if files else ""))
+    ok = True
     if violations:
         print("OUTSIDE OWNERSHIP (no owner of this stage owns these files):")
         for v in violations:
             print(f"  {v}")
-        return False
-    print(f"Stage {label}: all changes are within their owners.")
-    return True
+        ok = False
+    git_file = STATE / f"gitstate-{label}.json"
+    if git_file.exists():
+        was, now = json.loads(git_file.read_text(encoding="utf-8")), git_state()
+        moved = [k for k in was if was[k] != now.get(k)]
+        if moved:
+            print(f"git state changed during the stage: {', '.join(moved)} (no agent commits or touches .git or the baseline)")
+            ok = False
+    problems = content_problems(manifest, label, owned)
+    if problems:
+        print("CONTENT NOT ALLOWED:")
+        for problem in problems:
+            print(f"  {problem}")
+        ok = False
+    if ok:
+        print(f"Stage {label}: all changes are within their owners.")
+    return ok
 
 
 # ---------- launchers ----------
@@ -793,7 +901,9 @@ def rules_sync():
     if not (RULES_LIBRARY / "common.md").exists():
         die(f"{RULES_LIBRARY.relative_to(ROOT)}/common.md does not exist: install the full flow (plugin or template).")
     declared, detected = declared_stack(), sorted(detect_stack())
-    wanted = {"common"} | {p for p in set(declared) | set(detected) if (RULES_LIBRARY / f"{p}.md").exists()}
+    # Stack entries are names, never paths: "../../x" must not copy a file out of the library or write outside it.
+    wanted = {"common"} | {p for p in set(declared) | set(detected)
+                           if re.fullmatch(r"[a-z][a-z0-9+-]*", str(p)) and (RULES_LIBRARY / f"{p}.md").exists()}
     RULES_DIR.mkdir(parents=True, exist_ok=True)
     installed, removed = [], []
     for name in sorted(wanted):
@@ -852,8 +962,13 @@ def codemap(manifest, target=None):
 
 
 def heading_anchors(text):
-    return {re.sub(r"[^\w\s-]", "", h.strip().lower(), flags=re.U).replace(" ", "-")
-            for h in re.findall(r"^#+ (.+)$", text, re.M)}
+    """The anchors GitHub gives the headings: a repeated heading gets -1, -2..."""
+    anchors, seen = set(), {}
+    for h in re.findall(r"^#+ (.+)$", text, re.M):
+        slug = re.sub(r"[^\w\s-]", "", h.strip().lower(), flags=re.U).replace(" ", "-")
+        anchors.add(f"{slug}-{seen[slug]}" if slug in seen else slug)
+        seen[slug] = seen.get(slug, 0) + 1
+    return anchors
 
 
 def docs_files(manifest):
@@ -884,7 +999,10 @@ def docs_check(manifest):
                 if link.startswith(("http://", "https://", "mailto:")):
                     continue
                 target_rel, _, frag = link.partition("#")
-                target = (path.parent / target_rel) if target_rel else path
+                target_rel = urllib.parse.unquote(target_rel)
+                # a link starting with / is relative to the repo root, as GitHub renders it
+                target = (ROOT / target_rel.lstrip("/") if target_rel.startswith("/") else path.parent / target_rel) \
+                    if target_rel else path
                 if not target.exists():
                     broken.append({"file": rel, "line": n, "target": link, "kind": "link"})
                 elif frag and target.suffix == ".md" and frag not in heading_anchors(target.read_text(encoding="utf-8")):
@@ -1392,11 +1510,17 @@ def run_phases(manifest):
 def attribute(manifest, lines):
     """Maps the output of a failure to the work packages that own what it mentions: a file of theirs (by path) or one
     of their criteria (AC-NNN in a test name, through the WP's "acs"). Deterministic; no model."""
-    text = "\n".join(lines)
-    seen = {f"AC-{int(n):03d}" for n in re.findall(r"(?<![A-Za-z])AC[-_ ]?(\d+)", text, re.I)}
+    # Absolute paths read as the repo's relative ones, with forward slashes whatever the system printed.
+    text = "\n".join(lines).replace("\\", "/").replace(ROOT.as_posix() + "/", "")
+    # Whole criteria and whole paths: 0x7f91ac30 is not AC-030, src/a.pyx is not src/a.py, lib/util.py is not util.py.
+    seen = {f"AC-{int(n):03d}" for n in re.findall(r"(?<![A-Za-z0-9])AC[-_ ]?(\d+)", text, re.I)}
+
+    def mentioned(f):
+        return re.search(r"(?<![\w./-])" + re.escape(f) + ("" if f.endswith("/") else r"(?![\w-])"), text)
+
     found = {}
     for wid, wp in sorted(wps(manifest).items()):
-        files = [f for f in wp.get("files", []) if f in text]
+        files = [f for f in wp.get("files", []) if mentioned(f)]
         acs = [a for a in wp.get("acs", []) if f"AC-{int(a[3:]):03d}" in seen]
         if files or acs:
             found[wid] = {"files": files, "acs": acs}
@@ -1505,7 +1629,12 @@ def locked_json(path, fn):
     with open(path, "a+", encoding="utf-8") as fh, compat.locked(fh):
         fh.seek(0)
         raw = fh.read()
-        data = json.loads(raw) if raw.strip() else {}
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except ValueError:  # a crash mid-write: keep the broken copy for inspection and start again
+            Path(f"{path}.corrupt").write_text(raw, encoding="utf-8")
+            print(f"[agentic] {Path(path).name} was corrupt: set aside as {Path(path).name}.corrupt", file=sys.stderr)
+            data = {}
         new = fn(data)
         if new is not None:
             fh.seek(0)
@@ -1630,9 +1759,26 @@ def block(msg):
     sys.exit(2)
 
 
-def claim(agent_id, wanted):
-    if wanted not in entities(load_manifest()):
+# What each of the flow's agent types may claim; an implementer (or a WP's own agent type) claims its packages.
+CLAIM_KINDS = {"qa": {"QA"}, "test-author": {"AT"}, "doc-updater": {"DOCS"}, "reviewer": {"REVIEW"},
+               "verifier": {"REVIEW"}, "test-auditor": {"REVIEW"}}
+
+
+def claimable(manifest, agent_type):
+    """The IDs an agent of this type may claim, or None if the type is not one of the flow's (no restriction)."""
+    if agent_type in CLAIM_KINDS:
+        return CLAIM_KINDS[agent_type]
+    packages = {wid for wid, wp in wps(manifest).items() if wp.get("agent", "implementer") == agent_type}
+    return packages if packages or agent_type == "implementer" else None
+
+
+def claim(agent_id, wanted, agent_type=None):
+    manifest = load_manifest()
+    if wanted not in entities(manifest):
         block(f"{wanted} does not exist in the manifest.")
+    allowed = claimable(manifest, agent_type)
+    if allowed is not None and wanted not in allowed:
+        block(f"a {agent_type} agent cannot claim {wanted}: claim your own ID ({', '.join(sorted(allowed)) or 'none'}).")
     conflict = {}
 
     def update(claims):
@@ -1670,10 +1816,34 @@ def written_text(tool, tinput):
     return "", None
 
 
+def result_text(tool, tinput, abs_path):
+    """The whole file as the tool would leave it, and as it is now: (new, old). (None, None) if it cannot be worked
+    out (an edit whose old text is not in the file fails anyway)."""
+    try:
+        current = abs_path.read_text(encoding="utf-8", errors="replace") if abs_path.is_file() else ""
+    except OSError:
+        return None, None
+    if tool == "Write":
+        return tinput.get("content") or "", current
+    edits = [tinput] if tool == "Edit" else tinput.get("edits") if tool == "MultiEdit" else None
+    if not isinstance(edits, list):
+        return None, None
+    text = current
+    for e in edits:
+        old, new = e.get("old_string") or "", e.get("new_string") or ""
+        if old not in text:
+            return None, None
+        text = text.replace(old, new) if e.get("replace_all") else text.replace(old, new, 1)
+    return text, current
+
+
 def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
-    new, old = written_text(tool, tinput)
+    # Whole files, not fragments: two harmless-looking edits must not assemble a secret or a skip.
+    new, old = result_text(tool, tinput, abs_path)
+    if new is None:
+        new, old = written_text(tool, tinput)
     for rx, what in SECRET_RES:
-        if rx.search(new):
+        if len(rx.findall(new)) > len(rx.findall(old or "")):
             block(f"{owner_id}: what you are about to write to {rel} looks like {what}. "
                   "Use a synthetic value or an environment variable; never a real secret.")
     if PROTECTED_CONFIG_RE.match(Path(rel).name) and abs_path.exists() and not ent.get("config_edit"):
@@ -1708,6 +1878,8 @@ def guard(data):
     owner_id = os.environ.get("AGENTIC_WP")
 
     bash_cmd = tinput.get("command", "") if tool == "Bash" else ""
+    if len(bash_cmd) > MAX_CHECKED_COMMAND and (agent_id or owner_id):
+        block(f"a command longer than {MAX_CHECKED_COMMAND} characters cannot be checked: split it or use a script file.")
     if bash_cmd and (GIT_HOOK_BYPASS_RE.search(bash_cmd) or GIT_COMMIT_N_RE.search(QUOTED_RE.sub("''", bash_cmd))):
         block("bypassing git hooks (--no-verify, commit -n, core.hooksPath) is not allowed for any agent. "
               "If a hook fails, fix the cause or ask the user to decide.")
@@ -1715,7 +1887,7 @@ def guard(data):
     if tool == "Bash" and agent_id and not owner_id:
         m = CLAIM_RE.fullmatch(tinput.get("command", ""))
         if m:
-            claim(agent_id, m.group(1))
+            claim(agent_id, m.group(1), data.get("agent_type"))
             return
 
     if not owner_id and agent_id:
@@ -1833,8 +2005,8 @@ def main():
         # The launcher cannot write in .claude/ (a protected path): this saves the workflow JSON here, read from stdin.
         # With FILE (e.g. .agentic-result.json at the root), it reads and deletes it; without it, it reads stdin.
         src = (ROOT / args[0]) if args else None
-        if src is not None and (src.resolve().parent != ROOT.resolve() or not src.is_file()):
-            die("save-result: the file must exist and be at the repo root.")
+        if src is not None and (Path(args[0]).as_posix() != RESULT_FILE or not src.is_file()):
+            die(f"save-result: only {RESULT_FILE}, at the repo root, is read (and then deleted).")
         try:
             data = json.loads(src.read_text(encoding="utf-8")) if src else json.loads(compat.read_stdin_text())
         except json.JSONDecodeError as e:
@@ -1860,6 +2032,11 @@ def main():
             manifest = load_manifest()
         except ManifestError:
             manifest = None  # the architect may generate it before the plan exists
+        target = args[0].replace("\\", "/") if args else None
+        if target and (not target.endswith(".md") or target.startswith("/") or Path(target).is_absolute()
+                       or ".." in Path(target).parts or not (ROOT / target).resolve().is_relative_to(ROOT.resolve())
+                       or target == "architecture.md" or target.startswith((".claude/", ARCHIVE_DIR))):
+            die(f"codemap: the map is a .md path inside the repo, outside .claude/, {ARCHIVE_DIR} and architecture.md.")
         codemap(manifest, args[0] if args else None)
     elif cmd == "docs-check":
         try:

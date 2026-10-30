@@ -57,6 +57,11 @@ class Halted(BaseException):
     """Someone ran `agentic.py stop`: not an error of an agent, so it is not swallowed with them."""
 
 
+def pending_key(d):
+    """One pending item per package, source, file and problem: the same defect is listed once, not once per cycle."""
+    return (d.get("wp"), d.get("source"), d.get("file"), d.get("problem") or d.get("repro"))
+
+
 class Pipeline:
     def __init__(self, spec, gate, agent, parallel=threaded, log=lambda m: None, start_wave=None, phase=lambda t: None,
                  wave_done=lambda wave: None):
@@ -65,10 +70,13 @@ class Pipeline:
         self.blocking = set(spec["constants"]["blocking"])
         self.refute_confidence = spec["constants"]["refute_confidence"]
         self._gate, self._agent, self.parallel, self.log, self.phase = gate, agent, parallel, log, phase
-        self.start_wave, self.wave_done = start_wave, wave_done
+        # 2 or "2" (the workflow's args may carry it as text)
+        self.start_wave = int(start_wave) if isinstance(start_wave, str) and start_wave.isdigit() else start_wave
+        self.wave_done = wave_done
         self.plan = None
         self.rules = ""
         self.fix_count, self.fix_history, self.limit_pending = {}, {}, []
+        self.qa_pending = []  # the last QA's design and no-WP items: they stay listed whatever comes after
         self.run = {"result": "REVIEW", "stages": [], "baseline": None, "work_packages": {}, "verification": None,
                     "review": None, "qa": None, "test_audit": None, "docs": None, "fix_cycles": 0, "pending": []}
 
@@ -115,10 +123,10 @@ class Pipeline:
     def split_by_limit(self, defects):
         eligible = []
         for d in defects:
-            if self.fix_count.get(d["wp"], 0) >= self.plan["max_fix_cycles"]:
-                self.limit_pending.append({"type": "fix limit reached", **d})
-            else:
+            if self.fix_count.get(d["wp"], 0) < self.plan["max_fix_cycles"]:
                 eligible.append(d)
+            elif not any(pending_key(p) == pending_key(d) for p in self.limit_pending):
+                self.limit_pending.append({"type": "fix limit reached", **d})
         return eligible
 
     @staticmethod
@@ -321,7 +329,7 @@ class Pipeline:
                 if not defects:
                     return self.stop("verification", "a verification phase fails and no work package owns the failure (see verification)")
                 eligible = self.split_by_limit(defects)
-                run["pending"] = list(self.limit_pending)
+                run["pending"] = self.qa_pending + list(self.limit_pending)
                 if not eligible:
                     return run
                 fixed = self.fix_cycle(eligible, False)
@@ -367,7 +375,8 @@ class Pipeline:
             close_qa = f"close-stage qa QA={'pass' if qa['status'] == 'PASS' else 'fail'}"
 
             eligible = self.split_by_limit(impl) if impl else []
-            run["pending"] = baseline + list(self.limit_pending)
+            self.qa_pending = baseline
+            run["pending"] = self.qa_pending + list(self.limit_pending)
             if not eligible:
                 run["result"] = ("REVIEW" if impl or qa["status"] == "BLOCKER"
                                  or any(p.get("severity") in self.blocking for p in run["pending"]) else "OK")
@@ -414,6 +423,9 @@ class Pipeline:
         run["docs"]["report"] = doc
         run["docs"]["ownership_ok"] = self.ok(close)
         run["docs"]["check"] = lines_json(check["output"]) if check else None
+        if self.ok(close) and not run["docs"]["check"]:
+            run["pending"].append({"type": "documentation", "severity": "medium",
+                                   "problem": "the documentation check did not run or its output could not be read"})
         run["stages"].append({"stage": "documentation", "ok": run["docs"]["ownership_ok"] and self.ok(check),
                               "check": close and close["output"]})
         ghost = self.unchanged_claims(doc, close and close["output"], "DOCS")

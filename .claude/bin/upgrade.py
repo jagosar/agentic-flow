@@ -6,6 +6,7 @@ created from the template, which has no install record, upgrade as safely as one
 """
 import fnmatch
 import hashlib
+import re
 import json
 import subprocess
 from pathlib import Path
@@ -70,10 +71,12 @@ def classify(dst_hash, src_hash, known, force):
 
 
 def version_key(version):
-    try:
-        return tuple(int(part) for part in str(version).split("."))
-    except ValueError:
+    """(major, minor, patch) of '1.1', 'v1.1.0' or '1.1.4-rc1'; None for anything else ('dev')."""
+    m = re.fullmatch(r"v?(\d+(?:\.\d+){0,2})(?:[-+].*)?", str(version).strip())
+    if not m:
         return None
+    parts = tuple(int(p) for p in m.group(1).split("."))
+    return parts + (0,) * (3 - len(parts))
 
 
 def notes_between(from_version, to_version):
@@ -97,10 +100,9 @@ def guard_problems(target, paths):
         ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         ledger = {}
-    except OSError:  # it exists but cannot be read: a run may be using it
-        problems.append("the run state cannot be read: stop any run and try again")
-        ledger = {}
-    except ValueError:
+    except (OSError, ValueError):  # unreadable or corrupt: it cannot tell whether a run is in progress
+        problems.append("the run state cannot be read: stop any run and try again "
+                        "(if none is running, delete .claude/state/ledger.json)")
         ledger = {}
     running = sorted(k for k, v in ledger.items()
                      if not k.startswith("_") and isinstance(v, dict) and v.get("state") == "running")
