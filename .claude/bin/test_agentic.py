@@ -73,10 +73,10 @@ def write_payload(path, agent_id=None, tool="Write"):
     return data
 
 
-def bash_payload(command, agent_id=None):
+def bash_payload(command, agent_id=None, agent_type="implementer"):
     data = {"tool_name": "Bash", "tool_input": {"command": command}}
     if agent_id:
-        data.update(agent_id=agent_id, agent_type="implementer")
+        data.update(agent_id=agent_id, agent_type=agent_type)
     return data
 
 
@@ -215,6 +215,16 @@ class HookWriteTests(Base):
             self.assertEqual(self.repo.hook(bash_payload(cmd, agent_id="ag1")), 2, cmd)
         self.assertEqual(self.repo.hook(bash_payload("sh .claude/bin/agentic claim WP-02", agent_id="ag2")), 0)
 
+    def test_a_claim_matches_the_agent_type(self):
+        # An implementer claims a package, QA claims QA, and so on: no agent takes another kind's zone.
+        cases = [("implementer", "QA", 2), ("qa", "WP-01", 2), ("test-author", "REVIEW", 2), ("doc-updater", "WP-02", 2),
+                 ("qa", "QA", 0), ("verifier", "REVIEW", 0), ("test-auditor", "REVIEW", 0)]
+        for i, (kind, ident, expected) in enumerate(cases):
+            with self.subTest(kind=kind, ident=ident):
+                payload = bash_payload(f"python3 .claude/bin/agentic.py claim {ident}", agent_id=f"k{i}", agent_type=kind)
+                self.assertEqual(self.repo.hook(payload), expected)
+                self.repo.run("snapshot", "1")
+
     def test_claim_is_exclusive(self):
         claim = "python3 .claude/bin/agentic.py claim WP-01"
         self.assertEqual(self.repo.hook(bash_payload(claim, agent_id="ag1")), 0)
@@ -249,8 +259,9 @@ class V2EntityTests(Base):
         self.assertEqual(self.repo.hook(bash_payload("git diff"), wp="REVIEW"), 0)
 
     def test_claim_at_and_review_in_workflow_mode(self):
-        for ident, agent in (("AT", "a1"), ("REVIEW", "a2")):
-            self.assertEqual(self.repo.hook(bash_payload(f"python3 .claude/bin/agentic.py claim {ident}", agent_id=agent)), 0)
+        for ident, agent, kind in (("AT", "a1", "test-author"), ("REVIEW", "a2", "reviewer")):
+            self.assertEqual(self.repo.hook(bash_payload(f"python3 .claude/bin/agentic.py claim {ident}", agent_id=agent,
+                                                         agent_type=kind)), 0)
         self.assertEqual(self.repo.hook(write_payload(self.p("acceptance/t.py"), agent_id="a1")), 0)
         self.assertEqual(self.repo.hook(write_payload(self.p("src/a.py"), agent_id="a2")), 2)
 
@@ -328,7 +339,13 @@ class ContentGuardTests(Base):
                     "git push --no-verify"]:
             with self.subTest(cmd=cmd):
                 self.assertEqual(self.repo.hook(bash_payload(cmd)), 2, "in the main session too")
-        for cmd in ["git commit -m 'arregla -n'", "git log -n 5", "git commit -m x"]:
+        for cmd in ["git commit -nm x", "git commit -an -m x", "git commit --no-verif -m x", "git commit --no-veri -m x",
+                    'git -c "core.hooksPath=/dev/null" commit -m x',
+                    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x"]:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.repo.hook(bash_payload(cmd)), 2, "a variant of the same bypass")
+        for cmd in ["git commit -m 'arregla -n'", "git log -n 5", "git commit -m x", "git config core.hooksPath .githooks",
+                    "git commit --amend -m x"]:
             with self.subTest(cmd=cmd):
                 self.assertEqual(self.repo.hook(bash_payload(cmd)), 0)
 
@@ -347,6 +364,22 @@ class ContentGuardTests(Base):
         self.assertEqual(self.w("src/a.py", "# pytest.mark.skip in a code comment\n"), 0, "only in test files")
         self.assertEqual(self.w("tests/test_a.py", "@unittest.skip('was already there')\nX", tool="Edit",
                                 old="@unittest.skip('was already there')\n"), 0, "what already existed does not count")
+
+    def test_unconditional_skips_in_other_forms(self):
+        for body in ["self.skipTest('x')", "raise unittest.SkipTest('x')", "@unittest.skipIf(True, 'x')",
+                     "@pytest.mark.skipif(True, reason='x')", "@unittest.skipUnless(False, 'x')"]:
+            with self.subTest(body=body):
+                self.assertEqual(self.w("tests/test_a.py", f"{body}\ndef test(): pass\n"), 2)
+
+    def test_an_edit_is_checked_by_the_file_it_leaves(self):
+        # Checking only the edited fragment let two harmless-looking edits assemble a secret or a skip.
+        self.repo.write("src/a.py", "K = 'AKIAQQ'\n")
+        self.assertEqual(self.w("src/a.py", "QQ" + "X" * 14 + "'", tool="Edit", old="QQ'"), 2)
+        self.repo.write("tests/test_a.py", "import unittest\n@unittest.sk\ndef test(): pass\n")
+        self.assertEqual(self.w("tests/test_a.py", "skip('x')\n", tool="Edit", old="sk\n"), 2)
+        fixture = "K = 'AKIA" + "Q" * 16 + "'\n"
+        self.repo.write("src/a.py", fixture)
+        self.assertEqual(self.w("src/a.py", fixture + "Y = 1\n"), 0, "a key that was already there is not new")
 
     def test_secrets(self):
         for secret in ["AKIA" + "A" * 16, "ghp_" + "a" * 36, "sk-ant-" + "a" * 30,
@@ -739,7 +772,7 @@ class LivingDocsTests(Base):
         self.assertEqual(self.repo.run("validate").returncode, 0)
 
     def test_hook_docs_zone_and_paths_nobody_writes(self):
-        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim DOCS", agent_id="d1"))
+        self.repo.hook(bash_payload("python3 .claude/bin/agentic.py claim DOCS", agent_id="d1", agent_type="doc-updater"))
         doc = lambda path: dict(write_payload(path, agent_id="d1"), agent_type="doc-updater")
         self.assertEqual(self.repo.hook(doc("README.md")), 0)
         self.assertEqual(self.repo.hook(doc("docs/guide.md")), 0)
@@ -997,6 +1030,8 @@ class HookBashTests(Base):
         "sh -c 'git commit -m x'", 'bash -c "git checkout main"', "cd src && git add .", "git stash",
         "npm install lodash", "cd x && pnpm add zod", "pip install requests", "uv add httpx",
         "claude -p hola", "claude --print hola",
+        "pip3.12 install requests", "yarn", "python3 -m pip install x", "echo 'src/' >> .git/info/exclude",
+        "cp hook .git/hooks/pre-commit", "printf '[core]' >> .git/config",
     ]
     ALLOWED = [
         "git status", "git diff src/add.py", "git log --oneline -5", "git show HEAD:src/a.py",
@@ -1016,6 +1051,11 @@ class HookBashTests(Base):
 
     def test_main_thread_may_use_git(self):
         self.assertEqual(self.repo.hook(bash_payload("git commit -am x")), 0)
+
+    def test_a_command_too_long_to_check_is_blocked(self):
+        # The rules are regular expressions: a huge command could take longer than the hook may run.
+        self.assertEqual(self.repo.hook(bash_payload("echo " + "git " * 5000), wp="WP-01"), 2)
+        self.assertEqual(self.repo.hook(bash_payload("echo " + "x" * 20000)), 0, "the main thread is not limited")
 
 
 class CheckStageTests(Base):

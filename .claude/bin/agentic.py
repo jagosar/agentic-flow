@@ -164,17 +164,23 @@ GIT_WRITE_RE = re.compile(
     r"submodule)(?=$|[\s\"';&|])")
 FORBIDDEN_BASH = [
     (GIT_WRITE_RE, "git operations that write are not allowed (only status, diff, log, show)"),
-    (re.compile(r"\b(npm|pnpm|yarn|bun)\s+(install|i|add|remove|uninstall|rm|ci)\b"),
+    (re.compile(r"\b(npm|pnpm|yarn|bun)\s+(install|i|add|remove|uninstall|rm|ci)\b|\byarn\s*(?:$|[;&|])"),
      "dependencies cannot be changed (section 3)"),
-    (re.compile(r"\b(pip3?|uv\s+pip)\s+install\b|\buv\s+(add|sync)\b|\bpoetry\s+(add|install)\b|\bcargo\s+add\b|\bgo\s+get\b"),
+    (re.compile(r"\b(pip[\d.]*|uv\s+pip)\s+install\b|\buv\s+(add|sync)\b|\bpoetry\s+(add|install)\b|\bcargo\s+add\b|\bgo\s+get\b"),
      "dependencies cannot be changed (section 3)"),
+    (re.compile(r"(?:^|[\s\"'=])\.git[/\\]"), "git's own files (.git/) are not touched"),
     (re.compile(r"\bclaude\b(?=.*(\s-p\b|\s--print\b))", re.S),
      "other Claude sessions cannot be launched"),
 ]
 # ---- Content guardrails (adapted from ECC: config-protection, block-no-verify, governance-capture) ----
 # Bypassing git hooks: forbidden for everyone, the main session included.
-GIT_HOOK_BYPASS_RE = re.compile(r"\bgit\b[^;&|\n]*?(\s--no-verify\b|\s-c\s*core\.hookspath=)", re.I)
-GIT_COMMIT_N_RE = re.compile(r"\bgit\b[^;&|\n]*?\scommit\b[^;&|\n]*?\s-n\b")  # applied without the quoted text
+# git accepts an unambiguous prefix of a long option (--no-veri), short options together (-an) and configuration
+# through the environment (GIT_CONFIG_KEY_0=core.hooksPath).
+GIT_HOOK_BYPASS_RE = re.compile(
+    r"\bgit\b[^;&|\n]*?(\s--no-veri(?:f|fy)?\b|\s-c\s*[\"']?core\.hookspath=)"
+    r"|\bGIT_CONFIG_(?:KEY_\d+\s*=\s*[\"']?core\.hookspath\b|PARAMETERS\s*=[^\n]*core\.hookspath)", re.I)
+GIT_COMMIT_N_RE = re.compile(r"\bgit\b[^;&|\n]*?\scommit\b[^;&|\n]*?\s-[a-zA-Z]*n[a-zA-Z]*\b")  # without the quoted text
+MAX_CHECKED_COMMAND = 10_000  # longer agent commands are refused: the rules are regexes, and the hook has a time limit
 QUOTED_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
 # Quality config: creating it is allowed; modifying existing config is not (unless "config_edit": true on the WP).
 PROTECTED_CONFIG_RE = re.compile(
@@ -188,7 +194,8 @@ SKIP_MARKER_RE = re.compile(
     r"@unittest\.skip\b(?!If|Unless)|\bunittest\.skip\(|@skip\(|\bexpectedFailure\b|"
     r"pytest\.mark\.(skip|xfail)\b(?!if)|\bpytest\.(skip|xfail)\(|"
     r"\b(it|test|describe|context)\.(skip|only|todo)\(|\bx(it|describe|test)\(|\bf(it|describe)\(|"
-    r"\bt\.Skip(Now)?\(|#\[ignore\]")
+    r"\bt\.Skip(Now)?\(|#\[ignore\]|"
+    r"\.skipTest\(|\braise\s+(?:unittest\.)?SkipTest\b|\bskip(?:If|if)\(\s*True\b|\bskipUnless\(\s*False\b")
 TEST_PATH_RE = re.compile(r"(^|/)(tests?|spec|__tests__|acceptance|qa)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
 SECRET_RES = [
     (re.compile(r"AKIA[0-9A-Z]{16}"), "an AWS access key"),
@@ -1709,9 +1716,26 @@ def block(msg):
     sys.exit(2)
 
 
-def claim(agent_id, wanted):
-    if wanted not in entities(load_manifest()):
+# What each of the flow's agent types may claim; an implementer (or a WP's own agent type) claims its packages.
+CLAIM_KINDS = {"qa": {"QA"}, "test-author": {"AT"}, "doc-updater": {"DOCS"}, "reviewer": {"REVIEW"},
+               "verifier": {"REVIEW"}, "test-auditor": {"REVIEW"}}
+
+
+def claimable(manifest, agent_type):
+    """The IDs an agent of this type may claim, or None if the type is not one of the flow's (no restriction)."""
+    if agent_type in CLAIM_KINDS:
+        return CLAIM_KINDS[agent_type]
+    packages = {wid for wid, wp in wps(manifest).items() if wp.get("agent", "implementer") == agent_type}
+    return packages if packages or agent_type == "implementer" else None
+
+
+def claim(agent_id, wanted, agent_type=None):
+    manifest = load_manifest()
+    if wanted not in entities(manifest):
         block(f"{wanted} does not exist in the manifest.")
+    allowed = claimable(manifest, agent_type)
+    if allowed is not None and wanted not in allowed:
+        block(f"a {agent_type} agent cannot claim {wanted}: claim your own ID ({', '.join(sorted(allowed)) or 'none'}).")
     conflict = {}
 
     def update(claims):
@@ -1749,10 +1773,34 @@ def written_text(tool, tinput):
     return "", None
 
 
+def result_text(tool, tinput, abs_path):
+    """The whole file as the tool would leave it, and as it is now: (new, old). (None, None) if it cannot be worked
+    out (an edit whose old text is not in the file fails anyway)."""
+    try:
+        current = abs_path.read_text(encoding="utf-8", errors="replace") if abs_path.is_file() else ""
+    except OSError:
+        return None, None
+    if tool == "Write":
+        return tinput.get("content") or "", current
+    edits = [tinput] if tool == "Edit" else tinput.get("edits") if tool == "MultiEdit" else None
+    if not isinstance(edits, list):
+        return None, None
+    text = current
+    for e in edits:
+        old, new = e.get("old_string") or "", e.get("new_string") or ""
+        if old not in text:
+            return None, None
+        text = text.replace(old, new) if e.get("replace_all") else text.replace(old, new, 1)
+    return text, current
+
+
 def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
-    new, old = written_text(tool, tinput)
+    # Whole files, not fragments: two harmless-looking edits must not assemble a secret or a skip.
+    new, old = result_text(tool, tinput, abs_path)
+    if new is None:
+        new, old = written_text(tool, tinput)
     for rx, what in SECRET_RES:
-        if rx.search(new):
+        if len(rx.findall(new)) > len(rx.findall(old or "")):
             block(f"{owner_id}: what you are about to write to {rel} looks like {what}. "
                   "Use a synthetic value or an environment variable; never a real secret.")
     if PROTECTED_CONFIG_RE.match(Path(rel).name) and abs_path.exists() and not ent.get("config_edit"):
@@ -1787,6 +1835,8 @@ def guard(data):
     owner_id = os.environ.get("AGENTIC_WP")
 
     bash_cmd = tinput.get("command", "") if tool == "Bash" else ""
+    if len(bash_cmd) > MAX_CHECKED_COMMAND and (agent_id or owner_id):
+        block(f"a command longer than {MAX_CHECKED_COMMAND} characters cannot be checked: split it or use a script file.")
     if bash_cmd and (GIT_HOOK_BYPASS_RE.search(bash_cmd) or GIT_COMMIT_N_RE.search(QUOTED_RE.sub("''", bash_cmd))):
         block("bypassing git hooks (--no-verify, commit -n, core.hooksPath) is not allowed for any agent. "
               "If a hook fails, fix the cause or ask the user to decide.")
@@ -1794,7 +1844,7 @@ def guard(data):
     if tool == "Bash" and agent_id and not owner_id:
         m = CLAIM_RE.fullmatch(tinput.get("command", ""))
         if m:
-            claim(agent_id, m.group(1))
+            claim(agent_id, m.group(1), data.get("agent_type"))
             return
 
     if not owner_id and agent_id:
