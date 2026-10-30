@@ -30,6 +30,14 @@ NOTES = {
     "1.1.4": [
         "settings.json gets env.BASH_DEFAULT_TIMEOUT_MS and BASH_MAX_TIMEOUT_MS (30 minutes) where the project has not set "
         "them, so the agents' long test runs stay in the foreground instead of being moved to the background.",
+        "A confirmed review finding or a blocking QA defect now goes through a fix cycle; before, the run stopped as if "
+        "the reviewer or QA had written outside its zone.",
+        "validate is stricter: ownership paths written with ./, // or backslashes, and acceptance or verify commands "
+        "that would allow anything (python3 or bash alone), are errors. If validate fails, fix the plan with /architect.",
+        "Closing a stage also fails on a commit, a change to git's config or hooks, or a secret, skipped test or relaxed "
+        "quality configuration added through Bash. Agents never commit during a run; the commit gate is at the end.",
+        "verify compares an already failing phase failure by failure: a new failure in it now blocks. A baseline saved "
+        "by an earlier version keeps the old comparison until the next baseline.",
     ],
 }
 
