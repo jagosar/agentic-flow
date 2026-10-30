@@ -19,7 +19,7 @@ def split(text):
     """[(kind, key, lines)]: the preamble, then one entry per '## N. ' section. Fenced lines never start a section."""
     parts, fenced = [("pre", None, [])], False
     for line in text.splitlines(keepends=True):
-        fenced ^= line.lstrip().startswith("```")
+        fenced ^= line.lstrip().startswith(("```", "~~~"))
         m = None if fenced else SECTION_RE.match(line)
         if m:
             parts.append(("section", m.group(1), []))
@@ -31,7 +31,7 @@ def blocks(lines, start_re):
     """(intro, {key: lines}): a block runs from a line matching start_re to the next one (or the end)."""
     intro, found, current, fenced = [], {}, None, False
     for line in lines:
-        fenced ^= line.lstrip().startswith("```")
+        fenced ^= line.lstrip().startswith(("```", "~~~"))
         m = None if fenced else start_re.match(line)
         if m:
             current = found.setdefault(m.group(1), [])
@@ -43,7 +43,7 @@ def subsections(lines):
     """Lines of section 8's body, split at '### ' (the first chunk is the intro before any heading)."""
     out, fenced = [[]], False
     for line in lines:
-        fenced ^= line.lstrip().startswith("```")
+        fenced ^= line.lstrip().startswith(("```", "~~~"))
         if line.startswith("### ") and not fenced:
             out.append([])
         out[-1].append(line)
@@ -89,12 +89,16 @@ def slice_architecture(text, ident, manifest):
         return text, False
     out = [f"> Brief for {ident}: the parts of architecture.md this agent needs. "
            "Read architecture.md only if this brief points to something it does not contain.\n\n"]
+    seen_eight = False
     for kind, key, lines in split(MANIFEST_RE.sub("", text)):
         if kind == "pre" or key in keep:
             out += lines
         elif key == "8":
+            seen_eight = True
             reduced = section_eight(lines[1:], wanted, None if ident == "AT" else ident)
             if reduced is None:
                 return text, False
             out += lines[:1] + reduced
+    if not seen_eight:  # without its criteria and its package the brief would hold nothing to build
+        return text, False
     return "".join(out).rstrip("\n") + "\n\n```json\n" + json.dumps(tail, indent=2) + "\n```\n", True

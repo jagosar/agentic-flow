@@ -21,7 +21,7 @@ export const meta = {
 // The schemas, prompts and routing rules below mirror .claude/workflows/pipeline-spec.json, which the fallback engine
 // (`agentic.py run-pipeline`) also reads; test_workflow.mjs fails if the two drift apart.
 const opts = args || {}
-const startWave = Number.isInteger(opts.start_wave) ? opts.start_wave : null
+const startWave = /^\d+$/.test(String(opts.start_wave ?? '')) ? Number(opts.start_wave) : null  // 2 or "2"
 const AGENTIC = 'python3 .claude/bin/agentic.py'
 
 // ---------- schemas ----------
@@ -151,16 +151,20 @@ const stop = (stage, detail, extra) => ({ ...run, result: 'REVIEW', failed_stage
 const fixCount = {}
 const fixHistory = {}
 const limitPending = []
+let qaPending = []  // the last QA's design and no-WP items: they stay listed whatever comes after
+// A package's own key: plan.wave_of comes from JSON, so a name like "constructor" must not read as a package.
+const isWp = wp => Object.prototype.hasOwnProperty.call(plan.wave_of, wp)
+const pendingKey = d => [d.wp, d.source, d.file, d.problem || d.repro].join('|')
 const splitByLimit = defects => {
   const eligible = []
   for (const d of defects) {
-    if ((fixCount[d.wp] || 0) >= plan.max_fix_cycles) limitPending.push({ type: 'fix limit reached', ...d })
-    else eligible.push(d)
+    if ((fixCount[d.wp] || 0) < plan.max_fix_cycles) eligible.push(d)
+    else if (!limitPending.some(p => pendingKey(p) === pendingKey(d))) limitPending.push({ type: 'fix limit reached', ...d })
   }
   return eligible
 }
 const groupByWp = defects => {
-  const by = {}
+  const by = Object.create(null)
   for (const d of defects) (by[d.wp] = by[d.wp] || []).push(d)
   return by
 }
@@ -171,7 +175,7 @@ const verificationDefects = v => {
   const suspects = (v && v.suspects) || {}
   const failing = ((v && v.phases) || []).filter(p => p.status === 'regression' || p.status === 'fails')
   const evidence = failing.map(p => `${p.name}: ${(p.tail || []).join('\n')}`).join('\n').slice(0, 1500)
-  return Object.entries(suspects).filter(([wp]) => plan.wave_of[wp] !== undefined).map(([wp, info]) => ({
+  return Object.entries(suspects).filter(([wp]) => isWp(wp)).map(([wp, info]) => ({
     source: 'verification', severity: 'high', wp, file: (info.files || [])[0] || '',
     problem: `verification fails (${(info.phases || []).join(', ')})${info.acs && info.acs.length ? ` on ${info.acs.join(', ')}` : ''}`, evidence,
   }))
@@ -200,6 +204,9 @@ async function documentStage(steps) {
   run.docs.report = doc
   run.docs.ownership_ok = ok(close)
   run.docs.check = check ? lastJson(check.output) : null
+  if (ok(close) && !run.docs.check) {
+    run.pending.push({ type: 'documentation', severity: 'medium', problem: 'the documentation check did not run or its output could not be read' })
+  }
   run.stages.push({ stage: 'documentation', ok: run.docs.ownership_ok && ok(check), check: close && close.output })
   const ghost = unchangedClaims(doc, close && close.output, 'DOCS')
   if (doc && doc.status === 'DONE' && ghost.length) {
@@ -369,7 +376,7 @@ while (true) {
     const defects = verificationDefects(run.verification)
     if (!defects.length) return stop('verification', 'a verification phase fails and no work package owns the failure (see verification)')
     const eligible = splitByLimit(defects)
-    run.pending = [...limitPending]
+    run.pending = [...qaPending, ...limitPending]
     if (!eligible.length) return run
     const fixed = await fixCycle(eligible, false)
     if (fixed.stopped) return fixed.stopped
@@ -400,15 +407,16 @@ while (true) {
   const implDefects = [
     ...confirmed.map(f => ({ source: 'reviewer', ...f })),
     ...qa.defects.filter(d => d.kind === 'implementation' && BLOCKING.has(d.severity)).map(d => ({ source: 'qa', ...d })),
-  ].filter(d => plan.wave_of[d.wp] !== undefined)
+  ].filter(d => isWp(d.wp))
   const designDefects = qa.defects.filter(d => d.kind === 'design')
   const unassigned = [...confirmed, ...qa.defects.filter(d => d.kind === 'implementation' && BLOCKING.has(d.severity))]
-    .filter(d => plan.wave_of[d.wp] === undefined)
+    .filter(d => !isWp(d.wp))
   const baseline = [...designDefects.map(d => ({ type: 'design', ...d })), ...unassigned.map(d => ({ type: 'no WP', ...d }))]
   const closeQa = `close-stage qa QA=${qa.status === 'PASS' ? 'pass' : 'fail'}`
 
   const eligible = implDefects.length ? splitByLimit(implDefects) : []
-  run.pending = [...baseline, ...limitPending]
+  qaPending = baseline
+  run.pending = [...qaPending, ...limitPending]
   if (eligible.length === 0) {
     run.result = implDefects.length || qa.status === 'BLOCKER' || run.pending.some(p => BLOCKING.has(p.severity)) ? 'REVIEW' : 'OK'
     const docs = run.result === 'OK' && plan.docs

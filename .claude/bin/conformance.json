@@ -521,6 +521,217 @@
    "gate_lost": [
     "verify"
    ]
+  },
+  {
+   "name": "a package at its fix limit is listed once",
+   "plan": {
+    "max_fix_cycles": 1
+   },
+   "verify": [
+    {
+     "exit_code": 3,
+     "output": {
+      "ok": false,
+      "blocking": [
+       "tests"
+      ],
+      "preexisting_failures": [],
+      "suspects": {
+       "WP-01": {
+        "phases": [
+         "tests"
+        ],
+        "files": [],
+        "acs": []
+       }
+      },
+      "phases": [
+       {
+        "name": "tests",
+        "status": "fails",
+        "tail": [
+         "boom"
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "exit_code": 3,
+     "output": {
+      "ok": false,
+      "blocking": [
+       "tests"
+      ],
+      "preexisting_failures": [],
+      "suspects": {
+       "WP-01": {
+        "phases": [
+         "tests"
+        ],
+        "files": [],
+        "acs": []
+       },
+       "WP-02": {
+        "phases": [
+         "tests"
+        ],
+        "files": [],
+        "acs": []
+       }
+      },
+      "phases": [
+       {
+        "name": "tests",
+        "status": "fails",
+        "tail": [
+         "boom"
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "exit_code": 3,
+     "output": {
+      "ok": false,
+      "blocking": [
+       "tests"
+      ],
+      "preexisting_failures": [],
+      "suspects": {
+       "WP-01": {
+        "phases": [
+         "tests"
+        ],
+        "files": [],
+        "acs": []
+       }
+      },
+      "phases": [
+       {
+        "name": "tests",
+        "status": "fails",
+        "tail": [
+         "boom"
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "a design defect survives a later verification failure",
+   "plan": {
+    "max_fix_cycles": 1
+   },
+   "verify": [
+    {
+     "exit_code": 0,
+     "output": {
+      "ok": true,
+      "blocking": [],
+      "preexisting_failures": [],
+      "suspects": {},
+      "phases": [
+       {
+        "name": "tests",
+        "passed": true
+       }
+      ]
+     }
+    },
+    {
+     "exit_code": 3,
+     "output": {
+      "ok": false,
+      "blocking": [
+       "tests"
+      ],
+      "preexisting_failures": [],
+      "suspects": {
+       "WP-03": {
+        "phases": [
+         "tests"
+        ],
+        "files": [],
+        "acs": []
+       }
+      },
+      "phases": [
+       {
+        "name": "tests",
+        "status": "fails",
+        "tail": [
+         "boom"
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "qa": [
+    {
+     "status": "FAIL",
+     "plan": [],
+     "defects": [
+      {
+       "id": "D",
+       "severity": "critical",
+       "wp": "WP-01",
+       "kind": "design",
+       "section": "6",
+       "repro": "x"
+      },
+      {
+       "id": "I",
+       "severity": "high",
+       "wp": "WP-03",
+       "kind": "implementation",
+       "section": "6",
+       "repro": "x"
+      }
+     ],
+     "gaps": []
+    }
+   ]
+  },
+  {
+   "name": "a documentation check that cannot run is reported",
+   "plan": {
+    "docs": true
+   },
+   "gate_fail": [
+    {
+     "prefix": "docs-check",
+     "exit_code": 1,
+     "output": "Traceback (most recent call last): boom"
+    }
+   ]
+  },
+  {
+   "name": "a finding on an unknown package named like a built-in goes to no WP",
+   "review": [
+    {
+     "status": "FAIL",
+     "findings": [
+      {
+       "severity": "high",
+       "wp": "constructor",
+       "file": "x",
+       "problem": "p",
+       "evidence": "e"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "start_wave given as text works like a number",
+   "args": {
+    "start_wave": "2"
+   }
   }
  ]
 }

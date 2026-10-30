@@ -59,6 +59,14 @@ class LeftoverTests(unittest.TestCase):
 class NotesTests(unittest.TestCase):
     NOTES = {"1.2.0": ["two"], "1.10.0": ["ten"], "1.1.0": ["one"]}
 
+    def test_versions_written_other_ways(self):
+        self.assertEqual(upgrade.version_key("1.1"), upgrade.version_key("1.1.0"))
+        self.assertEqual(upgrade.version_key("v1.1.0"), (1, 1, 0))
+        self.assertEqual(upgrade.version_key("1.1.4-rc1"), (1, 1, 4))
+        self.assertIsNone(upgrade.version_key("dev"))
+        with mock.patch.dict(upgrade.NOTES, self.NOTES, clear=True):
+            self.assertEqual(upgrade.notes_between("v1.1", "1.2.0"), ["two"])
+
     def test_order_and_bounds(self):
         with mock.patch.dict(upgrade.NOTES, self.NOTES, clear=True):
             self.assertEqual(upgrade.notes_between("1.1.0", "1.10.0"), ["two", "ten"], "1.10 sorts after 1.2")
@@ -98,14 +106,16 @@ class GuardTests(unittest.TestCase):
 
     def test_an_unreadable_ledger_blocks(self):
         (self.repo.dir / ".claude/state/ledger.json").mkdir(parents=True)  # reading it raises OSError on every system
-        self.assertEqual(upgrade.guard_problems(self.repo.dir, []),
-                         ["the run state cannot be read: stop any run and try again"])
+        problems = upgrade.guard_problems(self.repo.dir, [])
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(problems[0].startswith("the run state cannot be read"), problems)
 
-    def test_a_corrupt_ledger_does_not_block(self):
+    def test_a_corrupt_ledger_blocks(self):
+        # It cannot tell whether a run is in progress: like an unreadable one, it stops the upgrade.
         state = self.repo.dir / ".claude/state"
         state.mkdir(parents=True)
         (state / "ledger.json").write_text("{not json", encoding="utf-8")
-        self.assertEqual(upgrade.guard_problems(self.repo.dir, []), [])
+        self.assertEqual(len(upgrade.guard_problems(self.repo.dir, [])), 1)
 
 
 class HistoryTests(unittest.TestCase):

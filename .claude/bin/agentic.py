@@ -63,6 +63,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -900,7 +901,9 @@ def rules_sync():
     if not (RULES_LIBRARY / "common.md").exists():
         die(f"{RULES_LIBRARY.relative_to(ROOT)}/common.md does not exist: install the full flow (plugin or template).")
     declared, detected = declared_stack(), sorted(detect_stack())
-    wanted = {"common"} | {p for p in set(declared) | set(detected) if (RULES_LIBRARY / f"{p}.md").exists()}
+    # Stack entries are names, never paths: "../../x" must not copy a file out of the library or write outside it.
+    wanted = {"common"} | {p for p in set(declared) | set(detected)
+                           if re.fullmatch(r"[a-z][a-z0-9+-]*", str(p)) and (RULES_LIBRARY / f"{p}.md").exists()}
     RULES_DIR.mkdir(parents=True, exist_ok=True)
     installed, removed = [], []
     for name in sorted(wanted):
@@ -959,8 +962,13 @@ def codemap(manifest, target=None):
 
 
 def heading_anchors(text):
-    return {re.sub(r"[^\w\s-]", "", h.strip().lower(), flags=re.U).replace(" ", "-")
-            for h in re.findall(r"^#+ (.+)$", text, re.M)}
+    """The anchors GitHub gives the headings: a repeated heading gets -1, -2..."""
+    anchors, seen = set(), {}
+    for h in re.findall(r"^#+ (.+)$", text, re.M):
+        slug = re.sub(r"[^\w\s-]", "", h.strip().lower(), flags=re.U).replace(" ", "-")
+        anchors.add(f"{slug}-{seen[slug]}" if slug in seen else slug)
+        seen[slug] = seen.get(slug, 0) + 1
+    return anchors
 
 
 def docs_files(manifest):
@@ -991,7 +999,10 @@ def docs_check(manifest):
                 if link.startswith(("http://", "https://", "mailto:")):
                     continue
                 target_rel, _, frag = link.partition("#")
-                target = (path.parent / target_rel) if target_rel else path
+                target_rel = urllib.parse.unquote(target_rel)
+                # a link starting with / is relative to the repo root, as GitHub renders it
+                target = (ROOT / target_rel.lstrip("/") if target_rel.startswith("/") else path.parent / target_rel) \
+                    if target_rel else path
                 if not target.exists():
                     broken.append({"file": rel, "line": n, "target": link, "kind": "link"})
                 elif frag and target.suffix == ".md" and frag not in heading_anchors(target.read_text(encoding="utf-8")):
@@ -1617,7 +1628,12 @@ def locked_json(path, fn):
     with open(path, "a+", encoding="utf-8") as fh, compat.locked(fh):
         fh.seek(0)
         raw = fh.read()
-        data = json.loads(raw) if raw.strip() else {}
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except ValueError:  # a crash mid-write: keep the broken copy for inspection and start again
+            Path(f"{path}.corrupt").write_text(raw, encoding="utf-8")
+            print(f"[agentic] {Path(path).name} was corrupt: set aside as {Path(path).name}.corrupt", file=sys.stderr)
+            data = {}
         new = fn(data)
         if new is not None:
             fh.seek(0)

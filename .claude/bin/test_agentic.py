@@ -856,6 +856,32 @@ class LivingDocsTests(Base):
         kinds = sorted(b["kind"] for b in json.loads(r.stdout)["broken"])
         self.assertEqual(kinds, ["anchor", "link", "path"], "`http/v1/x` is not a folder of the repo: it does not count")
 
+    def test_docs_check_accepts_links_that_work_on_github(self):
+        self.repo.write("docs/guide.md", "# Guide\n\n## Usage\n\n## Usage\n")
+        self.repo.write("docs/my guide.md", "# Other\n")
+        self.repo.write("README.md", "[second](docs/guide.md#usage-1) [root](/docs/guide.md) [space](docs/my%20guide.md)\n")
+        r = self.repo.run("docs-check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.repo.write("README.md", "[third](docs/guide.md#usage-2)\n")
+        self.assertEqual(self.repo.run("docs-check").returncode, 3)
+
+    def test_a_corrupt_ledger_is_set_aside(self):
+        state = self.repo.dir / ".claude/state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "ledger.json").write_text('{"WP-01": {"state": "runn', encoding="utf-8")
+        r = self.repo.run("status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((state / "ledger.json.corrupt").exists(), "the broken copy is kept for inspection")
+
+    def test_rules_sync_ignores_stack_names_that_are_not_names(self):
+        shutil.copytree(SCRIPT.parents[1] / "rules-library", self.repo.dir / ".claude/rules-library")
+        m = dict(json.loads(json.dumps(MANIFEST)), stack=["python", "../../architecture"])
+        (self.repo.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{json.dumps(m)}\n```\n",
+                                                       encoding="utf-8")
+        self.repo.run("rules-sync")
+        self.assertFalse((self.repo.dir / ".claude/architecture.md").exists(), "nothing is written outside the rules")
+        self.assertTrue((self.repo.dir / ".claude/rules/agentic/python.md").exists())
+
     def test_docs_check_ignores_the_decision_archive(self):
         self.repo.write("docs/architecture/0001-x.md", "[old](../../src/deleted.py)\n")
         self.assertEqual(self.repo.run("docs-check").returncode, 0)

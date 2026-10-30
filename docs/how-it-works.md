@@ -214,7 +214,13 @@ An agent of the flow must claim its zone before it can write anything; that incl
 
 <p align="center"><img src="assets/screens/hook.png" width="760" alt="Three real hook messages: an implementer that has not claimed its package, WP-02 trying to write a file owned by WP-01, and WP-02 trying to commit."></p>
 
-On top of the hook, closing each stage compares the fingerprint of every file before and after. Any change outside that stage's zones leaves it in `REVIEW`, including changes made through Bash to dodge the hook.
+The hook's Bash rules are regular expressions: they stop mistakes, not a determined agent. The second line of defence does not depend on how a change was made. Closing each stage compares every file before and after, and leaves the stage in `REVIEW` on:
+
+- a change outside the stage's zones, or to `architecture.md`, `.claude/`, the decision archive or the code map even inside a zone that covers them by prefix;
+- a commit or ref change, or a change to git's own `config`, hooks or excludes, or to the baseline;
+- a secret, an unconditional test skip or a relaxed quality configuration added during the stage (compared with each file's content when the stage opened, so a fixture that was already there is not blamed).
+
+Tracked files are always compared, even in a folder named like an artefact (`coverage/`, `build/`). Each agent may claim only its own kind of ID: an implementer its packages, QA `QA`, the test-author `AT`, the doc-updater `DOCS`, the read-only judges `REVIEW`.
 
 ## 5. Permission matrix
 

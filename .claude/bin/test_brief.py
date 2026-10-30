@@ -34,6 +34,17 @@ body-mine
 
 
 class SlicerEdgeTests(unittest.TestCase):
+    def test_a_plan_without_section_8_is_not_sliced(self):
+        # Without its criteria and its package, a brief would leave the agent with nothing to build.
+        for text in (TEXT.split("## 8. ")[0], TEXT.replace("## 8. ", "## 8 ")):
+            out, sliced = brief.slice_architecture(text, "WP-01", MANIFEST)
+            self.assertEqual((out, sliced), (text, False))
+
+    def test_tilde_fences_hide_headings_too(self):
+        text = TEXT.replace("CONTEXT\n", "CONTEXT\n~~~\n## 10. inside a fence\n~~~\n", 1)
+        out, _ = brief.slice_architecture(text, "WP-01", MANIFEST)
+        self.assertIn("inside a fence", out, "a fenced line is not a section")
+
     def test_sections_that_are_absent_are_skipped(self):
         out, sliced = brief.slice_architecture(TEXT, "WP-01", MANIFEST)
         self.assertTrue(sliced)

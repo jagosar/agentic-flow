@@ -512,6 +512,15 @@ test('every conformance scenario ends as described in its name', async () => {
   assert.equal((await run1('verification fails on a package: it is fixed and verified again')).fix_cycles, 1)
   assert.equal((await run1('the test-auditor returns nothing')).failed_stage, 'wave 0')
   assert.equal((await run1('the fix limit is per package')).result, 'REVIEW')
+  const once = await run1('a package at its fix limit is listed once')
+  assert.deepEqual(once.pending, ['fix limit reached'], 'listed once, not once per cycle')
+  assert.deepEqual((await run1('a design defect survives a later verification failure')).pending, ['design', 'fix limit reached'])
+  assert.ok((await run1('a documentation check that cannot run is reported')).pending.includes('documentation'))
+  const odd = await run1('a finding on an unknown package named like a built-in goes to no WP')
+  assert.deepEqual([odd.result, odd.pending], ['REVIEW', ['no WP']])
+  const asText = await run1('start_wave given as text works like a number')
+  assert.ok(!asText.gates.includes('baseline'))
+  assert.deepEqual(asText.agents.filter(a => a.startsWith('implementer')), ['implementer:WP-03'])
   // A lost gatekeeper call is reported as such, not as blockers, an ownership breach or an unowned failure.
   for (const [name, stage] of [['a lost gatekeeper call at the baseline stops the run', 'baseline'],
     ['a lost gatekeeper call when closing the last wave stops the run', 'wave 2'],
