@@ -567,6 +567,55 @@ class BrownfieldTests(Base):
         self.assertEqual(r.returncode, 3)
         self.assertEqual(json.loads(r.stdout)["blocking"], ["lint"])
 
+    def suite(self, *failures):
+        lines = "".join(f"print({f!r})\n" for f in failures)
+        self.repo.write("t.py", f"{lines}import sys\nsys.exit({1 if failures else 0})\n")
+        self.repo.write("l.py", "import sys\nsys.exit(0)\n")
+        self.repo.write("acc.py", "import sys\nsys.exit(0)\n")
+
+    def test_a_new_failure_in_a_phase_that_already_failed_is_a_regression(self):
+        # Compared failure by failure, not phase by phase: one red test at baseline must not hide every new one.
+        self.suite("FAILED tests/test_old.py::test_old (0.12s)")
+        self.assertEqual(self.repo.run("baseline").returncode, 0)
+        self.suite("FAILED tests/test_old.py::test_old (0.31s)")  # the same failure, another duration
+        out = json.loads(self.repo.run("verify").stdout)
+        self.assertTrue(out["ok"], out)
+        self.suite("FAILED tests/test_old.py::test_old (0.12s)", "<Mock at 0x7f91ac30e2b0> error")
+        self.repo.run("baseline")
+        self.suite("FAILED tests/test_old.py::test_old (0.12s)", "<Mock at 0x7f00dead0001> error")  # another address
+        out = json.loads(self.repo.run("verify").stdout)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["preexisting_failures"], ["tests"])
+        self.suite("FAILED tests/test_old.py::test_old (0.12s)", "FAILED src/a.py::test_x - AssertionError")
+        r = self.repo.run("verify")
+        self.assertEqual(r.returncode, 3, r.stdout)
+        out = json.loads(r.stdout)
+        tests = next(p for p in out["phases"] if p["name"] == "tests")
+        self.assertEqual(tests["status"], "regression")
+        self.assertEqual(tests["new_failures"], ["FAILED src/a.py::test_x - AssertionError"])
+        self.assertEqual(sorted(out["suspects"]), ["WP-01"], "only the new failure is attributed")
+
+    def test_a_baseline_without_failure_lines_compares_by_phase(self):
+        # A baseline saved by an earlier version has no failure lines: the phase-level comparison stays.
+        self.suite("FAILED tests/test_old.py::test_old")
+        self.repo.run("baseline")
+        path = self.repo.dir / ".claude/state/baseline.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for ph in data["phases"]:
+            ph.pop("failures", None)
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.suite("FAILED tests/test_old.py::test_old", "FAILED src/a.py::test_x")
+        out = json.loads(self.repo.run("verify").stdout)
+        self.assertEqual(out["preexisting_failures"], ["tests"])
+
+    def test_long_failure_lines_keep_verify_parseable_through_seq(self):
+        # seq caps each step's output; the JSON verdict on the last line must survive it, or the engine loses the owner.
+        self.suite(*[f"FAILED src/a.py::test_{i} " + "x" * 2000 for i in range(8)])
+        r = self.repo.run("seq", "verify")
+        step = json.loads(r.stdout)["steps"][0]
+        verdict = json.loads(step["output"].splitlines()[-1])
+        self.assertEqual(sorted(verdict["suspects"]), ["WP-01"])
+
     def test_baseline_with_nonexistent_command_fails(self):
         m = dict(self.manifest, verify={"tests": "command-that-does-not-exist"})
         self.set_manifest(m)
