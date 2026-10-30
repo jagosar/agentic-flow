@@ -1510,7 +1510,8 @@ def run_phases(manifest):
 def attribute(manifest, lines):
     """Maps the output of a failure to the work packages that own what it mentions: a file of theirs (by path) or one
     of their criteria (AC-NNN in a test name, through the WP's "acs"). Deterministic; no model."""
-    text = "\n".join(lines).replace(ROOT.as_posix() + "/", "")  # absolute paths read as the repo's relative ones
+    # Absolute paths read as the repo's relative ones, with forward slashes whatever the system printed.
+    text = "\n".join(lines).replace("\\", "/").replace(ROOT.as_posix() + "/", "")
     # Whole criteria and whole paths: 0x7f91ac30 is not AC-030, src/a.pyx is not src/a.py, lib/util.py is not util.py.
     seen = {f"AC-{int(n):03d}" for n in re.findall(r"(?<![A-Za-z0-9])AC[-_ ]?(\d+)", text, re.I)}
 
@@ -2031,8 +2032,10 @@ def main():
             manifest = load_manifest()
         except ManifestError:
             manifest = None  # the architect may generate it before the plan exists
-        if args and (not args[0].endswith(".md") or Path(args[0]).is_absolute() or ".." in Path(args[0]).parts
-                     or args[0] == "architecture.md" or args[0].startswith((".claude/", ARCHIVE_DIR))):
+        target = args[0].replace("\\", "/") if args else None
+        if target and (not target.endswith(".md") or target.startswith("/") or Path(target).is_absolute()
+                       or ".." in Path(target).parts or not (ROOT / target).resolve().is_relative_to(ROOT.resolve())
+                       or target == "architecture.md" or target.startswith((".claude/", ARCHIVE_DIR))):
             die(f"codemap: the map is a .md path inside the repo, outside .claude/, {ARCHIVE_DIR} and architecture.md.")
         codemap(manifest, args[0] if args else None)
     elif cmd == "docs-check":

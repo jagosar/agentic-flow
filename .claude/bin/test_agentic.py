@@ -539,6 +539,7 @@ class AttributionTests(Base):
         self.assertEqual(agentic.attribute(m, ["<object at 0x7f91ac30e2b0>"]), {}, "a hex address is not AC-030")
         self.assertEqual(list(agentic.attribute(m, [f"{agentic.ROOT}/src/a.py:3: AssertionError"])), ["WP-01"])
         self.assertEqual(list(agentic.attribute(m, ["test_ac_030_total FAILED"])), ["WP-01"])
+        self.assertEqual(list(agentic.attribute(m, ["src\\a.py:3: AssertionError"])), ["WP-01"], "as Windows prints it")
 
     def test_bad_acs_rejected(self):
         sys.path.insert(0, str(SCRIPT.parent))
