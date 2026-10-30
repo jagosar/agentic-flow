@@ -793,6 +793,17 @@ class LivingDocsTests(Base):
         self.repo.write("src/a.py", "x = 2")
         self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3, "outside its zone")
 
+    def test_the_decision_archive_and_the_plan_are_nobodys(self):
+        # The docs zone includes docs/ by prefix; the hook already blocks docs/architecture/, close-stage must too.
+        self.repo.run("open-stage", "docs")
+        self.repo.write("docs/architecture/0001-x.md", "rewritten")
+        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3)
+        (self.repo.dir / "docs/architecture/0001-x.md").unlink()
+        self.repo.run("open-stage", "docs")
+        with open(self.repo.dir / "architecture.md", "a", encoding="utf-8") as f:
+            f.write("\nA line nobody may add.\n")
+        self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 3)
+
     def test_a_judge_stage_that_fails_closes_cleanly(self):
         # review, qa and docs record a fail or a blocker in the ledger; only a write outside the zone is an error.
         for label, state in (("review", "REVIEW=fail"), ("qa", "QA=fail"), ("docs", "DOCS=blocker")):
@@ -1042,6 +1053,88 @@ class CheckStageTests(Base):
         self.repo.run("snapshot", "2")
         self.repo.write("src/a.py", "v3")
         self.assertEqual(self.repo.run("check-wave", "2").returncode, 3)
+
+
+class SafetyNetTests(Base):
+    """What close-stage catches whatever tool made the change (Bash included): the hook is the first line, this the second."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo.write("src/a.py", "v1\n")
+        self.repo.write("tests/test_a.py", "def test_a():\n    assert True\n")
+        self.repo.write("src/coverage/calc.py", "x = 1\n")  # tracked source in a folder named like an artefact
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 88\n")
+        subprocess.run(["git", "add", "-A"], cwd=self.repo.dir, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"], cwd=self.repo.dir,
+                       check=True)
+        self.repo.run("snapshot", "1")
+
+    def check(self):
+        return self.repo.run("check-wave", "1")
+
+    def test_a_commit_during_the_stage_is_caught(self):
+        self.repo.write("src/a.py", "v2\n")
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "x"], cwd=self.repo.dir,
+                       check=True)
+        r = self.check()
+        self.assertEqual(r.returncode, 3, r.stdout)
+        self.assertIn("git state changed", r.stdout)
+
+    def test_git_config_and_hooks_are_watched(self):
+        with open(self.repo.dir / ".git/config", "a", encoding="utf-8") as f:
+            f.write("[core]\n\thooksPath = /dev/null\n")
+        self.assertEqual(self.check().returncode, 3)
+
+    def test_the_baseline_cannot_be_rewritten(self):
+        state = self.repo.dir / ".claude/state"
+        (state / "baseline.json").write_text('{"phases": []}', encoding="utf-8")
+        self.repo.run("snapshot", "2")
+        (state / "baseline.json").write_text('{"phases": [{"name": "tests", "passed": false}]}', encoding="utf-8")
+        self.assertEqual(self.repo.run("check-wave", "2").returncode, 3)
+
+    def test_tracked_files_are_never_ignored(self):
+        self.repo.write("src/coverage/calc.py", "x = 2\n")
+        self.assertEqual(self.check().returncode, 3, "nobody owns src/coverage/calc.py")
+        self.repo.write("src/coverage/calc.py", "x = 1\n")
+        self.repo.write("coverage/lcov.info")  # an untracked artefact is still ignored
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_content_written_through_bash_is_checked(self):
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\n")
+        r = self.check()
+        self.assertEqual(r.returncode, 3, r.stdout)
+        self.assertIn("AWS access key", r.stdout)
+        self.repo.write("src/a.py", "v1\n")
+        self.repo.write("tests/test_a.py", "import unittest\n@unittest.skip('x')\ndef test_a():\n    assert True\n")
+        self.assertEqual(self.check().returncode, 3)
+
+    def test_a_secret_that_was_already_there_is_not_blamed(self):
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\n")
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "fixture"], cwd=self.repo.dir,
+                       check=True)
+        self.repo.run("snapshot", "2")
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\nY = 1\n")
+        self.assertEqual(self.repo.run("check-wave", "2").returncode, 3, "src/a.py is wave 1's") 
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\n")
+        self.repo.run("snapshot", "1")
+        self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\nY = 1\n")
+        self.assertEqual(self.check().returncode, 0, "the key was there before the stage")
+
+    def test_existing_quality_config_needs_config_edit(self):
+        m = json.loads(json.dumps(MANIFEST))
+        m["work_packages"][0]["files"].append("pyproject.toml")
+        (self.repo.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{json.dumps(m)}\n```\n",
+                                                       encoding="utf-8")
+        self.repo.run("snapshot", "1")
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 300\n")
+        self.assertEqual(self.check().returncode, 3)
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 88\n")
+        m["work_packages"][0]["config_edit"] = True
+        (self.repo.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{json.dumps(m)}\n```\n",
+                                                       encoding="utf-8")
+        self.repo.run("snapshot", "1")
+        self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 300\n")
+        self.assertEqual(self.check().returncode, 0)
 
 
 class LauncherTests(Base):

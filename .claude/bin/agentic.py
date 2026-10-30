@@ -543,9 +543,64 @@ def snapshot(label):
     tree = git_tree()
     if tree:  # what a fix attempt changed is later diffed against this
         (STATE / f"tree-{label}.txt").write_text(tree, encoding="utf-8")
+    (STATE / f"gitstate-{label}.json").write_text(json.dumps(git_state()), encoding="utf-8")
     locked_json(CLAIMS, lambda c: {})  # every stage starts with no claims (emptied: Windows cannot delete an open file)
     ledger_stage(label, "in progress")
     print(f"Snapshot of stage {label} saved.")
+
+
+def git_state():
+    """What no agent may change during a stage, whatever tool it uses: the commit and the refs, git's own configuration,
+    hooks and excludes, and the baseline that verification compares against."""
+    def git(*args):
+        r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True)
+        return r.stdout if r.returncode == 0 else b""
+
+    def file_hash(path):
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+    common = git("rev-parse", "--git-common-dir").decode().strip()
+    git_dir = (ROOT / common) if common else None
+    hooks = sorted(p for p in (git_dir / "hooks").glob("*") if p.is_file()) if git_dir and (git_dir / "hooks").is_dir() else []
+    return {"HEAD": git("rev-parse", "-q", "--verify", "HEAD").decode().strip() or None,
+            "refs": hashlib.sha256(git("for-each-ref")).hexdigest(),
+            "config": file_hash(git_dir / "config") if git_dir else None,
+            "hooks": hashlib.sha256(b"".join(p.name.encode() + p.read_bytes() for p in hooks)).hexdigest(),
+            "info/exclude": file_hash(git_dir / "info" / "exclude") if git_dir else None,
+            "baseline": file_hash(BASELINE)}
+
+
+def index_files():
+    """The paths git tracks (the index): never treated as artefacts, whatever folder they are in."""
+    r = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True)
+    return set(r.stdout.decode().split("\0")) - {""} if r.returncode == 0 else set()
+
+
+def content_problems(manifest, label, changes):
+    """Secrets, unconditional test skips and relaxed quality configuration in what a stage changed, compared with the
+    content each file had when the stage opened. It catches what the hook cannot see (a write through Bash).
+    changes: [(path, owner entity)]."""
+    tree_file = STATE / f"tree-{label}.txt"
+    if not tree_file.exists():
+        return []
+    tree = tree_file.read_text(encoding="utf-8").strip()
+    problems = []
+    for path, ent in changes:
+        r = subprocess.run(["git", "cat-file", "-p", f"{tree}:{path}"], cwd=ROOT, capture_output=True)
+        existed = r.returncode == 0
+        old = r.stdout.decode("utf-8", "replace") if existed else ""
+        try:
+            new = (ROOT / path).read_text(encoding="utf-8", errors="replace") if (ROOT / path).is_file() else ""
+        except OSError:
+            new = ""
+        for rx, what in SECRET_RES:
+            if len(rx.findall(new)) > len(rx.findall(old)):
+                problems.append(f"{path}: looks like {what}")
+        if TEST_PATH_RE.search(path) and len(SKIP_MARKER_RE.findall(new)) > len(SKIP_MARKER_RE.findall(old)):
+            problems.append(f"{path}: a test was disabled (skip, xfail, only…)")
+        if existed and PROTECTED_CONFIG_RE.match(Path(path).name) and not ent.get("config_edit"):
+            problems.append(f"{path}: existing quality configuration changed without config_edit")
+    return problems
 
 
 def check_stage(manifest, label):
@@ -555,23 +610,47 @@ def check_stage(manifest, label):
     before = json.loads(snap_file.read_text(encoding="utf-8"))
     after = digest()
     patterns = DEFAULT_IGNORE + manifest.get("ignore", [])
+    tracked = index_files()
     changed = sorted(p for p in before.keys() | after.keys()
-                     if before.get(p) != after.get(p) and not ignored(p, patterns))
+                     if before.get(p) != after.get(p) and (p in tracked or not ignored(p, patterns)))
     owners = stage_owners(manifest, label)
     report = {o["id"]: [] for o in owners}
-    violations = []
+    violations, owned = [], []
+    nobodys = ("architecture.md", codemap_path(manifest))
     for path in changed:
-        owner = next((o["id"] for o in owners if any(owns(f, path) for f in o["files"])), None)
-        (report[owner] if owner else violations).append(path)
+        owner = next((o for o in owners if any(owns(f, path) for f in o["files"])), None)
+        # Nobody writes the plan, the flow, the decision archive or the code map, even inside a zone that covers them.
+        if owner and (path in nobodys or path.startswith((".claude/", ARCHIVE_DIR))):
+            owner = None
+        if owner:
+            report[owner["id"]].append(path)
+            owned.append((path, owner))
+        else:
+            violations.append(path)
     for oid, files in report.items():
         print(f"{oid}: {len(files)} file(s) changed" + (": " + ", ".join(files) if files else ""))
+    ok = True
     if violations:
         print("OUTSIDE OWNERSHIP (no owner of this stage owns these files):")
         for v in violations:
             print(f"  {v}")
-        return False
-    print(f"Stage {label}: all changes are within their owners.")
-    return True
+        ok = False
+    git_file = STATE / f"gitstate-{label}.json"
+    if git_file.exists():
+        was, now = json.loads(git_file.read_text(encoding="utf-8")), git_state()
+        moved = [k for k in was if was[k] != now.get(k)]
+        if moved:
+            print(f"git state changed during the stage: {', '.join(moved)} (no agent commits or touches .git or the baseline)")
+            ok = False
+    problems = content_problems(manifest, label, owned)
+    if problems:
+        print("CONTENT NOT ALLOWED:")
+        for problem in problems:
+            print(f"  {problem}")
+        ok = False
+    if ok:
+        print(f"Stage {label}: all changes are within their owners.")
+    return ok
 
 
 # ---------- launchers ----------
