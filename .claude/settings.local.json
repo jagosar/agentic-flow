@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m compileall -q bench)",
+      "Bash(python3 -m compileall -q bench:*)",
+      "Bash(python3 -m compileall:*)",
+      "Bash(python3 -m unittest discover -s bench -p test_*.py)",
+      "Bash(python3 -m unittest discover -s bench -p test_*.py:*)",
+      "Bash(python3 -m unittest discover -s bench/acceptance)",
+      "Bash(python3 -m unittest discover -s bench/acceptance:*)",
+      "Bash(python3 -m unittest:*)",
+      "Bash(python3 .claude/bin/agentic.py:*)",
+      "Bash(python3 bench/bench.py report:*)",
+      "Workflow(agentic-implement)"
+    ]
+  }
+}
