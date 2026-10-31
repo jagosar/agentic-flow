@@ -50,7 +50,7 @@ Waves: WP-01 (1) → WP-02 (2). WP-02 consumes `waiting.py` by implementation: `
 | What `install` copies | `agentic.py:119-120` (`INSTALL_GLOBS`) | Add `.claude/bin/waiting.py` |
 | Merging the flow's settings into a project's | `agentic.py:1030-1057` (`merge_settings`; only `PreToolUse`, detected by `agentic.py … hook`) | Add the other events' entries once, never removing the project's own hooks |
 | The flow's settings | `.claude/settings.json` (hooks at 13-25) | Add four event entries (§5) |
-| Upgrade notes | `upgrade.py:19-40` (`NOTES`, by version) | Add `"1.1.5"` |
+| Upgrade notes | `upgrade.py:19-40` (`NOTES`, by version) | Append to `"1.1.4"` |
 | The over-broad command check | `agentic.py:400-405` (acceptance and verify commands), `agentic.py:326-330` (`open_ended_rule`, which treats any `*` as a wildcard) | `sync_permissions` (`agentic.py:1597-1604`) and `pipeline_tools` (`agentic.py:1289-1304`) copy each command into `Bash(<cmd>)` and `Bash(<cmd>:*)`, where Claude Code reads `*` as a wildcard. A `*` in a later argument is acceptable only because the program prefix stays fixed (§6). `open_ended_rule` itself stays as it is for `allow_bash` |
 | Real hook payloads | foreman-vision's captured fixture (Windows, Claude Code 2.1.x) | `PermissionRequest` has `hook_event_name`, `session_id`, `agent_id`, `agent_type`, `tool_name`, `tool_input` (no `tool_use_id`); it comes after the agent's `PreToolUse` and before its `PostToolUse`; the main session's has no `agent_id` |
 | Test repo and hook helpers | `test_agentic.py:42-75` (`Repo`: temp git repo, `run`, `hook`, `write`), `test_agentic.py:933-1000` (`InstallTests`) | Mirror them |
@@ -107,7 +107,7 @@ def main() -> None
 - `validate`: an acceptance or verify command (split with `shlex.split`) is "too broad" when (a) it is a single program from `OPEN_ENDED`, or (b) its first token contains `*`, or (c) a token containing `*` comes right after a program from `OPEN_ENDED`, or right after that program's `-c` or `-e`. Otherwise a `*` in an argument is allowed (`python3 -m unittest discover -s .claude/bin -p test_*.py`). `allow_bash` rules keep `open_ended_rule` unchanged.
 - `merge_settings(dst, src)`: `PreToolUse` as today; for every other event in `src["hooks"]`, each `src` entry is appended unless the destination event already has a hook whose `command` equals one of that entry's commands; each event that gets an entry adds `hook <event>` to the returned list. The project's own entries are never removed or changed.
 
-**`upgrade.py`** (WP-02): `NOTES["1.1.5"] = ["settings.json gets hooks on PermissionRequest, PostToolUse, PostToolUseFailure and SubagentStop: agentic.py status shows which agent of a run is waiting for your permission or answer."]`.
+**`upgrade.py`** (WP-02): appended to `NOTES["1.1.4"]` (the release is not out yet): ["settings.json gets hooks on PermissionRequest, PostToolUse, PostToolUseFailure and SubagentStop: agentic.py status shows which agent of a run is waiting for your permission or answer."]`.
 
 ## 7. Conventions
 - English; stdlib only; `agentic.py`'s style inside it (no annotations), annotated public signatures in the new module (`.claude/rules-library/python.md`).
@@ -207,7 +207,7 @@ Every check runs a real `python3 .claude/bin/waiting.py` (stdin JSON, `CLAUDE_PR
 - Unit: `test_waiting.py` (WP-01) and new cases in `test_agentic.py` (WP-02).
 - Acceptance: `test_acceptance_waiting.py`, from AC-001…AC-007, written first and red before the code.
 - CI: the existing matrix (Linux 3.9/3.12/3.14, macOS, Windows).
-- Release step after the WPs: `python3 .claude/bin/agentic.py flow-history`, commit; the version bump to 1.1.5 is a separate PR, as before.
+- Release step after the WPs: `python3 .claude/bin/agentic.py flow-history`, commit; it ships in 1.1.4, whose release is not out yet.
 
 ## 10. Decisions
 - **D1 · Implemented outside `/implement`**, as every change to the flow: its files are under `.claude/`, so `validate` rejects this manifest on purpose.
