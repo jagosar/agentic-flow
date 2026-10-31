@@ -77,7 +77,7 @@ oracle/        test_*.py (unittest); never copied into the project before run-pi
 - `result`: "OK", "REVIEW", "timeout" (ended by the bench) or "error" (`install` failed, or `run-pipeline` ended with no result file); `failed_stage`, `fix_cycles` and `test_audit_rounds` are null when there is no result file; `usage` is all zeros and `cost_usd` null then.
 - `agents`: the length of `usage.by_agent`.
 - `flow_commit`: "unknown" if `git rev-parse` fails in the source; `dirty` false then.
-- `oracle_rate` of a run: `passed / total` (0 if total is 0). Medians of an even count are the mean of the two middle values; every float rounded to 3 decimals; `cost_usd_median` is null if every run's cost is null, else the median of the known ones.
+- `oracle_rate` of a run: `passed / total` (0 if total is 0). Every median (and min/max) is over the runs whose value is not null; it is null when none is (timeout and error runs have null `fix_cycles`, and costs can be null). Timeout and error runs do count in `oracle_rate_*`: their oracle was run on whatever code they left. Medians of an even count are the mean of the two middle values; every float rounded to 3 decimals.
 
 ## 6. Contracts between modules
 **`bench/bench.py`** (WP-01)
@@ -88,10 +88,14 @@ def run(fixtures: list[Path], source: Path, repeat: int, out_dir: Path, auth: st
         timeout_s: int = 3600, env: dict | None = None) -> Path:
     """Runs each fixture `repeat` times and writes one results file in out_dir (rewritten after each run);
     returns its path.
-    Per run: copy <fixture>/repo to a new temp dir (tempfile.mkdtemp(prefix="bench-run-")); git init, commit; `<sys.executable> <source>/.claude/bin/agentic.py
+    Every child (git, install, run-pipeline, oracle) gets CLAUDE_PROJECT_DIR=<tmp> and no AGENTIC_WP: agentic.py picks
+    its project from CLAUDE_PROJECT_DIR (agentic.py:72), which during /implement points at this repo.
+    Per run: copy <fixture>/repo to a new temp dir (tempfile.mkdtemp(prefix="bench-run-")); git init, commit (git -c
+    user.name=bench -c user.email=bench@localhost -c commit.gpgsign=false); `<sys.executable> <source>/.claude/bin/agentic.py
     install <tmp>`; set "auth" in <tmp>/.claude/agentic.json; commit; run `<sys.executable> .claude/bin/agentic.py
-    run-pipeline` with cwd <tmp> and environment (env or os.environ) plus CLAUDE_PROJECT_DIR=<tmp>, in its own process
-    group; after timeout_s, end_run(<tmp>, proc); read <tmp>/.claude/state/runs/workflow-result.json; then copy
+    run-pipeline` with cwd <tmp> and environment (env or os.environ) plus CLAUDE_PROJECT_DIR=<tmp> and without AGENTIC_WP,
+    in its own process group, stdout and stderr to a temporary file (never PIPE: a long run fills it and hangs; the
+    last 20 lines go to the console when the result is not OK); after timeout_s, end_run(<tmp>, proc); read <tmp>/.claude/state/runs/workflow-result.json; then copy
     <fixture>/oracle to <tmp>/.bench_oracle and call oracle_counts; delete the temp dir. A run that fails or times out
     is recorded, never raised (an install that fails is result "error"); the next run goes on.
     Raises BenchError, before any run, for: repeat < 1; a fixture without fixture.json, repo/ or oracle/; auth not in
@@ -101,7 +105,8 @@ def end_run(project: Path, proc: subprocess.Popen) -> None:
     """Ends run-pipeline and every agent it started, which live in their own process groups.
     POSIX: snapshot the descendants of proc.pid from `ps -A -o pid=,ppid=` (walk ppid links), then SIGTERM
     proc's group (compat.kill_tree) and each descendant's group (os.killpg(os.getpgid(pid))), ignoring
-    ProcessLookupError/PermissionError; after 5 s, SIGKILL whatever of that snapshot is still alive.
+    ProcessLookupError/PermissionError; take a second snapshot (an agent may have started meanwhile) and SIGTERM it
+    too; after 5 s, SIGKILL whatever of both snapshots is still alive.
     Windows: compat.kill_tree(proc.pid) (taskkill /T follows the parent links, not the groups).
     Then proc.wait(10). Never raises."""
 
@@ -116,7 +121,7 @@ def report(results_dir: Path, out: Path) -> None:
     """Writes out (Markdown): a title, one line on how to read it, and a table with one row per (results file,
     fixture), newest `started` first, fixtures in name order; Date is the `started` date, `YYYY-MM-DD`: Version | Commit | Date | Fixture | Runs | OK |
     Oracle | Fix cycles | Cost $ | Output tokens | Minutes. OK is "<ok>/<runs>"; Oracle is
-    "<median> (<min>–<max>)"; the other numeric columns are medians; an unknown cost is "?"; a dirty commit is
+    "<median> (<min>–<max>)"; the other numeric columns are medians; a null value is "?"; rates and costs are printed with 2 decimals (`0.75`, `1.00`, `3.10`), minutes with 1 (`13.5`), tokens and cycles as integers when whole; a dirty commit is
     "<commit>-dirty". With no results file: the title and "No results yet.". Files whose "schema" is not 1, or that
     are not JSON, are skipped."""
 
@@ -141,7 +146,7 @@ def main(argv: list[str]) -> int:
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-The acceptance tests build their own fixture in a temp dir (the real fixtures need a real `claude`) and run `bench.py` with the simulated `claude` of `.claude/bin/testutil.py` (`AGENTIC_CLAUDE`, `FAKE_LOG_DIR`, `FAKE_WRITE=1`) and `--source` this repo. The **test fixture**: `fixture.json`; `repo/architecture.md` with a manifest of three WPs owning `src/a.py`, `src/b/x.py` (wave 1) and `src/c.py` (wave 2), no `verify`, acceptance `{"files": ["acceptance/"], "command": "<sys.executable> acc.py"}` (built with `shlex.join`); `repo/acc.py` exits 1 if `.bench_oracle` exists, 1 if any of the three files is missing, else 0; `oracle/test_oracle.py` with 4 tests: three pass when their file exists, one always fails.
+The acceptance tests load `bench/bench.py` with `importlib.util.spec_from_file_location("bench_module", <path>)` (a plain `import bench` finds the `bench/` folder as a namespace package), run its command line as `<sys.executable> bench/bench.py …` with `CLAUDE_PROJECT_DIR` removed and `TMPDIR`/`TEMP`/`TMP` set to a private temp dir (so leftover checks are exact), and build their own fixture in a temp dir (the real fixtures need a real `claude`) and run `bench.py` with the simulated `claude` of `.claude/bin/testutil.py` (`AGENTIC_CLAUDE`, `FAKE_LOG_DIR`, `FAKE_WRITE=1`) and `--source` this repo. The **test fixture**: `fixture.json`; `repo/architecture.md` with a manifest of three WPs owning `src/a.py`, `src/b/x.py` (wave 1) and `src/c.py` (wave 2), no `verify`, acceptance `{"files": ["acceptance/"], "command": "<sys.executable> acc.py"}` (built with `shlex.join`); `repo/acc.py` exits 1 if `.bench_oracle` exists, 1 if any of the three files is missing, else 0; `oracle/test_oracle.py` with 4 tests: three pass when their file exists, one always fails.
 - AC-001 · A run records result, cycles, tokens, cost and the oracle
   - Scenario: the test fixture.
   - Action: `bench.py run --fixture <test fixture path> --repeat 1 --out <tmp>/results --source <repo>`.
@@ -165,7 +170,7 @@ The acceptance tests build their own fixture in a temp dir (the real fixtures ne
   - WP: WP-01
 - AC-004 · A failed or stuck run is recorded and the bench goes on
   - Scenario: the test fixture; first with `FAKE_ROGUE=1`; then with `FAKE_SLEEP=30`.
-  - Action: `bench.py run … --repeat 1` with `FAKE_ROGUE=1`; then `bench.run([<fixture>], <repo>, 2, <out>, timeout_s=5, env=<env with FAKE_SLEEP=30>)`.
+  - Action: `bench.py run … --repeat 1` with `FAKE_ROGUE=1`; then `bench_module.run([<fixture>], <repo>, 2, <out>, timeout_s=5, env=<env with FAKE_SLEEP=30>)`.
   - Expected: the first run has `result` "REVIEW", a non-null `failed_stage`, and the exit code is 0; `run(...)` returns within 60 s with 2 runs, both `result` "timeout", `oracle.total` 4; 10 s after it returns, the simulated `claude` has logged no new call and no process of a logged call is alive (the fake records its pid only in its log file name, `call-<t>-<pid>.json`; check with `os.kill(pid, 0)` on POSIX, `tasklist /FI "PID eq <pid>"` on Windows); no `bench-run-*` dir is left.
   - Must not: raise, or stop the remaining runs.
   - Check: `test_acceptance_bench.py::test_ac_004_failures_recorded`.
@@ -177,20 +182,27 @@ The acceptance tests build their own fixture in a temp dir (the real fixtures ne
   - Must not: start a run, or print a traceback.
   - Check: `test_acceptance_bench.py::test_ac_005_bad_input`.
   - WP: WP-01
-- AC-006 · The real fixtures are ready to run
-  - Scenario: `bench/fixtures/tempconv` and `bench/fixtures/inventory`.
-  - Action: for each, copy `repo/` to a temp git repo, commit, install the flow from this repo (`agentic.py install`), commit, run `agentic.py validate` there; then, without importing `bench.py`, run `<sys.executable> -m unittest discover -s <fixture>/oracle -t <fixture>/oracle` with cwd and `PYTHONPATH` the copy, and the copy's own `verify.tests` command with its leading `python3` replaced by `sys.executable`.
-  - Expected: `fixture.json` has `name` equal to the folder name, `difficulty` "simple" for tempconv and "trap" for inventory; `validate` exits 0 and prints `Manifest valid`; the oracle's summary says `Ran N tests` with N ≥ 10 (tempconv) or ≥ 12 (inventory) and failures + errors = N; the copy's existing tests pass.
-  - Must not: ship an oracle that passes without the code, or a plan that references `oracle/`.
-  - Check: `test_acceptance_bench.py::test_ac_006_fixtures_ready`.
-  - WP: WP-02, WP-03
+- AC-006 · The fixture `tempconv` is ready to run
+  - Scenario: `bench/fixtures/tempconv`.
+  - Action: copy `repo/` to a temp git repo, commit, install the flow from this repo (`agentic.py install`), commit, run `agentic.py validate` there, every child with `CLAUDE_PROJECT_DIR` set to the copy and no `AGENTIC_WP`; then, without loading `bench.py`, run `<sys.executable> -m unittest discover -s <fixture>/oracle -t <fixture>/oracle` with cwd and `PYTHONPATH` the copy, and the copy's own `verify.tests` command with its leading `python3` replaced by `sys.executable`.
+  - Expected: `fixture.json` has `name` "tempconv" and `difficulty` "simple"; `validate` exits 0 and prints `Manifest valid`; the oracle's summary says `Ran N tests` with N ≥ 10 and failures + errors = N; the copy's existing tests pass.
+  - Must not: ship an oracle that passes without the code, or a plan that mentions `oracle`.
+  - Check: `test_acceptance_bench.py::test_ac_006_tempconv_ready`.
+  - WP: WP-02
 - AC-007 · CI runs the bench only by hand, and its tests always
   - Scenario: `.github/workflows/agentic-bench.yml` and `.github/workflows/agentic-flow-ci.yml`.
   - Action: read them as text.
   - Expected: the bench workflow's `on:` has only `workflow_dispatch`, with a `repeat` input; it uses `secrets.ANTHROPIC_API_KEY`, runs `bench/bench.py run` with `--auth inherit`, uploads `bench/results` with `actions/upload-artifact`, has `permissions:` with `contents: read` and no `write`; every `uses:` in it ends in `@` and 40 hex characters; the flow's CI `paths` lists include `bench/**` and `.github/workflows/agentic-bench.yml`, and it runs `unittest discover -s bench -p "test_*.py"` and `unittest discover -s bench/acceptance`.
-  - Must not: trigger the bench on `push`, `pull_request` or `schedule`, or grant write permissions, or break the flow's own CI checks: the test also runs `<sys.executable> -m unittest .claude/bin/test_definitions.py .claude/bin/test_acceptance_portable.py` (cwd the repo) and expects exit 0.
+  - Must not: trigger the bench on `push`, `pull_request` or `schedule`, or grant write permissions, or break the flow's own CI checks: the test also runs `<sys.executable> -m unittest test_definitions test_acceptance_portable` with cwd `.claude/bin` and `CLAUDE_PROJECT_DIR` removed, and expects exit 0.
   - Check: `test_acceptance_bench.py::test_ac_007_ci`.
   - WP: WP-04
+- AC-008 · The fixture `inventory` is ready to run
+  - Scenario: `bench/fixtures/inventory`.
+  - Action: as AC-006.
+  - Expected: `fixture.json` has `name` "inventory" and `difficulty` "trap"; `validate` exits 0 and prints `Manifest valid`; the plan has two waves (its WP-02 in wave 2 with `depends_on` WP-01); the oracle's summary says `Ran N tests` with N ≥ 12 and failures + errors = N; the copy's existing tests pass.
+  - Must not: ship an oracle that passes without the code, or a plan that mentions `oracle`.
+  - Check: `test_acceptance_bench.py::test_ac_008_inventory_ready`.
+  - WP: WP-03
 
 ### Work packages
 #### WP-01 · `bench.py`: run, record and report
@@ -199,7 +211,7 @@ The acceptance tests build their own fixture in a temp dir (the real fixtures ne
 - Consumes by signature the fixture layout (§5); its tests build their own fixtures in temp dirs.
 - ACs: AC-001, AC-002, AC-003, AC-004, AC-005.
 - Patterns to mirror: `.claude/bin/test_pipeline.py:204-230` (end-to-end run with the simulated `claude`), `.claude/bin/agentic.py:1372-1416` (what `run-pipeline` writes), `.claude/bin/upgrade.py:1-40` (module style).
-- Gotchas: `sys.path.insert(0, str(<repo>/.claude/bin))` to import `compat` (and `testutil` in tests); `install` needs a git repo with a commit, so commit the fixture before it and again after it (`git -c user.name=bench -c user.email=bench@localhost commit -qm …`); the `.git` of the temp project must not be the bench's (always `git init` in the temp dir); `workflow-result.json` may be missing (timeout, crash); the oracle runs in a subprocess so a broken fixture cannot crash the bench; a plain `kill_tree` on timeout leaves the agents alive (see §4b and `end_run`); never pass `shell=True`; the results file name uses local time; `main` must catch `BenchError` and argument errors only (no blanket `except`).
+- Gotchas: `sys.path.insert(0, str(<repo>/.claude/bin))` to import `compat` (and `testutil` in tests); `install` needs a git repo with a commit, so commit the fixture before it and again after it (with the `-c` options of §6); the `.git` of the temp project must not be the bench's (always `git init` in the temp dir); `workflow-result.json` may be missing (timeout, crash); the oracle runs in a subprocess so a broken fixture cannot crash the bench; a plain `kill_tree` on timeout leaves the agents alive (see §4b and `end_run`); never pass `shell=True`; the results file name uses local time; `main` must catch `BenchError` and argument errors only (no blanket `except`).
 - Exact imports: `argparse`, `json`, `os`, `re`, `shutil`, `subprocess`, `sys`, `tempfile`, `time`, `datetime.datetime`, `pathlib.Path`, `statistics.median`, `compat`.
 - Validation: `python3 -m unittest discover -s bench -p test_*.py`.
 
@@ -209,6 +221,7 @@ The acceptance tests build their own fixture in a temp dir (the real fixtures ne
   - WP-01 `tempconv/convert.py`, `tests/test_convert.py`: `convert(value: float, from_unit: str, to_unit: str) -> float` for units "C", "F", "K" (upper case), rounded to 2 decimals; `ValueError` for an unknown unit or a temperature below absolute zero (−273.15 °C).
   - WP-02 `tempconv/parse.py`, `tests/test_parse.py`: `parse(text: str) -> tuple[float, str]` accepts `"12.5C"`, `"-40 F"`, `"300k"` (optional spaces, unit case-insensitive) and returns the unit upper case; `ValueError` for anything else (empty, no number, unknown unit, two units).
   - Its own ACs (one per behaviour above), `mirror` `["tempconv/__init__.py", "tests/test_version.py"]`.
+  - The plan follows the structure of `.claude/commands/architect.md` (§3) exactly (the briefs are cut by it): a `Type: feature · Size: small` line, sections `## 1.`…`## 11.`, one `- AC-NNN · <title>` block per criterion with Scenario/Action/Expected/Must not/Check/WP, one `#### WP-NN · <goal>` heading per package, and the `json wp-manifest` block at the end of §8.
 - `oracle/test_oracle.py`: at least 10 tests that import `tempconv.convert` / `tempconv.parse` inside each test (so a missing module fails each test, not the file): −40 C = −40 F, 100 C = 212 F, 0 K = −273.15 C, rounding to 2 decimals, below absolute zero raises, unknown unit raises, the three parse forms, invalid inputs raise.
 - ACs: AC-006.
 - Patterns to mirror: `.claude/bin/test_upgrade.py:1-40` (unittest style).
@@ -222,21 +235,22 @@ The acceptance tests build their own fixture in a temp dir (the real fixtures ne
   - WP-02 (wave 2, `depends_on` WP-01) `inventory/report.py`, `tests/test_report.py`: `low_stock(inv: Inventory, threshold: int) -> list[tuple[str, int]]`: every SKU ever added whose quantity is below the threshold, including those at 0, sorted by quantity, then SKU.
   - Its own ACs, one per edge case; `mirror` `["inventory/__init__.py", "tests/test_version.py"]`.
 - `oracle/test_oracle.py`: at least 12 tests, importing inside each test, covering every edge case above (normalised SKU, `True` and `0` and `-1` rejected, empty SKU rejected, a failed removal leaves the stock unchanged, `items()` is a copy, a SKU removed to 0 still appears in `low_stock`, ties ordered by SKU).
-- ACs: AC-006.
+- ACs: AC-008.
 - Patterns to mirror: `.claude/bin/test_upgrade.py:1-40`.
 - Gotchas: as WP-02. The edge cases are the point (they are what tends to need a fix cycle): state each one explicitly in the fixture's plan and its ACs, so a failure measures the flow, not a vague plan.
-- Validation: `python3 -m unittest discover -s bench/acceptance -k ac_006` (it needs nothing from WP-01).
+- Validation: `python3 -m unittest discover -s bench/acceptance -k ac_008` (it needs nothing from WP-01).
 
 #### WP-04 · CI and the guide
 - Wave 1 (consumes `bench.py`'s command line by signature). Files: `.github/workflows/agentic-bench.yml`, `.github/workflows/agentic-flow-ci.yml`, `docs/how-to/bench.md`, `docs/how-to/README.md`.
-- `agentic-bench.yml`: `on: workflow_dispatch` with input `repeat` (default "3"); `permissions: contents: read`; one job on `ubuntu-latest`, `timeout-minutes: 420` (6 runs × 60 min plus setup); checkout with `persist-credentials: false` and `fetch-depth: 0`; setup-python 3.12 and setup-node 22 pinned like the flow's CI; Claude Code installed as the flow's CI does, with its folder added to `PATH` (`echo "$RUNNER_TEMP/cc/node_modules/@anthropic-ai/claude-code-linux-x64" >> "$GITHUB_PATH"`); git identity set; run `python3 bench/bench.py run --repeat "$REPEAT" --auth inherit` with `env: ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}` and `REPEAT: ${{ inputs.repeat }}` (never `${{ }}` inside `run:`); upload `bench/results` and `bench/RESULTS.md` with `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2`, `if: always()`.
-- `agentic-flow-ci.yml`: add `bench/**` and `.github/workflows/agentic-bench.yml` to both `paths` lists; in the `test` job, after the existing unittest step, add `python -m unittest discover -s bench -p "test_*.py"` and `python -m unittest discover -s bench/acceptance`.
+- `agentic-bench.yml`: `on: workflow_dispatch` with input `repeat` (default "3"); `permissions: contents: read`; one job with `if: github.repository == 'jagosar/agentic-flow'` (as the flow's CI), on `ubuntu-latest`, `timeout-minutes: 420` (6 runs × 60 min plus setup); checkout with `persist-credentials: false` and `fetch-depth: 0`; setup-python 3.12 and setup-node 22 pinned like the flow's CI; Claude Code installed as the flow's CI does, with its folder added to `PATH` (`echo "$RUNNER_TEMP/cc/node_modules/@anthropic-ai/claude-code-linux-x64" >> "$GITHUB_PATH"`); git identity set; run `python3 bench/bench.py run --repeat "$REPEAT" --auth inherit` with `env: ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}` and `REPEAT: ${{ inputs.repeat }}` (never `${{ }}` inside `run:`); upload `bench/results` and `bench/RESULTS.md` with `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2`, `if: always()`.
+- `agentic-flow-ci.yml`: add `bench/**` and `.github/workflows/agentic-bench.yml` to both `paths` lists; in the `test` job, after the existing unittest step, add `python -m unittest discover -s bench -p "test_*.py"` and `python -m unittest discover -s bench/acceptance`; raise the Windows `timeout-minutes` from 30 to 45 (about ten more simulated pipeline runs).
 - `docs/how-to/bench.md`: what the bench measures and what not (§2); running it locally (subscription) and from CI (the API key secret, a cost warning, why never automatic); reading `RESULTS.md`; adding a fixture (§5 layout); committing results by hand (`bench/results/*.json` and the regenerated `RESULTS.md`).
-- `docs/how-to/README.md`: a row in "Pick your environment": `| Measurement bench | [bench.md](bench.md) | Comparing flow versions with real runs | Not run with a real \`claude\` yet |`.
+- `docs/how-to/README.md`: the two bench test commands under "Testing the flow itself" (line 277), and a row in "Pick your environment": `| Measurement bench | [bench.md](bench.md) | Comparing flow versions with real runs | Not run with a real \`claude\` yet |`.
 - ACs: AC-007.
 - Patterns to mirror: `.github/workflows/agentic-flow-ci.yml:1-81`, `docs/how-to/ci-github-actions.md:1-60`.
 - Gotchas: use exactly the upload-artifact SHA above (looked up by the architect with `git ls-remote --tags`; never change or invent one); keep the existing steps and the expectations of `.claude/bin/test_acceptance_portable.py` about the flow's CI intact.
 - Validation: `python3 -m unittest discover -s bench/acceptance -k ac_007`.
+- Every WP that writes Markdown (WP-01 `RESULTS.md`, WP-02/03 plans and READMEs, WP-04 docs) also runs `python3 -m unittest discover -s .claude/bin -p test_definitions.py` before DONE: its `DocumentationDriftTests` check every tracked `.md` (links, cited commands, no personal paths such as `/home/<user>/` or `/tmp/claude-…`).
 
 ```json wp-manifest
 {
@@ -251,7 +265,7 @@ The acceptance tests build their own fixture in a temp dir (the real fixtures ne
     {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["bench/fixtures/tempconv/"],
      "acs": ["AC-006"], "mirror": [".claude/bin/test_upgrade.py:1-40"]},
     {"id": "WP-03", "wave": 1, "depends_on": [], "files": ["bench/fixtures/inventory/"],
-     "acs": ["AC-006"], "mirror": [".claude/bin/test_upgrade.py:1-40"]},
+     "acs": ["AC-008"], "mirror": [".claude/bin/test_upgrade.py:1-40"]},
     {"id": "WP-04", "wave": 1, "depends_on": [], "files": [".github/workflows/agentic-bench.yml", ".github/workflows/agentic-flow-ci.yml", "docs/how-to/bench.md", "docs/how-to/README.md"],
      "acs": ["AC-007"], "mirror": [".github/workflows/agentic-flow-ci.yml:1-81", "docs/how-to/ci-github-actions.md:1-60"]}
   ]
@@ -259,8 +273,9 @@ The acceptance tests build their own fixture in a temp dir (the real fixtures ne
 ```
 
 ## 9. Test strategy
+- Shared runs: the acceptance tests share one bench run between AC-001 and AC-002 (`setUpClass`) to keep CI time down.
 - Unit: `bench/test_bench.py` (medians and rounding, report formatting, results-file naming, `oracle_counts` on a tiny module including an import error, argument errors).
-- Acceptance: `bench/acceptance/test_acceptance_bench.py` from AC-001…AC-007, written first, red before the code. Every run uses the simulated `claude`: CI never spends money.
+- Acceptance: `bench/acceptance/test_acceptance_bench.py` from AC-001…AC-008, written first, red before the code. Every run uses the simulated `claude`: CI never spends money.
 - CI: the flow's matrix (Linux, macOS, Windows) also runs both bench suites (WP-04).
 - First real measurement after merging: run the bench once locally on the current version and commit its results, so later versions have a baseline.
 
