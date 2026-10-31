@@ -32,6 +32,23 @@ class TempCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
 
+
+class RemoveTreeTests(TempCase):
+    def test_removes_read_only_files_and_folders(self):
+        # git leaves its objects read-only; Windows refuses to delete them unless they are made writable first
+        project = self.tmp / "bench-run-x"
+        objects = project / ".git" / "objects" / "ab"
+        objects.mkdir(parents=True)
+        blob = objects / "cdef"
+        blob.write_text("x", encoding="utf-8")
+        blob.chmod(0o444)
+        objects.chmod(0o555)
+        bench.remove_tree(project)
+        self.assertFalse(project.exists())
+
+    def test_a_missing_folder_is_not_an_error(self):
+        bench.remove_tree(self.tmp / "never-created")
+
 class SummaryTests(TempCase):
     def test_median_of_an_even_count_is_the_mean_of_the_middle_two_rounded(self):
         self.assertEqual(bench._rounded([1, 2]), 1.5)

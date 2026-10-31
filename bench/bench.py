@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,8 @@ TAIL_LINES = 20
 KILL_GRACE_S = 5
 POLL_S = 0.1
 WAIT_AFTER_KILL_S = 10
+REMOVE_ATTEMPTS = 3  # a process that just ended can hold a handle for a moment on Windows
+REMOVE_PAUSE_S = 1
 ROUND_DIGITS = 3
 UNKNOWN = "?"
 GIT_IDENTITY = ["-c", "user.name=bench", "-c", "user.email=bench@localhost", "-c", "commit.gpgsign=false"]
@@ -139,6 +142,33 @@ def _end_posix(proc: subprocess.Popen) -> None:
             return
         time.sleep(POLL_S)
     _signal_groups({pid: pgid for pid, pgid in everyone.items() if _is_alive(pid)}, signal.SIGKILL)
+
+
+def _make_writable(func, path, _exc) -> None:
+    """rmtree error handler: git leaves its objects read-only, which Windows refuses to delete. Make the entry and
+    its folder writable, then retry once; a second failure propagates to remove_tree."""
+    for target in (os.path.dirname(path), path):
+        try:
+            os.chmod(target, stat.S_IRWXU)
+        except OSError:
+            pass
+    func(path)
+
+
+def remove_tree(path: Path) -> None:
+    """Deletes a temp project, read-only git objects included. Never raises: a leftover is reported, not fatal."""
+    handler = {"onexc": _make_writable} if sys.version_info >= (3, 12) else {"onerror": _make_writable}
+    for attempt in range(REMOVE_ATTEMPTS):
+        try:
+            shutil.rmtree(path, **handler)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            if attempt == REMOVE_ATTEMPTS - 1:
+                print(f"bench: could not delete {path}: {e}", file=sys.stderr)
+                return
+            time.sleep(REMOVE_PAUSE_S)
 
 
 # ---------------------------------------------------------------- one run
@@ -278,7 +308,7 @@ def _run_once(fixture: Path, index: int, source: Path, auth: str, timeout_s: flo
         outcome = "timeout" if state == "timeout" else (verdict if verdict in ("OK", "REVIEW") else "error")
         return _record(fixture, index, outcome, result, seconds, _run_oracle(fixture, project))
     finally:
-        shutil.rmtree(project, ignore_errors=True)
+        remove_tree(project)
 
 
 def _record(fixture: Path, index: int, outcome: str, result: dict | None, seconds: float, oracle: dict) -> dict:
