@@ -183,6 +183,7 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 
   <p align="center"><img src="../assets/screens/ledger.png" width="760" alt="The ledger after a real run: every stage OK and six agents done or passed."></p>
 
+- **"Is it stuck?"** When an agent of the run is waiting for your permission or an answer, `agentic.py status` lists it first, under **Waiting for you**: which package it is, what it asks for and since when. Approve or answer the prompt in Claude Code and the line goes away.
 - **"Stop."** With the native workflow, from `/workflows`: select the run and press `x`; `p` pauses and resumes, and a stopped run can be relaunched, reusing what already finished. In the fallback mode, `agentic.py stop` kills the processes and the stage ends in `REVISAR` with `STOPPED`.
 - **Short reports.** Implementers and QA answer in under 300 words, result first. The full result of each workflow run is saved in `.claude/state/runs/workflow-result.json`.
 

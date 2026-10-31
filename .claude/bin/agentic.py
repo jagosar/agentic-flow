@@ -116,7 +116,7 @@ SYMBOL_RES = {
     (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
 }
 # What `install` puts in another repo: the flow, without the flow's own tests.
-INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/compat.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
+INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/compat.py", ".claude/bin/waiting.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md",
                  ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
 RESULT_FILE = ".agentic-result.json"  # where the workflow leaves its result for save-result
@@ -330,6 +330,23 @@ def open_ended_rule(rule):
     return inner in ("*", ":*", "") or not tokens or "*" in prefix or (len(tokens) == 1 and tokens[0] in OPEN_ENDED)
 
 
+def open_ended_command(cmd):
+    """An acceptance or verify command that would become an open permission once synced into Bash(<cmd>:*), where
+    Claude Code reads * as a wildcard: an open-ended program alone, a * in the program, or a * right after it (or
+    after its -c / -e). A * in a later argument (`-p test_*.py`) keeps the program prefix fixed, so it is allowed."""
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        tokens = cmd.split()
+    if not tokens or "*" in tokens[0] or (len(tokens) == 1 and tokens[0] in OPEN_ENDED):
+        return True
+    for i, token in enumerate(tokens[1:], 1):
+        if "*" in token and (tokens[i - 1] in OPEN_ENDED or (tokens[i - 1] in ("-c", "-e") and i >= 2
+                                                              and tokens[i - 2] in OPEN_ENDED)):
+            return True
+    return False
+
+
 def validate(manifest):
     errors = []
     table = wps(manifest)
@@ -400,7 +417,7 @@ def validate(manifest):
     commands = [at_entity(manifest)["command"]] + list(manifest.get("verify", {}).values()
                                                        if isinstance(manifest.get("verify", {}), dict) else [])
     for cmd in commands:
-        if isinstance(cmd, str) and cmd.strip() and open_ended_rule(f"Bash({cmd}:*)"):
+        if isinstance(cmd, str) and cmd.strip() and open_ended_command(cmd):
             errors.append(f"command too broad: '{cmd}' would let the agents run anything (Bash({cmd}:*)). "
                           "Use the specific command, e.g. python3 -m pytest.")
     if not isinstance(manifest.get("ignore", []), list):
@@ -574,6 +591,10 @@ def snapshot(label):
         (STATE / f"tree-{label}.txt").write_text(tree, encoding="utf-8")
     (STATE / f"gitstate-{label}.json").write_text(json.dumps(git_state()), encoding="utf-8")
     locked_json(CLAIMS, lambda c: {})  # every stage starts with no claims (emptied: Windows cannot delete an open file)
+    try:  # nor waits: an agent of an earlier stage that was stopped never sent the event that ends its wait
+        sibling("waiting").clear(STATE)
+    except Exception:  # noqa: BLE001 - a missing or broken waiting.py must not stop a stage from opening
+        pass
     ledger_stage(label, "in progress")
     print(f"Snapshot of stage {label} saved.")
 
@@ -1038,11 +1059,21 @@ def merge_settings(dst, src):
             if rule not in current:
                 current.append(rule)
                 added.append(f"{key} {rule}")
-    pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    hooks = data.setdefault("hooks", {})
+    pre = hooks.setdefault("PreToolUse", [])
     if not any("agentic.py" in h.get("command", "") and h.get("command", "").rstrip().endswith("hook")
                for e in pre for h in e.get("hooks", [])):
         pre.extend(src["hooks"]["PreToolUse"])
         added.append("hook PreToolUse")
+    # The other events (the waiting notice): each of the flow's entries once, next to the project's own.
+    for event, entries in src.get("hooks", {}).items():
+        if event == "PreToolUse":
+            continue
+        present = {h.get("command") for e in hooks.get(event, []) for h in e.get("hooks", [])}
+        new = [e for e in entries if not any(h.get("command") in present for h in e.get("hooks", []))]
+        if new:
+            hooks.setdefault(event, []).extend(new)
+            added.append(f"hook {event}")
     # Bash timeouts: only where the project has not set its own value.
     env = data.setdefault("env", {})
     for key, value in src.get("env", {}).items():
@@ -1714,7 +1745,15 @@ def ledger_render():
     stages = d.get("_stages", {})
     agents = {k: v for k, v in d.items() if not k.startswith("_")}
     order = lambda kv: (kv[1].get("stage") in ("qa", "docs"), str(kv[1].get("stage")), kv[0])
-    lines = ["# Flow ledger", "", f"Updated: {now_hm()}", "", "## Stages", ""]
+    lines = ["# Flow ledger", "", f"Updated: {now_hm()}", ""]
+    try:  # the agents waiting for the user's permission or answer, first: that is why a run looks stuck
+        waiting = sibling("waiting")
+        waits = [waiting.describe(w, time.time()) for w in waiting.current(STATE)]
+    except Exception:  # noqa: BLE001 - a missing or broken waiting.py only hides this section
+        waits = []
+    if waits:
+        lines += ["## Waiting for you", ""] + [f"- {w}" for w in waits] + [""]
+    lines += ["## Stages", ""]
     pipeline = {"baseline": -1, "acceptance": 0, "acceptance (red)": 1, "acceptance (green)": 3, "verification": 3.5,
                 "review": 4, "qa": 5, "docs": 6, "docs-check": 6.5}
     order_st = lambda k: (2, k.zfill(4)) if k.isdigit() else (pipeline.get(k, 7), k)  # pipeline order
