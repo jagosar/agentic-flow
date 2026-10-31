@@ -9,9 +9,9 @@ on:
   # runners) for every change.
   push:
     branches: [main]
-    paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml"]
+    paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml", "bench/**", ".github/workflows/agentic-bench.yml"]
   pull_request:
-    paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml"]
+    paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml", "bench/**", ".github/workflows/agentic-bench.yml"]
 
 permissions:
   contents: read
@@ -25,7 +25,7 @@ jobs:
     if: github.repository == 'jagosar/agentic-flow'
     runs-on: ${{ matrix.os }}
     # Windows is slower at starting processes and running git, and this suite is mostly subprocesses.
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 45 || 15 }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,6 +55,8 @@ jobs:
         run: |
           set -o pipefail
           python -m unittest discover -s .claude/bin -p "test_*.py" -v 2>&1 | tee "$RUNNER_TEMP/unittest.txt"
+          python -m unittest discover -s bench -p "test_*.py" -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
+          python -m unittest discover -s bench/acceptance -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
       # The failures as one annotation, readable on the pull request and through the API without the full log.
       - name: Failures as an annotation
         if: failure()

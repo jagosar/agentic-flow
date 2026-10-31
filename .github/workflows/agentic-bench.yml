@@ -1,0 +1,52 @@
+# The measurement bench: runs the real pipeline on the bench fixtures and records the results.
+# Manual only, because every run spends API money. Results are uploaded as an artifact, never committed from here.
+name: agentic-bench
+on:
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: "Runs per fixture"
+        default: "3"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    if: github.repository == 'jagosar/agentic-flow'
+    runs-on: ubuntu-latest
+    # 6 runs of up to 60 minutes, plus setup.
+    timeout-minutes: 420
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Claude Code (exact version from npm, no install scripts)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/cc" --no-save --ignore-scripts --no-audit --no-fund @anthropic-ai/claude-code@2.1.302
+          echo "$RUNNER_TEMP/cc/node_modules/@anthropic-ai/claude-code-linux-x64" >> "$GITHUB_PATH"
+      - name: Git identity and default branch
+        run: |
+          git config --global user.name bench
+          git config --global user.email bench@localhost
+          git config --global init.defaultBranch main
+      - name: Bench
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPEAT: ${{ inputs.repeat }}
+        run: python3 bench/bench.py run --repeat "$REPEAT" --auth inherit
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: bench-results
+          path: |
+            bench/results
+            bench/RESULTS.md
