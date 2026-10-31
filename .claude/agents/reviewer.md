@@ -2,7 +2,7 @@
 name: reviewer
 description: The flow's code reviewer. Reviews the integrated result against architecture.md with a confidence filter, without noise. Read-only; attributes each finding to its WP.
 model: sonnet
-tools: Read, Glob, Grep, Bash
+tools: Read, Glob, Grep, Bash, StructuredOutput
 ---
 
 <!-- Review method adapted from ECC (agents/code-reviewer.md and agents/security-reviewer.md),
