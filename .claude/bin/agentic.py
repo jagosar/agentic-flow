@@ -1335,9 +1335,25 @@ def pipeline_tools(manifest, agent_type):
     return allowed + [f"Bash({cmd}:*)", f"Bash({cmd})"] if cmd else allowed
 
 
+FENCED_JSON_RE = re.compile(r"```json[ \t]*\n(.*?)\n```", re.S)
+
+
+def text_report(text):
+    """A report written as text: the last line that is a JSON object, else the last ```json block."""
+    report = pipeline_module().lines_json(text)
+    if report is not None:
+        return report
+    blocks = FENCED_JSON_RE.findall(text)
+    try:
+        return json.loads(blocks[-1]) if blocks else None
+    except ValueError:
+        return None
+
+
 def structured_report(path, schema):
     """The structured answer of a `claude -p --output-format json --json-schema` run, or None. The CLI puts it in
-    `structured_output`; older output may carry it as JSON text in `result`, so both are accepted."""
+    `structured_output`; older output may carry it as JSON text in `result` (one line, or the last ```json block
+    after the agent's prose), so all are accepted."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
@@ -1345,7 +1361,7 @@ def structured_report(path, schema):
     report = data.get("structured_output")
     if report is None:
         result = data.get("result")
-        report = result if isinstance(result, dict) else pipeline_module().lines_json(result) if isinstance(result, str) else None
+        report = result if isinstance(result, dict) else text_report(result) if isinstance(result, str) else None
     if isinstance(report, str):
         try:
             report = json.loads(report)

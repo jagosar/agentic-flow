@@ -42,6 +42,8 @@ NOTES = {
         "status shows which agent of a run is waiting for your permission or answer.",
         "The gatekeeper no longer guesses an exit code that Bash did not show: a step that exited 0 (for example a "
         "baseline with failing tests in a package that does not exist yet) no longer stops the run.",
+        "run-pipeline also reads an agent's report written as a ```json block after its prose, as the claude CLI "
+        "sometimes returns it, instead of stopping with NO REPORT.",
     ],
 }
 
