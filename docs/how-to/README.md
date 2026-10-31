@@ -17,6 +17,7 @@
 | Onboarding | [onboarding.md](onboarding.md) | Bringing a repo into the flow, or an older flow up to date, with two real examples | **Tested** on copies of both example repos |
 | GitLab | [gitlab.md](gitlab.md) | The same, for repos hosted on GitLab, and the flow's tests in GitLab CI | Install and upgrade as in onboarding; the GitLab CI job and merge requests, not yet |
 | Plugin | [plugin.md](plugin.md) | Installing or updating the flow in an existing repo | **Tested** in a real session with `--plugin-dir`; from the marketplace, not yet |
+| Measurement bench | [Measurement bench](bench.md) | Comparing flow versions with real runs | Not run with a real `claude` yet |
 
 ## The flow in one minute
 
@@ -284,7 +285,15 @@ python3 -m unittest discover -s .claude/bin -p "test_*.py"
 node .claude/bin/test_workflow.mjs
 ```
 
-225 Python tests and 38 workflow scenarios with simulated agents, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+```bash
+python3 -m unittest discover -s bench -p "test_*.py"
+```
+
+```bash
+python3 -m unittest discover -s bench/acceptance
+```
+
+280 Python tests, 39 workflow scenarios with simulated agents and 26 tests of the measurement bench, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 
