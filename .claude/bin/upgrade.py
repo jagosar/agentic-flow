@@ -40,6 +40,8 @@ NOTES = {
         "by an earlier version keeps the old comparison until the next baseline.",
         "settings.json gets hooks on PermissionRequest, PostToolUse, PostToolUseFailure and SubagentStop: agentic.py "
         "status shows which agent of a run is waiting for your permission or answer.",
+        "The gatekeeper no longer guesses an exit code that Bash did not show: a step that exited 0 (for example a "
+        "baseline with failing tests in a package that does not exist yet) no longer stops the run.",
     ],
 }
 

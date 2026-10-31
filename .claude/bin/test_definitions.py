@@ -139,6 +139,13 @@ class AgentDefinitionTests(unittest.TestCase):
             self.assertIn(rule, section)
 
 
+    def test_gatekeeper_never_guesses_the_exit_code(self):
+        # Bash shows "Exit code N" only when N is not 0; a gatekeeper that took the code from the output stopped a
+        # run at a baseline that had exited 0.
+        body = (AGENTS_DIR / "gatekeeper.md").read_text(encoding="utf-8")
+        for rule in ("no `Exit code` line", "`exit_code: 0`", "Never deduce the exit code from the output"):
+            self.assertIn(rule, body)
+
 class CommandAndWorkflowTests(unittest.TestCase):
     def test_commands_and_models(self):
         # The flow's commands must all be there; a project may add its own.
