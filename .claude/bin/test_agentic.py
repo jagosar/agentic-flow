@@ -998,6 +998,19 @@ class InstallTests(unittest.TestCase):
         self.assertIn("env BASH_MAX_TIMEOUT_MS", r.stdout)
         self.assertNotIn("env BASH_DEFAULT_TIMEOUT_MS", r.stdout, "the project's own value is kept")
 
+    def test_the_waiting_hooks_go_in_once_even_next_to_an_empty_event(self):
+        # The fixture's settings already have "PostToolUse": [] (an event the project declared with no hooks).
+        first = self.install()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn("hook PostToolUse", first.stdout)
+        settings = json.loads((self.dir / ".claude/settings.json").read_text(encoding="utf-8"))
+        commands = [h["command"] for e in settings["hooks"]["PostToolUse"] for h in e["hooks"]]
+        self.assertEqual(len([c for c in commands if "waiting.py" in c]), 1)
+        self.assertTrue(all(c.endswith("|| true") for c in commands), "a missing waiting.py must never deny anything")
+        subprocess.run(["git", "add", "-A"], cwd=self.dir, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i"], cwd=self.dir, check=True)
+        self.assertIn("settings.json: unchanged", self.install().stdout)
+
     def test_removes_only_flow_files_inside_the_target(self):
         # The install record comes from the target repo: it must not make install delete anything else.
         victim = self.dir.parent / f"{self.dir.name}-victim.txt"

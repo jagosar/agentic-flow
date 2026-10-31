@@ -38,6 +38,8 @@ NOTES = {
         "quality configuration added through Bash. Agents never commit during a run; the commit gate is at the end.",
         "verify compares an already failing phase failure by failure: a new failure in it now blocks. A baseline saved "
         "by an earlier version keeps the old comparison until the next baseline.",
+        "settings.json gets hooks on PermissionRequest, PostToolUse, PostToolUseFailure and SubagentStop: agentic.py "
+        "status shows which agent of a run is waiting for your permission or answer.",
     ],
 }
 

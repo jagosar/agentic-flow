@@ -296,17 +296,19 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── agentic.py          validate · pipeline-plan · open/close-stage · seq · verify · stack · rules-sync · codemap ·
 │   │                       docs-check · install · run-pipeline · run-* · status · stop · hook
 │   ├── brief.py            slices architecture.md into the briefs the agents read
+│   ├── waiting.py          hook: records which agent is waiting for your permission or answer
 │   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
 │   ├── conformance.json    scenarios that both engines must resolve identically
 │   ├── test_agentic.py     tests of agentic.py, the hook and the installer
 │   ├── test_definitions.py tests of the definitions: agents, rules, plugin, CI and documentation
 │   ├── test_pipeline.py    tests of the Python engine and of its parity with the workflow
 │   └── test_workflow.mjs   tests of the workflow logic with simulated agents
-├── settings.json           PreToolUse hook + permissions
+├── settings.json           hooks (guardrails, waiting notice) + permissions
 ├── agentic.json            timeout_s · auth · max_fix_cycles
 ├── agentic-install.json    version and file fingerprints, when installed by the plugin
 └── state/                  (ignored by git)
     ├── ledger.md           readable state, with each agent's tokens and cost
+    ├── waiting.json        agents waiting for your permission or answer (shown first by status)
     ├── briefs/<ID>.md      the slice of architecture.md each WP and the test-author read
     ├── usage.jsonl         tokens and cost of every agent run by agentic.py (fallback mode)
     ├── runs/<ID>.json      each agent's report
