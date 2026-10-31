@@ -18,16 +18,18 @@ COMMANDS_DIR = CLAUDE / "commands"
 WORKFLOW = CLAUDE / "workflows" / "agentic-implement.js"
 AGENTIC = CLAUDE / "bin" / "agentic.py"
 
-WRITE_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
+# Every agent run-pipeline starts with --json-schema lists StructuredOutput: with a `tools:` list that leaves it out,
+# `claude -p --agent` (seen with CLI 2.1.316) returns no structured_output and the run stops with NO REPORT.
+WRITE_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "StructuredOutput"}
 # Each agent's contract: model (alias), exact tools, the ID it claims its zone with, and its report.
 AGENTS = {
     "implementer": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "<WP-ID>"},
     "test-author": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "AT"},
     "qa": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "QA"},
-    "reviewer": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "Bash"}, "claim": "REVIEW"},
-    "verifier": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
+    "reviewer": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "Bash", "StructuredOutput"}, "claim": "REVIEW"},
+    "verifier": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "StructuredOutput"}},
     "plan-reviewer": {"model": "opus", "tools": {"Read", "Glob", "Grep"}},
-    "test-auditor": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
+    "test-auditor": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "StructuredOutput"}},
     "gatekeeper": {"model": "haiku", "tools": {"Bash"}},
     "doc-updater": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "DOCS"},
 }

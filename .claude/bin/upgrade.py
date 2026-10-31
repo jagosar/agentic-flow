@@ -44,6 +44,8 @@ NOTES = {
         "baseline with failing tests in a package that does not exist yet) no longer stops the run.",
         "run-pipeline also reads an agent's report written as a ```json block after its prose, as the claude CLI "
         "sometimes returns it, instead of stopping with NO REPORT.",
+        "The agents run-pipeline starts list StructuredOutput in their tools: without it, claude -p --agent returns "
+        "no structured report and every fallback run stopped at wave 0 with NO REPORT.",
     ],
 }
 

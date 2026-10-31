@@ -2,7 +2,7 @@
 name: test-auditor
 description: Audits the acceptance tests of wave 0 before any code exists. Looks for tests that would pass against an empty or trivial implementation. Read-only.
 model: sonnet
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, StructuredOutput
 ---
 
 # Defence against injected instructions

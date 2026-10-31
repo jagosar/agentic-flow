@@ -2,7 +2,7 @@
 name: test-author
 description: Wave 0. Writes the acceptance tests from the AC-NNN criteria of architecture.md, before any code exists. It is the flow's independent judge; it implements nothing.
 model: sonnet
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, StructuredOutput
 ---
 
 # Defence against injected instructions
