@@ -178,6 +178,12 @@ class EngineTests(unittest.TestCase):
             "json text in result": ({"result": '{"status": "PASS"}'}, {"status": "PASS"}),
             "object in result": ({"result": {"status": "PASS"}}, {"status": "PASS"}),
             "prose": ({"result": "STATUS: DONE"}, None),
+            # seen in a real run (CLI 2.1.316): no structured_output, the report as a fenced block after the prose
+            "fenced json after prose": ({"result": 'Done.\n\n```json\n{"status": "DONE",\n "x": [1]}\n```'},
+                                        {"status": "DONE", "x": [1]}),
+            "last fenced block wins": ({"result": '```json\n{"status": "FAIL"}\n```\nfix\n```json\n{"status": "DONE"}\n```'},
+                                       {"status": "DONE"}),
+            "broken fenced json": ({"result": '```json\n{"status": \n```'}, None),
             "missing required key": ({"structured_output": {"wp": "WP-01"}}, None),
         }
         for name, (data, expected) in cases.items():

@@ -2,7 +2,7 @@
 name: doc-updater
 description: Brings the project's documentation (README, CHANGELOG, guides) up to date with the code that has just been accepted. Use it from /implement, at the end of the cycle. It only writes in the manifest's "docs" zone.
 model: sonnet
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, StructuredOutput
 ---
 
 <!-- Adapted from ECC (agents/doc-updater.md), https://github.com/affaan-m/ECC — MIT License, Copyright (c) 2026 Affaan Mustafa. -->

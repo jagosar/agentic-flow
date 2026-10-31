@@ -18,16 +18,18 @@ COMMANDS_DIR = CLAUDE / "commands"
 WORKFLOW = CLAUDE / "workflows" / "agentic-implement.js"
 AGENTIC = CLAUDE / "bin" / "agentic.py"
 
-WRITE_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
+# Every agent run-pipeline starts with --json-schema lists StructuredOutput: with a `tools:` list that leaves it out,
+# `claude -p --agent` (seen with CLI 2.1.316) returns no structured_output and the run stops with NO REPORT.
+WRITE_TOOLS = {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "StructuredOutput"}
 # Each agent's contract: model (alias), exact tools, the ID it claims its zone with, and its report.
 AGENTS = {
     "implementer": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "<WP-ID>"},
     "test-author": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "AT"},
     "qa": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "QA"},
-    "reviewer": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "Bash"}, "claim": "REVIEW"},
-    "verifier": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
+    "reviewer": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "Bash", "StructuredOutput"}, "claim": "REVIEW"},
+    "verifier": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "StructuredOutput"}},
     "plan-reviewer": {"model": "opus", "tools": {"Read", "Glob", "Grep"}},
-    "test-auditor": {"model": "sonnet", "tools": {"Read", "Glob", "Grep"}},
+    "test-auditor": {"model": "sonnet", "tools": {"Read", "Glob", "Grep", "StructuredOutput"}},
     "gatekeeper": {"model": "haiku", "tools": {"Bash"}},
     "doc-updater": {"model": "sonnet", "tools": WRITE_TOOLS, "claim": "DOCS"},
 }
@@ -138,6 +140,13 @@ class AgentDefinitionTests(unittest.TestCase):
                      "`pgrep -f`", "`exit_code: 124`", "do not run the command again"):
             self.assertIn(rule, section)
 
+
+    def test_gatekeeper_never_guesses_the_exit_code(self):
+        # Bash shows "Exit code N" only when N is not 0; a gatekeeper that took the code from the output stopped a
+        # run at a baseline that had exited 0.
+        body = (AGENTS_DIR / "gatekeeper.md").read_text(encoding="utf-8")
+        for rule in ("no `Exit code` line", "`exit_code: 0`", "Never deduce the exit code from the output"):
+            self.assertIn(rule, body)
 
 class CommandAndWorkflowTests(unittest.TestCase):
     def test_commands_and_models(self):
