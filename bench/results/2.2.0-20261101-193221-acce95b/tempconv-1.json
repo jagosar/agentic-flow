@@ -1,0 +1,441 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_ac_001_celsius_fahrenheit",
+              "test_ac_001_result_is_rounded"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_ac_002_kelvin_and_rounding",
+              "test_ac_002_kelvin_fahrenheit"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_ac_003_invalid_conversions",
+              "test_ac_003_invalid_target_unit",
+              "test_ac_003_below_absolute_zero_other_units"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_ac_004_valid_texts",
+              "test_ac_004_unit_is_upper_case_and_number_is_float"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_ac_005_invalid_texts"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Red state is from ModuleNotFoundError (tempconv.convert and tempconv.parse don't exist), so assertions have not run against any implementation.",
+          "Extra cases beyond the ACs (convert(1,'C','F')==33.8, convert(1,'F','C')==-17.22, convert(0,'K','F')==-459.67, convert(-500,'F','C') and convert(-1,'K','C') raising ValueError, convert(1,'C','x') raising ValueError, parse returning a float) follow from the section 6 contract but are not written in the ACs.",
+          "The AC-002 value for 20.555 C is checked with a 0.01 tolerance because float rounding of 293.705 may give 293.7 or 293.71."
+        ]
+      },
+      "check": "AT: 2 file(s) changed: acceptance/test_convert_units.py, acceptance/test_parse_text.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: tempconv/convert.py, tests/test_convert.py\nWP-02: 2 file(s) changed: tempconv/parse.py, tests/test_parse.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0 WP-02=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          ".",
+          "----------------------------------------------------------------------",
+          "Ran 1 test in 0.000s",
+          "",
+          "OK"
+        ]
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "tempconv/convert.py",
+        "tests/test_convert.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "19 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "10 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Absolute-zero check is done on the input converted to Celsius, compared after rounding to 9 decimals to absorb float error (e.g. -459.67 F)."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE",
+      "wp": "WP-02",
+      "files": [
+        "tempconv/parse.py",
+        "tests/test_parse.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "19 OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "10 OK"
+        }
+      ],
+      "internal_decisions": [
+        "Regex fullmatch with ASCII flag; leading/trailing whitespace tolerated; optional +/- sign; forms like '12.' and '.5' accepted."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "...................",
+          "----------------------------------------------------------------------",
+          "Ran 19 tests in 0.001s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "opened": true,
+    "callers": 0
+  },
+  "qa": {
+    "status": "PASS",
+    "plan": [
+      "Baseline: tests (19) and acceptance (10) all pass.",
+      "Contracts: the two modules are independent, so there is no cross-module boundary to test. Discarded.",
+      "Edge cases: tested the absolute-zero boundary in C, F and K, parse variants (+5f, .5K, 12.C, padding), and malformed input (unicode digits, nbsp, exponent, comma). All of these pass.",
+      "Low-severity defects D1–D3 are left red on purpose, in qa/test_qa_edges.py.",
+      "Integration, regression, non-functional: discarded. The scope is two pure functions, and no code existed before this architecture.",
+      "Re-run: python3 -m unittest discover -s qa (expect 3 red tests, D1 to D3)."
+    ],
+    "defects": [
+      {
+        "id": "D1",
+        "severity": "low",
+        "wp": "WP-01",
+        "kind": "design",
+        "section": "6",
+        "repro": "convert(float('nan'),'C','F') returns nan with no error, because the absolute-zero check is False for NaN.",
+        "fix": "Reject non-finite values with ValueError in convert, and add that to the section 6 contract.",
+        "if_skipped": "NaN passes through the library silently, and the caller gets a nan result."
+      },
+      {
+        "id": "D2",
+        "severity": "low",
+        "wp": "WP-01",
+        "kind": "design",
+        "section": "6",
+        "repro": "convert(float('inf'),'C','F') returns inf with no error.",
+        "fix": "Reject non-finite values with ValueError (same fix as D1).",
+        "if_skipped": "inf is accepted as a temperature, and the caller gets inf back."
+      },
+      {
+        "id": "D3",
+        "severity": "low",
+        "wp": "WP-02",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "parse(None) and parse(12) raise TypeError (from re.fullmatch), not ValueError. Section 6 says ValueError for anything else, and the AC-005 'Must not' clause rules out other exception types.",
+        "fix": "In parse, raise ValueError when text is not a str.",
+        "if_skipped": "Callers who catch only ValueError will crash on non-string input."
+      }
+    ],
+    "gaps": [
+      "Whether NaN/inf should be rejected is not specified in architecture.md, so D1 and D2 are design questions. I did not check bool inputs or very large floats (1e308 overflow)."
+    ],
+    "needs_validation": []
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_convert_units.py",
+        "line": 39,
+        "problem": "The absolute-zero boundary is not tested. No test converts exactly -273.15 C, 0 K or -459.67 F and expects success, and none uses a value just below the limit. An implementation that uses <= instead of < would pass.",
+        "evidence": "A convert that raises for temperatures <= -273.15 C passes every test. convert(0,'K','C') is accepted only if the check is done on a differently rounded value."
+      },
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_parse_text.py",
+        "line": 18,
+        "problem": "AC-005 checks only four inputs. It does not test a unit-only text with spaces, a lower-case invalid unit, or a number with a trailing space and no unit. These are weaker than the brief needs, so they are not blocking.",
+        "evidence": "A regex-based parse that accepts '12 ' or 'x12C' as defaults still passes, since neither is tested."
+      }
+    ]
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "Added Usage section with convert and parse examples and their contracts",
+        "Added Tests section with the unit and acceptance commands",
+        "Stated Python 3.9+ requirement"
+      ],
+      "unverified": [
+        "Example outputs were taken from the code and the acceptance criteria; I did not run them",
+        "No CHANGELOG exists and it is outside docs.files, so I did not add an entry"
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 0,
+  "pending": [
+    {
+      "type": "design",
+      "id": "D1",
+      "severity": "low",
+      "wp": "WP-01",
+      "kind": "design",
+      "section": "6",
+      "repro": "convert(float('nan'),'C','F') returns nan with no error, because the absolute-zero check is False for NaN.",
+      "fix": "Reject non-finite values with ValueError in convert, and add that to the section 6 contract.",
+      "if_skipped": "NaN passes through the library silently, and the caller gets a nan result."
+    },
+    {
+      "type": "design",
+      "id": "D2",
+      "severity": "low",
+      "wp": "WP-01",
+      "kind": "design",
+      "section": "6",
+      "repro": "convert(float('inf'),'C','F') returns inf with no error.",
+      "fix": "Reject non-finite values with ValueError (same fix as D1).",
+      "if_skipped": "inf is accepted as a temperature, and the caller gets inf back."
+    },
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "Example outputs were taken from the code and the acceptance criteria; I did not run them",
+        "No CHANGELOG exists and it is outside docs.files, so I did not add an entry"
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Red state is from ModuleNotFoundError (tempconv.convert and tempconv.parse don't exist), so assertions have not run against any implementation.",
+        "Extra cases beyond the ACs (convert(1,'C','F')==33.8, convert(1,'F','C')==-17.22, convert(0,'K','F')==-459.67, convert(-500,'F','C') and convert(-1,'K','C') raising ValueError, convert(1,'C','x') raising ValueError, parse returning a float) follow from the section 6 contract but are not written in the ACs.",
+        "The AC-002 value for 20.555 C is checked with a 0.01 tolerance because float rounding of 293.705 may give 293.7 or 293.71."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "Did not run the tests, because the modules do not exist yet.",
+        "Did not read .claude/rules/agentic/common.md or python.md.",
+        "Did not check float rounding edge cases such as 20.555 -> 293.71 versus 293.7, because the test uses a delta tolerance."
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "I did not run the unit or acceptance tests.",
+        "I did not read the test files in tests/ or acceptance/.",
+        "convert accepts NaN and infinity without raising. The contract does not cover them, so I did not report it.",
+        "convert allows up to 1e-9 °C below absolute zero as float tolerance. I judged this deliberate."
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "usage": {
+    "total": {
+      "input": 43684,
+      "cache_read": 294782,
+      "output": 14073,
+      "turns": 55,
+      "cost_usd": 0.3448242
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 9217,
+        "cache_read": 68082,
+        "output": 3695,
+        "cost_usd": 0.0806022,
+        "turns": 11
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 5506,
+        "cache_read": 17353,
+        "output": 1227,
+        "cost_usd": 0.0360173,
+        "turns": 6
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 4071,
+        "cache_read": 38980,
+        "output": 1383,
+        "cost_usd": 0.033996,
+        "turns": 7
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 4770,
+        "cache_read": 27478,
+        "output": 1852,
+        "cost_usd": 0.040335800000000005,
+        "turns": 7
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 5903,
+        "cache_read": 25339,
+        "output": 686,
+        "cost_usd": 0.0329939,
+        "turns": 6
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 7986,
+        "cache_read": 80526,
+        "output": 3987,
+        "cost_usd": 0.07983860000000001,
+        "turns": 9
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 6231,
+        "cache_read": 37024,
+        "output": 1243,
+        "cost_usd": 0.04104039999999999,
+        "turns": 9
+      }
+    ]
+  }
+}

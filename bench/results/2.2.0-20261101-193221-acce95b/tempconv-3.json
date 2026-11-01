@@ -1,0 +1,438 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_ac_001_celsius_fahrenheit",
+              "test_ac_001_not_unrounded"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_ac_002_kelvin_and_rounding"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_ac_003_invalid_conversions",
+              "test_ac_003_below_absolute_zero_other_units",
+              "test_ac_003_absolute_zero_is_valid"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_ac_004_valid_texts",
+              "test_ac_004_unit_is_upper_case_and_number_is_float"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_ac_005_invalid_texts",
+              "test_ac_005_no_unit"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Extra tests beyond the AC examples (K→F = 80.33, 37C→98.6F, 1F→-17.22C, below-zero in K/F, -273.15C exactly valid, parse('12') raises) follow from section 6 but are not listed in the ACs.",
+          "The 20.555 C→K check uses a ±0.006 tolerance because float rounding of 293.705 is ambiguous (293.70 or 293.71).",
+          "Tests are red now only because tempconv.convert and tempconv.parse do not exist (ModuleNotFoundError). I haven't run them against an implementation."
+        ]
+      },
+      "check": "AT: 2 file(s) changed: acceptance/test_convert_units.py, acceptance/test_parse_text.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: tempconv/convert.py, tests/test_convert.py\nWP-02: 2 file(s) changed: tempconv/parse.py, tests/test_parse.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0 WP-02=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          ".",
+          "----------------------------------------------------------------------",
+          "Ran 1 test in 0.000s",
+          "",
+          "OK"
+        ]
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "tempconv/convert.py",
+        "tests/test_convert.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "19 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance -p 'test_convert*'",
+          "passed": true,
+          "detail": "6 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Absolute-zero check compares the Celsius value rounded to 9 decimals, so float noise (e.g. 0 K via F) is not rejected.",
+        "Conversion goes through Celsius with two private helpers."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE",
+      "wp": "WP-02",
+      "files": [
+        "tempconv/parse.py",
+        "tests/test_parse.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "19 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "10 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Single regex with fullmatch, ASCII only; allows optional sign and leading/trailing whitespace; no exponent notation."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "...................",
+          "----------------------------------------------------------------------",
+          "Ran 19 tests in 0.001s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "opened": true,
+    "callers": 0
+  },
+  "qa": {
+    "status": "FAIL",
+    "plan": [
+      "Baseline: tests (19) and acceptance (10) pass.",
+      "Contracts/integration: parse→convert flow and the absolute-zero boundary in C/F/K pass.",
+      "Edge cases: NaN/inf, huge numbers, -0.0, whitespace and malformed text. They found 5 defects. All are low or medium, and their tests stay red on purpose.",
+      "Regression, non-functional: discarded (no earlier code, no security or performance requirements).",
+      "Run again: python3 -m unittest discover -s qa"
+    ],
+    "defects": [
+      {
+        "id": "D1",
+        "severity": "medium",
+        "wp": "WP-01",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "convert(float('nan'),'C','F') returns nan with no error.",
+        "fix": "Reject non-finite values with ValueError (math.isfinite).",
+        "if_skipped": "NaN passes the absolute-zero check and comes back as a valid temperature."
+      },
+      {
+        "id": "D2",
+        "severity": "medium",
+        "wp": "WP-01",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "convert(float('inf'),'C','F') returns inf.",
+        "fix": "Reject non-finite values with ValueError (same check as D1).",
+        "if_skipped": "Infinity is accepted as a temperature."
+      },
+      {
+        "id": "D3",
+        "severity": "low",
+        "wp": "WP-01",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "convert(31.999,'F','C') returns -0.0.",
+        "fix": "Add 0.0 to the rounded result.",
+        "if_skipped": "Cosmetic: the output shows -0.0."
+      },
+      {
+        "id": "D4",
+        "severity": "medium",
+        "wp": "WP-02",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "parse('9'*400+'C') returns (inf,'C') instead of raising. The result then passes into convert.",
+        "fix": "Raise ValueError if the parsed float is not finite.",
+        "if_skipped": "An overflow gives an infinite value that is treated as valid input."
+      },
+      {
+        "id": "D5",
+        "severity": "low",
+        "wp": "WP-02",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "parse('12\\nC') returns (12.0,'C'). The contract allows only optional spaces, and the regex uses \\s.",
+        "fix": "Use ' *' or '[ ]*' instead of \\s*.",
+        "if_skipped": "Tabs and newlines are accepted, which the contract does not allow."
+      }
+    ],
+    "needs_validation": [],
+    "gaps": [
+      "Non-numeric, non-str inputs (for example convert('a',...) or parse(None)) raise TypeError. The contract says nothing about them, so I did not test them.",
+      "No linter or type checker is configured, so style was not checked.",
+      "I did not delete qa/__pycache__ because the permission was denied."
+    ]
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_convert_units.py",
+        "line": 17,
+        "problem": "The AC-002 rounding check allows a loose delta of 0.006. It accepts either 293.70 or 293.71, because float rounding of 20.555 is ambiguous. This is acceptable, but it does not pin down the exact rounding.",
+        "evidence": "An implementation that uses round(x, 2) passes, and so would one that truncates. Truncation to 293.70 is still within 0.006 of 293.705. The other tests (98.6, -17.22, 80.33) catch most wrong rounding."
+      },
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_parse_text.py",
+        "line": 23,
+        "problem": "The AC-005 error tests check only the exception type, not the message. This matches the contract, which gives no message. No test covers a lower-case unit with surrounding spaces, such as 'a  12 c'.",
+        "evidence": "This is not blocking. A stub that raises ValueError unconditionally fails test_ac_004. A stub that returns a constant fails test_ac_005."
+      }
+    ]
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "Added Usage section with convert and parse examples, their contracts, and test commands to README.md"
+      ],
+      "unverified": [
+        "Test commands were taken from architecture.md and not run",
+        "No CHANGELOG exists and it is outside docs.files, so none was created"
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 0,
+  "pending": [
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "Test commands were taken from architecture.md and not run",
+        "No CHANGELOG exists and it is outside docs.files, so none was created"
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Extra tests beyond the AC examples (K→F = 80.33, 37C→98.6F, 1F→-17.22C, below-zero in K/F, -273.15C exactly valid, parse('12') raises) follow from section 6 but are not listed in the ACs.",
+        "The 20.555 C→K check uses a ±0.006 tolerance because float rounding of 293.705 is ambiguous (293.70 or 293.71).",
+        "Tests are red now only because tempconv.convert and tempconv.parse do not exist (ModuleNotFoundError). I haven't run them against an implementation."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "I did not run the tests, because the modules do not exist yet.",
+        "Same-unit conversions, such as convert(5,'C','C'), are not covered by the brief or by the tests.",
+        "Non-numeric or NaN inputs are not covered by the brief."
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "Did not run the test or acceptance suites.",
+        "Did not read tests/test_convert.py or tests/test_parse.py in detail.",
+        "convert passes NaN and infinity through without raising. The section 6 contract does not mention them, so I did not report it."
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "usage": {
+    "total": {
+      "input": 48469,
+      "cache_read": 324914,
+      "output": 14581,
+      "turns": 56,
+      "cost_usd": 0.3720534
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 9100,
+        "cache_read": 67675,
+        "output": 3518,
+        "cost_usd": 0.0783235,
+        "turns": 11
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 5507,
+        "cache_read": 17325,
+        "output": 1076,
+        "cost_usd": 0.0345085,
+        "turns": 6
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 4088,
+        "cache_read": 39015,
+        "output": 1382,
+        "cost_usd": 0.0340575,
+        "turns": 7
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 4738,
+        "cache_read": 27493,
+        "output": 1834,
+        "cost_usd": 0.040029300000000004,
+        "turns": 7
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 5279,
+        "cache_read": 25943,
+        "output": 643,
+        "cost_usd": 0.030128299999999997,
+        "turns": 6
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 12256,
+        "cache_read": 100434,
+        "output": 4797,
+        "cost_usd": 0.10700939999999999,
+        "turns": 9
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 7501,
+        "cache_read": 47029,
+        "output": 1331,
+        "cost_usd": 0.0479969,
+        "turns": 10
+      }
+    ]
+  }
+}
