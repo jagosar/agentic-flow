@@ -30,7 +30,7 @@
 | Launcher | `.claude/commands/implement.md` | latest Sonnet | Validates, launches the workflow, reports and holds the commit gate | Interpret the design or resolve blockers |
 | Test-author | `.claude/agents/test-author.md` | latest Sonnet | Writes the acceptance tests from the criteria, before the code | Implement |
 | Implementer | `.claude/agents/implementer.md` | latest Sonnet | Builds one work package with its unit tests | Touch other packages' files or the acceptance tests |
-| Reviewer | `.claude/agents/reviewer.md` | latest Sonnet | Reviews quality and security, reporting only what it can prove | Write anything |
+| Reviewer | `.claude/agents/reviewer.md` | latest Sonnet | Reviews quality and security, reporting only what it can prove; reads the callers of every changed symbol outside the diff | Write anything |
 | Test-auditor | `.claude/agents/test-auditor.md` | latest Sonnet | Checks the acceptance tests would fail against an empty or trivial implementation | Write anything |
 | Verifier | `.claude/agents/verifier.md` | latest Sonnet | Tries to refute each serious finding | Write anything |
 | QA | `.claude/agents/qa.md` | latest Sonnet | Exploratory tests in `qa/`, beyond the criteria | Fix production code |

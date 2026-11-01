@@ -74,6 +74,7 @@ Models are set by alias (`opus`, `sonnet`, and `haiku` for the gatekeeper only),
 | Risk | Protection |
 |---|---|
 | An agent writes files that are not its own | A `PreToolUse` hook checks every write against the manifest. Reviewers write nothing |
+| A change breaks code the diff does not touch | The reviewer receives the callers of every changed public symbol, outside the diff, and must check each one |
 | An implementer passes by weakening the test | The tests are written by another agent, before the code, and are locked. Red first, green after |
 | Relaxing a linter or skipping a test | Editing existing quality config is blocked; so are unconditional `skip`, `xfail` and `only` |
 | Secrets in code | Writes containing credential patterns are blocked |
