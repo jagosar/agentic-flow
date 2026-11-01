@@ -15,6 +15,17 @@ It does **not** measure:
 - `/architect`: the fixtures' plans are fixed, so a run measures the implementation flow only.
 - Statistical significance. The report gives medians and ranges; three runs show a spread, not proof.
 
+## The fixtures
+
+| Fixture | Difficulty | What it is | What it tests |
+|---|---|---|---|
+| `tempconv` | simple | Temperature conversion and parsing, one wave, two independent packages | The plain flow |
+| `inventory` | trap | Stock keeping in two waves | Edge cases that tend to need a fix cycle |
+| `vault` | trap | A file vault in one wave: storage paths, download tokens and a sqlite catalogue | Judgement about untrusted input: the plan states functional behaviour only and says once that users are not trusted, while the oracle attacks with adversarial input (tests named `test_adv_*`) |
+| `tally` | trap | An expense-sharing library in three waves: money and dates, a ledger, settlement | A real `depends_on` chain and edge cases on money, dates and settlement (tests named `test_edge_*`) |
+
+The oracle has no weights: the results count passed over total, and the per-test names in the oracle output say why a run lost points.
+
 ## Run it locally
 
 You need the `claude` CLI on your `PATH` (or `AGENTIC_CLAUDE` pointing at it), `git` and `python3` 3.9 or later. It runs on your subscription by default:
@@ -62,6 +73,8 @@ oracle/           test_*.py (unittest); never copied into the project before run
 reference/good/   a correct implementation, copied over repo/ by selftest: the oracle must pass it whole
 reference/bad/    a plausible wrong one (right on the happy path, wrong on the edge cases): the oracle must catch it
 ```
+
+Name the oracle's tests so a reference can be judged by what it fails: `vault` uses `test_adv_*` for adversarial tests and `tally` uses `test_edge_*` for edge cases, and their acceptance tests (`bench/acceptance/test_acceptance_fixtures.py`) check that the bad reference fails only those. Import the module under test inside each test, so each test fails on the bare repo.
 
 Write the code and the plan in English, with commands in the plan using `python3`, and no dependencies. Check it with `selftest --fixture <name>`, then try it with `--fixture <name> --repeat 1`.
 
