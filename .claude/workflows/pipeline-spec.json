@@ -15,10 +15,11 @@
     "test_author": "Write the acceptance tests. Your brief is {brief}: the parts of architecture.md they need.{rules}",
     "test_author_revision": "Revise the acceptance tests (your brief is {brief}). An independent auditor found these weak points, as JSON:\n{weak}\nStrengthen them: the tests of each criterion must fail against an empty or trivial implementation (a stub that returns nothing, None or a constant) and must cover the criterion's \"must not\". Keep them red for the right reason.{rules}",
     "test_auditor": "Audit the acceptance tests against the brief they were written from, {brief}. The test-author reports this coverage, as JSON:\n{coverage}{rules}",
-    "reviewer": "Review the integrated code according to architecture.md.{rules}",
+    "reviewer": "Review the integrated code according to architecture.md.{concerns}{rules}",
     "verifier": "Try to refute this finding from the reviewer, as JSON:\n{finding}",
     "qa": "Run the system's QA validation according to architecture.md.{rules}",
-    "doc_updater": "Update the documentation according to architecture.md and the integrated code.{rules}"
+    "doc_updater": "Update the documentation according to architecture.md and the integrated code.{rules}",
+    "implement_full": "Implement {wp}. Your first attempt returned NEEDS_CONTEXT: {missing}. This time your brief is architecture.md, whole: read it and implement. If the document does not settle it, return BLOCKED with the section that should.{rules}"
   },
   "schemas": {
     "gatekeeper": {
@@ -158,14 +159,18 @@
         "checks",
         "internal_decisions",
         "blocker",
-        "not_checked"
+        "not_checked",
+        "concerns",
+        "missing_context"
       ],
       "properties": {
         "status": {
           "type": "string",
           "enum": [
             "DONE",
-            "BLOCKER"
+            "DONE_WITH_CONCERNS",
+            "NEEDS_CONTEXT",
+            "BLOCKED"
           ]
         },
         "wp": {
@@ -233,6 +238,30 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "concerns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_context": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "what",
+            "section"
+          ],
+          "properties": {
+            "what": {
+              "type": "string"
+            },
+            "section": {
+              "type": "string"
+            }
           }
         }
       }

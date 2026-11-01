@@ -200,7 +200,7 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 }
 ```
 
-- **`timeout_s`:** the longest a stage may run; agents still alive are ended and marked `TIMEOUT`. For a one-off change: `AGENTIC_TIMEOUT_S`.
+- **`timeout_s`:** the longest a stage may run; agents still alive are ended and marked `TIMEOUT`. For a one-off change: `AGENTIC_TIMEOUT_S`. The stop gate runs the acceptance suite inside the implementer's time (up to 14 minutes per check): with a slow suite, raise `timeout_s` or expect a `TIMEOUT`.
 - **`auth: "subscription"`:** agents run on your subscription. In `-p` mode Claude Code uses `ANTHROPIC_API_KEY` whenever it exists, so the launcher removes `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the agents' environment. Use `"inherit"` only to bill the API.
 - **`max_fix_cycles`:** fix cycles allowed per package before it escalates to a person.
 - **Models:** not configurable; set by alias.
@@ -261,10 +261,12 @@ The messages below are quoted as the flow prints them (the first words are enoug
 | `mirror points to a file that does not exist` / `out of range` | The plan cites code that is not there | Ask `/architect` to correct the "patterns to mirror" |
 | Verification reports a `pre-existing failure` | That phase failed before the run | It neither blocks nor is blamed on a package. Fix it separately, or request it as a `fix` |
 | `... is existing quality configuration` | An agent tried to relax a linter or formatter | As intended. If the design really requires it, add `"config_edit": true` to that package with `/architect` |
-| `tests are not disabled to turn them green` | An agent tried to add `skip`, `xfail` or `only` | Fix the test or report a `BLOCKER`. Conditional skips (`skipIf`) are allowed |
+| `tests are not disabled to turn them green` | An agent tried to add `skip`, `xfail` or `only` | Fix the test or report it blocked (`BLOCKED` for an implementer, `BLOCKER` for the others). Conditional skips (`skipIf`) are allowed |
+| `the report says DONE but the acceptance tests of your package fail` | The stop gate refused an implementer's report; it keeps working with the failing lines | Nothing, unless it reaches `denial 2 of 2`: then the report goes through and the fix cycle or you take over |
 | `... looks like an AWS access key` (or another credential) | An agent was about to write something shaped like a credential | Use environment variables or synthetic values |
 | `bypassing git hooks ... is not allowed` | `--no-verify`, `commit -n` or `core.hooksPath` | Fix what makes the git hook fail |
-| A package returns `BLOCKER` about its acceptance tests | A test is wrong and the package cannot touch it | Check the diagnosis, fix the test, and resume with `/implement <wave>` |
+| A package returns `BLOCKED` about its acceptance tests | A test is wrong and the package cannot touch it | Check the diagnosis, fix the test, and resume with `/implement <wave>` |
+| A package returns `NEEDS_CONTEXT` twice | The brief and then the whole `architecture.md` did not settle a decision it needs | Add the decision to the plan with `/architect`, then resume |
 | Every wave has a single package | The architect chose real layers | Ask for "contracts first" |
 | `python3: command not found` or `Python was not found` (Windows) | There is no `python3` command, or it is the Store shortcut | See [Windows](#windows), or work inside WSL |
 | `No module named 'fcntl'` (Windows) | A flow older than 1.1.1 | Upgrade the flow (`/agentic-flow:init` or `agentic.py install`) |
@@ -293,7 +295,7 @@ python3 -m unittest discover -s bench -p "test_*.py"
 python3 -m unittest discover -s bench/acceptance
 ```
 
-295 Python tests, 39 workflow scenarios with simulated agents and 42 tests of the measurement bench, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+311 Python tests, 39 workflow scenarios with simulated agents and 42 tests of the measurement bench, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 

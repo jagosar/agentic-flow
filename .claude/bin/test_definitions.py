@@ -180,6 +180,23 @@ class AgentDefinitionTests(unittest.TestCase):
         for phrase in ("Needs validation", "not_checked"):
             self.assertIn(phrase, doc)
 
+    def test_implementer_has_four_statuses_and_knows_the_gate(self):
+        body = (AGENTS_DIR / "implementer.md").read_text(encoding="utf-8")
+        self.assertIn("# Statuses", body)
+        for status in ("`DONE`", "`DONE_WITH_CONCERNS`", "`NEEDS_CONTEXT`", "`BLOCKED`"):
+            self.assertIn(status, body)
+        self.assertNotRegex(body, r"\bBLOCKER\b", "BLOCKER is no longer an implementer status")
+        for phrase in ("# The gate", "twice at most", "never retry the same approach"):
+            self.assertIn(phrase, body)
+        report = body[body.index("# Report"):]
+        for field in ("`concerns`", "`missing_context`", "`blocker`"):
+            self.assertIn(field, report)
+
+    def test_implement_presents_concerns_and_gate_denials(self):
+        doc = (COMMANDS_DIR / "implement.md").read_text(encoding="utf-8")
+        for phrase in ("`concern`", "`gate_denials`", "DONE_WITH_CONCERNS"):
+            self.assertIn(phrase, doc)
+
     def test_gatekeeper_only_agentic(self):
         body = (AGENTS_DIR / "gatekeeper.md").read_text(encoding="utf-8")
         self.assertIn("python3 .claude/bin/agentic.py", body)

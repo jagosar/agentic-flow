@@ -77,6 +77,12 @@ CLAIMS = STATE / "claims.json"
 LEDGER_JSON = STATE / "ledger.json"
 LEDGER_MD = STATE / "ledger.md"
 LEDGER_STATES = ("running", "done", "blocker", "pass", "fail", "timeout", "stopped", "error")
+GATE = STATE / "gate.json"
+GATE_MAX_DENIALS = 2  # per WP and stage; afterwards the report is let through
+GATE_MAX_LINES = 40  # lines shown to the agent in a denial
+GATE_TIMEOUT_S = 840  # below the hook's 900 s, so the gate times out before the CLI kills the hook
+GATE_STATUSES = ("DONE", "DONE_WITH_CONCERNS")
+WP_ID_RE = re.compile(r"WP-\d+")
 CONFIG = ROOT / ".claude" / "agentic.json"
 BASE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"]
 QA_DEFAULT_FILES = ["qa/"]
@@ -365,7 +371,7 @@ def validate(manifest):
         if wp["id"] in seen:
             errors.append(f"{wp['id']}: duplicate ID.")
         seen.add(wp["id"])
-        if not re.fullmatch(r"WP-\d+", wp["id"]):
+        if not WP_ID_RE.fullmatch(wp["id"]):
             errors.append(f"{wp['id']}: the ID must look like WP-<number>.")
         for key in ("wave", "files"):
             if key not in wp:
@@ -1061,10 +1067,20 @@ def merge_settings(dst, src):
                 added.append(f"{key} {rule}")
     hooks = data.setdefault("hooks", {})
     pre = hooks.setdefault("PreToolUse", [])
-    if not any("agentic.py" in h.get("command", "") and h.get("command", "").rstrip().endswith("hook")
-               for e in pre for h in e.get("hooks", [])):
+    ours = [(e, h) for e in pre for h in e.get("hooks", [])
+            if "agentic.py" in h.get("command", "") and h.get("command", "").rstrip().endswith("hook")]
+    if not ours:
         pre.extend(src["hooks"]["PreToolUse"])
         added.append("hook PreToolUse")
+    else:
+        # 2.1: the stop gate needs the report tool in the matcher and time to run the acceptance command. The project's
+        # matcher is extended, never replaced (it may have been trimmed on purpose).
+        source_hook = src["hooks"]["PreToolUse"][0]["hooks"][0]
+        for entry, hook_ in ours:
+            if "StructuredOutput" not in entry.get("matcher", ""):
+                entry["matcher"] = (entry.get("matcher", "").rstrip("|") + "|StructuredOutput").lstrip("|")
+                hook_.setdefault("timeout", source_hook.get("timeout", 900))
+                added.append("hook PreToolUse (StructuredOutput)")
     # The other events (the waiting notice): each of the flow's entries once, next to the project's own.
     for event, entries in src.get("hooks", {}).items():
         if event == "PreToolUse":
@@ -1459,6 +1475,7 @@ def stage_label(arg):
 def open_stage(manifest, label):
     owners = sorted(o["id"] for o in stage_owners(manifest, label))
     if owners:
+        gate_reset(owners)
         with open(os.devnull, "w", encoding="utf-8") as quiet:  # the snapshot must not pollute the JSON output
             old, sys.stdout = sys.stdout, quiet
             try:
@@ -1500,6 +1517,10 @@ def close_stage(manifest, label, items):
         acc_ok, verdict = acceptance_check(manifest, expect, quiet=True)
         print(f"ACCEPTANCE ({expect}): {verdict}")
         ok = ok and acc_ok
+    wp_marks = [jid for jid, _ in marks if WP_ID_RE.fullmatch(jid)]
+    if wp_marks:  # the stop gate's denials, for the engines' run record
+        denials = gate_denials(lambda d: None)
+        print("GATE: " + " ".join(f"{jid}={denials.get(jid, {}).get('denials', 0)}" for jid in wp_marks))
     ledger_stage(label, "OK" if ok else "REVIEW")
     print("RESULT:", "OK" if ok else "REVIEW")
     sys.exit(0 if ok else 3)
@@ -1662,7 +1683,8 @@ def finish(manifest, label, statuses, expected):
     print(f"\nSTAGE {label} SUMMARY")
     for jid, st in statuses.items():
         print(f"  {jid}: {st}   report: .claude/state/runs/{jid}.json")
-    ok = ownership_ok and all(s == expected for s in statuses.values())
+    # By ledger state, not by text: DONE_WITH_CONCERNS is as finished as DONE.
+    ok = ownership_ok and all(status_to_state(s) == status_to_state(expected) for s in statuses.values())
     ledger_stage(label, "OK" if ok else "REVIEW")
     print("RESULT:", "OK" if ok else "REVIEW")
     sys.exit(0 if ok else 3)
@@ -1694,6 +1716,62 @@ def with_claims(fn):
     return locked_json(CLAIMS, fn)
 
 
+# ---------- the stop gate ----------
+
+def gate_denials(fn):
+    return locked_json(GATE, fn)
+
+
+def gate_reset(owners):
+    """Drops the gate counters of those packages: a stage that opens gets its own denials."""
+    def drop(data):
+        return {k: v for k, v in data.items() if k not in owners}
+    gate_denials(drop)
+
+
+def own_failure(manifest, owner_id, lines):
+    """The lines of a failing acceptance run that are the package's own: its files mentioned, or a criterion only it
+    owns. A criterion shared with another package, or another package's failure, is nobody's reason to stop."""
+    found = attribute(manifest, lines).get(owner_id)
+    if not found:
+        return []
+    others = {a for wid, wp in wps(manifest).items() if wid != owner_id for a in wp.get("acs", [])}
+    alone = [a for a in found["acs"] if a not in others]
+    if not found["files"] and not alone:
+        return []
+    text = "\n".join(lines).replace("\\", "/").replace(ROOT.as_posix() + "/", "")
+    markers = found["files"] + alone
+    own = [line for line in text.splitlines() if any(m in line for m in markers)]
+    return own or lines[-3:]
+
+
+def gate_check(owner_id, status):
+    """The stop gate. None lets the report through; a list of lines refuses it (the agent reads them and goes on).
+    Lets through when the report is not finished, there is no acceptance command, the package used up its denials,
+    the command cannot run or times out, it passes, or the failure is not the package's own. Fails open on its own
+    errors: a gate that refused every report would stall a run with no cap."""
+    if not isinstance(status, str) or status not in GATE_STATUSES:
+        return None
+    try:
+        manifest = load_manifest()
+        cmd = at_entity(manifest)["command"]
+        if not cmd or gate_denials(lambda d: None).get(owner_id, {}).get("denials", 0) >= GATE_MAX_DENIALS:
+            return None
+        lines = []
+        code, _ = run_command(cmd, timeout=GATE_TIMEOUT_S, scan=lines)
+        if code == 0 or code in (124, 126, 127):
+            return None
+        own = own_failure(manifest, owner_id, lines)
+        if not own:
+            return None
+        shown = [normal_failure(line) for line in own][:GATE_MAX_LINES]
+        gate_denials(lambda d: {**d, owner_id: {"denials": d.get(owner_id, {}).get("denials", 0) + 1, "last": shown}})
+        return shown
+    except (ManifestError, OSError, ValueError) as e:
+        print(f"[agentic guard] gate skipped: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
 # ---------- ledger ----------
 
 def now_hm():
@@ -1722,8 +1800,8 @@ def ledger_stage(label, result):
 
 def status_to_state(status):
     head = status.split()[0] if status else ""
-    return {"DONE": "done", "BLOCKER": "blocker", "PASS": "pass", "FAIL": "fail",
-            "TIMEOUT": "timeout", "STOPPED": "stopped"}.get(head, "error")
+    return {"DONE": "done", "DONE_WITH_CONCERNS": "done", "NEEDS_CONTEXT": "blocker", "BLOCKED": "blocker",
+            "BLOCKER": "blocker", "PASS": "pass", "FAIL": "fail", "TIMEOUT": "timeout", "STOPPED": "stopped"}.get(head, "error")
 
 
 def stage_of(jid):
@@ -1903,7 +1981,8 @@ def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
                   "Use a synthetic value or an environment variable; never a real secret.")
     if PROTECTED_CONFIG_RE.match(Path(rel).name) and abs_path.exists() and not ent.get("config_edit"):
         block(f"{owner_id}: {rel} is existing quality configuration. A rule is not relaxed to pass "
-              "a check: fix the code. If it really has to change, return BLOCKER.")
+              "a check: fix the code. If it really has to change, return the blocked status your schema allows "
+              "(BLOCKED for an implementer, BLOCKER for the others).")
     if TEST_PATH_RE.search(rel):
         if old is None:
             try:
@@ -1912,7 +1991,8 @@ def content_checks(owner_id, ent, rel, abs_path, tool, tinput):
                 old = ""
         if len(SKIP_MARKER_RE.findall(new)) > len(SKIP_MARKER_RE.findall(old)):
             block(f"{owner_id}: tests are not disabled to turn them green (skip, xfail, only…) in {rel}. "
-                  "A failing test is fixed or reported: return BLOCKER. "
+                  "A failing test is fixed or reported: return the blocked status your schema allows (BLOCKED for an "
+                  "implementer, BLOCKER for the others). "
                   "Conditional platform skips (skipIf/skipUnless) are allowed.")
 
 
@@ -1947,6 +2027,19 @@ def guard(data):
 
     if not owner_id and agent_id:
         owner_id = with_claims(lambda c: None).get(agent_id)
+    if tool == "StructuredOutput":
+        # The report itself. A finished package is checked by the stop gate; a report is never refused for a missing claim.
+        if owner_id and WP_ID_RE.fullmatch(owner_id):
+            failing = gate_check(owner_id, tinput.get("status"))
+            if failing:
+                denials = gate_denials(lambda d: None).get(owner_id, {}).get("denials", 0)
+                cmd = at_entity(load_manifest())["command"]
+                block(f"{owner_id}: the report says {tinput.get('status')} but the acceptance tests of your package fail "
+                      f"(denial {denials} of {GATE_MAX_DENIALS}). Failing lines:\n  " + "\n  ".join(failing)
+                      + f"\nRun `{cmd}`, fix your files and submit the report again. If a test contradicts "
+                      "architecture.md, return BLOCKED and say which.")
+        return
+    if not owner_id and agent_id:
         if not owner_id and data.get("agent_type") in claim_required_types():
             block("First of all, run `python3 .claude/bin/agentic.py claim <ID>` with your WP-ID (or QA, AT, REVIEW, DOCS).")
     if not owner_id:
@@ -1975,10 +2068,12 @@ def guard(data):
     # code map, even if its zone includes them by prefix (for example, "docs/").
     if rel == "architecture.md" or rel.startswith((".claude/", ARCHIVE_DIR)) or rel == codemap_path(manifest):
         block(f"{owner_id}: {rel} is not written by any agent of the flow (plan, configuration, decision archive "
-              "or generated map). If it has to change, return BLOCKER.")
+              "or generated map). If it has to change, return the blocked status your schema allows (BLOCKED for an "
+              "implementer, BLOCKER for the others).")
     if not any(owns(f, rel) for f in ent["files"]):
         block(f"{owner_id} does not own {rel}. Allowed files: {', '.join(ent['files'])}. "
-              "If you need to touch it, return BLOCKER (or, if you are QA, report it as a defect).")
+              "If you need to touch it, return the blocked status your schema allows (BLOCKED for an implementer, "
+              "BLOCKER for the others; QA reports it as a defect).")
     content_checks(owner_id, ent, rel, abs_path, tool, tinput)
 
 

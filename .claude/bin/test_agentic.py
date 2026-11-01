@@ -19,6 +19,7 @@ from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parent / "agentic.py"
 sys.path.insert(0, str(SCRIPT.parent))
+import agentic  # noqa: E402
 import testutil  # noqa: E402
 
 # The manifests' commands run this interpreter: on Windows `python3` may be missing or the Store stub.
@@ -70,6 +71,16 @@ def write_payload(path, agent_id=None, tool="Write"):
     data = {"tool_name": tool, "tool_input": {"file_path": path}}
     if agent_id:
         data.update(agent_id=agent_id, agent_type="implementer")
+    return data
+
+
+def report_payload(status, wp="WP-01", agent_id=None, agent_type="implementer"):
+    """What the hook sees when an agent submits its report with StructuredOutput: the report is the tool input."""
+    data = {"tool_name": "StructuredOutput", "agent_type": agent_type,
+            "tool_input": {"status": status, "wp": wp, "files": [], "checks": [], "internal_decisions": [],
+                           "blocker": None, "not_checked": [], "concerns": [], "missing_context": None}}
+    if agent_id:
+        data["agent_id"] = agent_id
     return data
 
 
@@ -794,6 +805,68 @@ class CustomAgentTests(Base):
         self.repo.hook(dict(bash_payload("python3 .claude/bin/agentic.py claim WP-01", agent_id="x1"),
                             agent_type="implementer-rapido"))
         self.assertEqual(self.repo.hook(payload), 0)
+
+
+class StopGateTests(Base):
+    """The stop gate: a finished report is refused while the package's own acceptance tests fail, twice at most."""
+    manifest = dict(MANIFEST, work_packages=[
+        {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/a.py", "tests/test_a.py"], "acs": ["AC-001"]},
+        {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["src/b/"], "acs": ["AC-002"]},
+    ])
+
+    def suite(self, lines=("FAILED acceptance/test_x.py::test_ac_001_x - assert",), code=1):
+        body = "".join(f"print({line!r})\n" for line in lines)
+        self.repo.write("acc.py", f"import sys\nopen('ran', 'w').close()\n{body}sys.exit({code})\n")
+
+    def ran(self):
+        marker = self.repo.dir / "ran"
+        if not marker.exists():
+            return False
+        marker.unlink()
+        return True
+
+    def test_the_gate_refuses_a_finished_report_and_counts_it(self):
+        self.suite()
+        for status in ("DONE", "DONE_WITH_CONCERNS"):
+            with self.subTest(status=status):
+                r = self.repo.run("hook", stdin=json.dumps(report_payload(status)), env={"AGENTIC_WP": "WP-01"})
+                self.assertEqual(r.returncode, 2, r.stderr)
+                self.assertIn("test_ac_001_x", r.stderr)
+                self.assertTrue(self.ran())
+        self.assertEqual(json.loads((self.repo.dir / ".claude/state/gate.json").read_text(encoding="utf-8"))["WP-01"]["denials"], 2)
+
+    def test_only_finished_implementer_reports_are_gated(self):
+        self.suite()
+        cases = {
+            "a blocked report": (report_payload("BLOCKED"), {"AGENTIC_WP": "WP-01"}),
+            "a malformed status": (dict(report_payload("DONE"), tool_input={"status": 7}), {"AGENTIC_WP": "WP-01"}),
+            "QA's report": (report_payload("PASS", wp="QA", agent_type="qa"), {"AGENTIC_WP": "QA"}),
+            "a reviewer that never claimed (native mode)": (report_payload("PASS", agent_id="r1", agent_type="reviewer"), None),
+        }
+        for name, (payload, env) in cases.items():
+            with self.subTest(case=name):
+                r = self.repo.run("hook", stdin=json.dumps(payload), env=env)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertFalse(self.ran(), "the acceptance command must not run")
+
+    def test_the_gate_lets_through_what_it_cannot_judge(self):
+        # Another package's failure, a command that cannot run, no acceptance command, a corrupt counter file.
+        self.suite(("FAILED acceptance/test_y.py::test_ac_002_y",))
+        self.assertEqual(self.repo.hook(report_payload("DONE"), "WP-01"), 0)
+        self.repo.write("acc.py", "import sys\nsys.exit(127)\n")
+        self.assertEqual(self.repo.hook(report_payload("DONE"), "WP-01"), 0)
+        self.suite()
+        self.repo.write(".claude/state/gate.json", "{not json")
+        r = self.repo.run("hook", stdin=json.dumps(report_payload("DONE")), env={"AGENTIC_WP": "WP-01"})
+        self.assertEqual(r.returncode, 2, "a corrupt counter is set aside and the gate still works")
+        without = json.dumps(dict(self.manifest, acceptance={"files": ["acceptance/"]}))
+        (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{without}\n```", encoding="utf-8")
+        self.assertEqual(self.repo.hook(report_payload("DONE"), "WP-01"), 0)
+
+    def test_status_to_state_maps_the_four_statuses(self):
+        for status, state in (("DONE", "done"), ("DONE_WITH_CONCERNS", "done"), ("NEEDS_CONTEXT", "blocker"),
+                              ("BLOCKED", "blocker"), ("BLOCKER", "blocker"), ("NO REPORT", "error")):
+            self.assertEqual(agentic.status_to_state(status), state, status)
 
 
 class LivingDocsTests(Base):

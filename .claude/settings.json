@@ -13,11 +13,12 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|StructuredOutput",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py\" hook"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py\" hook",
+            "timeout": 900
           }
         ]
       }

@@ -23,6 +23,7 @@ async function simulate(scenario = {}, args = {}) {
   let reviewRound = 0
   let qaRound = 0
   let auditRound = 0
+  const implCalls = {}
   const respond = cmd => {
     executed.push(cmd)
     const forced = scenario.gate && scenario.gate(cmd)
@@ -62,8 +63,12 @@ async function simulate(scenario = {}, args = {}) {
         return scenario.audit ? scenario.audit(auditRound) : { status: 'PASS', findings: [] }
       case 'implementer': {
         const wp = opts.label.split(' ')[0]
-        const base = { status: 'DONE', wp, files: [], checks: [], internal_decisions: [], blocker: null }
-        const extra = scenario.reports && scenario.reports.implementer && scenario.reports.implementer[wp]
+        const base = { status: 'DONE', wp, files: [], checks: [], internal_decisions: [], blocker: null, not_checked: [], concerns: [], missing_context: null }
+        let extra = scenario.reports && scenario.reports.implementer && scenario.reports.implementer[wp]
+        if (Array.isArray(extra)) {  // one override per call of that package: the first, then the last
+          implCalls[wp] = (implCalls[wp] || 0) + 1
+          extra = pickRound(extra, implCalls[wp])
+        }
         return extra ? { ...base, ...extra } : base
       }
       case 'reviewer': {
@@ -484,14 +489,16 @@ const summarize = ({ result, calls, gates, gateCalls }) => {
     result: result.result, failed_stage: result.failed_stage ?? null, detail: result.detail ?? null, fix_cycles: result.fix_cycles,
     pending: (result.pending || []).map(p => p.type).sort(), gates, gate_calls: gateCalls, agents: agents.sort(), prompts,
     not_checked: (result.not_checked || []).map(e => `${e.agent}:${e.label}`).sort(),
+    gate_denials: result.gate_denials || {},
   }
 }
 if (process.argv.includes('--dump')) {
   const out = {}
   for (const d of conformance.scenarios) out[d.name] = summarize(await simulate(fromDecl(d), d.args || {}))
-  console.log(JSON.stringify(out))
-  process.exit(0)
-}
+  // No process.exit: past 64 KB a pipe would be cut before stdout drains; the process ends when the write is done.
+  process.stdout.write(JSON.stringify(out) + '\n')
+} else {
+
 
 test('the schemas of the workflow are the ones in pipeline-spec.json', async () => {
   const { schemas } = await simulate({ plan: { docs: true, codemap: 'docs/CODEMAP.md' } })
@@ -527,6 +534,16 @@ test('every conformance scenario ends as described in its name', async () => {
   const needs = await run1('needs validation goes to pending and does not block')
   assert.deepEqual([needs.result, needs.pending], ['OK', ['needs validation', 'needs validation']])
   assert.deepEqual((await run1('not_checked is collected from every report')).not_checked, ['implementer:WP-02', 'reviewer:reviewer'])
+  assert.deepEqual((await run1('gate denials are summed from close-stage')).gate_denials, { 'WP-01': 1 })
+  const concerns = await run1('concerns go to pending and to the reviewer')
+  assert.deepEqual([concerns.result, concerns.pending], ['OK', ['concern']])
+  assert.ok(concerns.prompts['reviewer:reviewer#1'].includes('may spin'))
+  const ctxOnce = await run1('needs context is re-dispatched once with the whole document')
+  assert.deepEqual([ctxOnce.result, ctxOnce.agents.filter(a => a === 'implementer:WP-02 (context)').length], ['OK', 1])
+  const twice = await run1('needs context twice is a blocker')
+  assert.deepEqual([twice.result, twice.failed_stage, twice.agents.filter(a => a === 'implementer:WP-02 (context)').length], ['REVIEW', 'wave 1', 1])
+  const inFix = await run1('needs context in a fix wave is a blocker')
+  assert.deepEqual([inFix.result, inFix.failed_stage, inFix.agents.filter(a => a.includes('(context)')).length], ['REVIEW', 'fix wave 1', 0])
   const odd = await run1('a finding on an unknown package named like a built-in goes to no WP')
   assert.deepEqual([odd.result, odd.pending], ['REVIEW', ['no WP']])
   const asText = await run1('start_wave given as text works like a number')
@@ -554,3 +571,4 @@ for (const { name, fn } of tests) {
 }
 console.log(`\n${tests.length - failed}/${tests.length} scenarios OK`)
 process.exit(failed ? 1 : 0)
+}

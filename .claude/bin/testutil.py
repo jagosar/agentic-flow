@@ -41,6 +41,8 @@ def claude_command(fake_py) -> str:
 #   FAKE_MODE    "structured" (default, with token usage), "nousage", or "text" (the old STATUS: format)
 #   FAKE_REVIEW_FINDING / FAKE_QA_DEFECT  a WP: the reviewer / QA reports one high defect on it, on its first call only
 #   FAKE_NEEDS_VALIDATION  a WP: the reviewer adds one needs_validation item on it;  FAKE_NOT_CHECKED  every report
+#   FAKE_CONCERNS  implementers answer DONE_WITH_CONCERNS with one concern;  FAKE_NEEDS_CONTEXT  a WP: it answers
+#   NEEDS_CONTEXT on its first call only
 #   whose schema requires not_checked says ["nothing else"]
 FAKE_CLAUDE = """\
 import json, os, sys, time
@@ -74,7 +76,13 @@ if agent == "implementer" and os.environ.get("FAKE_WRITE"):
         write("other.py")
 judges = ("qa", "reviewer", "test-auditor")
 values = {"status": os.environ.get("FAKE_STATUS", "PASS" if agent in judges else "DONE"), "wp": ident, "blocker": None,
-          "coverage": [{"ac": "AC-001", "tests": ["t"]}]}
+          "coverage": [{"ac": "AC-001", "tests": ["t"]}], "concerns": [], "missing_context": None}
+if agent == "implementer" and os.environ.get("FAKE_CONCERNS"):
+    values.update(status="DONE_WITH_CONCERNS", concerns=[f"the retry loop in src/{ident}.py may spin"])
+context_marker = os.path.join(os.environ["FAKE_LOG_DIR"], "FAKE_NEEDS_CONTEXT")
+if agent == "implementer" and os.environ.get("FAKE_NEEDS_CONTEXT") == ident and not os.path.exists(context_marker):
+    open(context_marker, "w").close()
+    values.update(status="NEEDS_CONTEXT", missing_context={"what": "the error type of the contract", "section": "6"})
 once = {"reviewer": "FAKE_REVIEW_FINDING", "qa": "FAKE_QA_DEFECT"}.get(agent)
 first = once and os.environ.get(once) and not os.path.exists(os.path.join(os.environ["FAKE_LOG_DIR"], once))
 if first:

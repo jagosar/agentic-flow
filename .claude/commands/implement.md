@@ -60,8 +60,10 @@ Then present it like this:
 - **Pending (`pending`):** each item with its type.
   - **Design:** goes to `/architect`.
   - **Needs validation** (items of type `needs validation`): each item's claim, the fact to check and how; the person checks it, it never blocks.
+  - **Concerns** (items of type `concern`): doubts an implementer raised about its own code (`DONE_WITH_CONCERNS`), per WP; the reviewer already weighed them, so say whether each became a finding.
   - **Fix limit reached (per WP), or no WP:** the user decides.
 - **Not checked (`not_checked`):** per agent, what it did not check or skipped, plus QA's `gaps` and the doc-updater's `unverified`.
+- **Gate denials (`gate_denials`):** per WP, how many times the stop gate refused a finished report because its acceptance tests failed. A package with denials and no later fix cycle is a good sign; one at the cap of two deserves a look at its tests.
 
 If `result` is `OK`, propose the commit messages (one per logical block, in the format of section 7) and **wait for the user's approval**. Do not commit or push without it.
 

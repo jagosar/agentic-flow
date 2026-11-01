@@ -83,6 +83,13 @@ class NotesTests(unittest.TestCase):
             self.assertIn(word, notes)
         self.assertEqual(upgrade.notes_between("1.1.4", "1.1.4"), [])
 
+    def test_the_2_1_notes_name_the_gate_and_the_statuses(self):
+        notes = " ".join(upgrade.notes_between("2.0.0", "2.1.0"))
+        for word in ("gate", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED", "settings.json", "StructuredOutput", "customised"):
+            self.assertIn(word, notes)
+        self.assertEqual(upgrade.notes_between("2.0.0", "2.0.0"), [])
+        self.assertEqual(len(upgrade.NOTES["2.0.0"]), 7, "the 2.0.0 notes are frozen")
+
 
 class GuardTests(unittest.TestCase):
     def setUp(self):
