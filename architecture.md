@@ -2,11 +2,11 @@
 Type: feature · Size: standard
 
 ## 1. Goal
-Roadmap item 3.1 (`docs/roadmap/repo-review-2026-11.md:49`). The reviewer reads the integrated diff and, by its own rule, reports no problems in code that was not touched; a change that breaks an untouched caller therefore slips through. A new deterministic step, `agentic.py callers`, lists the callers of every public symbol defined in a changed file: for each symbol, the lines of tracked code files outside the diff that use it as a whole word, tests included. The list joins the gatekeeper call that already runs `verify + open-stage review`, both engines render it into the reviewer's prompt, and `reviewer.md` says that a change which breaks one of those callers is a finding on the package that owns the change. The reviewer prompt and the engines change, so projects upgrade: version 2.2.0 with notes.
+Roadmap item 3.1 (`docs/roadmap/repo-review-2026-11.md:49`). The reviewer reads the integrated diff and, by its own rule, reports no problems in code that was not touched; a change that breaks an untouched caller therefore slips through. A new deterministic step, the `callers` command, lists the callers of every public symbol defined in a changed file: for each symbol, the lines of tracked code files outside the diff that use it as a whole word, tests included. The list joins the gatekeeper call that already runs `verify + open-stage review`, both engines render it into the reviewer's prompt, and `reviewer.md` says that a change which breaks one of those callers is a finding on the package that owns the change. The reviewer prompt and the engines change, so projects upgrade: version 2.2.0 with notes.
 
 ## 2. Scope
 ### Included
-- `agentic.py callers`: changed files (`git diff --name-only HEAD` plus untracked files), their public symbols (the codemap's `SYMBOL_RES`), the word-boundary matches in code files outside the diff, caps and a `truncated` flag, one JSON line; in `SEQ_COMMANDS`.
+- the `callers` command: changed files (`git diff --name-only HEAD` plus untracked files), their public symbols (the codemap's `SYMBOL_RES`), the word-boundary matches in code files outside the diff, caps and a `truncated` flag, one JSON line; in `SEQ_COMMANDS`.
 - Both engines: `WAVE_TAIL` gains `callers`; its JSON is rendered into the reviewer prompt; a missing or failed step renders nothing. Conformance scenario and the Node assertions that pin the gate sequence.
 - `reviewer.md`: the callers list in the process and in the false-positive rule; definition tests.
 - `plugin.json` 2.2.0, `NOTES["2.2.0"]`, the version pins, roadmap item 3.1 marked shipped; acceptance tests in `.claude/bin/test_acceptance_v22.py`.
@@ -20,7 +20,7 @@ Roadmap item 3.1 (`docs/roadmap/repo-review-2026-11.md:49`). The reviewer reads 
 Python 3.9+ standard library (`agentic.py`, `pipeline.py`, tests with `unittest`, no type annotations in `agentic.py`); Node 22 for the native workflow and its scenario runner. No new dependency.
 - Build: `python3 -m compileall -q .claude/bin`
 - Lint (the conformance scenarios, both engines must agree): `node .claude/bin/test_workflow.mjs`
-- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"` (about 90 s)
+- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"` (about 90 s). The bench and QA suites (`bench/`, `qa/`) are outside this plan's verify: nothing here touches them except the version, and `bench/acceptance/test_acceptance_bench.py` reads `plugin.json` without pinning its value (checked: no `"2.1.0"` literal there).
 - Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_v22.py`
 
 ## 4. Repository structure
@@ -67,7 +67,7 @@ README.md, docs/how-it-works.md, docs/how-to/   docs (doc-updater)
 **What must NOT change:** the hook, `close-stage`, the other agents' prompts and schemas, the gatekeeper call count (the new step joins an existing call), `SCHEMA` of the results and the bench.
 
 ## 5. Data model
-The JSON line `agentic.py callers` prints (exit 0 always):
+The JSON line the `callers` command prints (exit 0 always):
 ```json
 {"changed": ["src/money.py", "src/new.py"],
  "symbols": {"src/money.py": ["parse_amount", "split"], "src/new.py": ["Thing"]},
@@ -87,7 +87,7 @@ CALLERS_MAX = 80
 CALLER_TEXT_MAX = 160
 CALLER_RE_TEMPLATE = r"(?<![\w$])%s(?![\w$])"   # the symbol as a whole word; $ for JS identifiers
 
-def changed_code_files():      # sorted list of section 5's "changed" (git diff --name-only -z HEAD + git ls-files --others --exclude-standard -z, SKIP_DIRS filtered)
+def changed_code_files():      # sorted list of section 5's "changed" (git diff --name-only --relative -z HEAD + git ls-files --others --exclude-standard -z, both cwd=ROOT so a ROOT inside a bigger repo still works; SKIP_DIRS filtered)
 def file_symbols(rel):         # the codemap's public symbols of one file, in order; [] for a non-code file
 def find_callers(changed, symbols):   # section 5's "callers" and "truncated", as (list, bool), over source_files() minus changed; one alternation regex per file, tried only on files whose text contains some symbol as plain text
 def callers():                 # prints the JSON line of section 5 and exits 0
@@ -98,7 +98,7 @@ Engines (WP-02): `WAVE_TAIL = ['verify', 'open-stage review', 'callers']` in bot
 ```
 \nCallers, outside the diff, of the public symbols this change defines or modifies (the reviewer must read them), as JSON:\n<compact JSON of the "callers" list>\nA change that breaks one of them is a finding on the package that owns the changed symbol, even though the caller's file was not touched.<" The list is truncated." when truncated is true>
 ```
-The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `run["review"]` gains `"callers": <count or 0>` (both engines) so the run record says how many callers the reviewer was given.
+The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `run["review"]` gains `"callers": <count or 0>` (both engines) so the run record says how many callers the reviewer was given; the conformance summaries gain a `review_callers` key (the count) so the engines are compared on it.
 
 `.claude/agents/reviewer.md` (WP-03): process step 2 becomes "Review the integrated diff (`git diff`, `git status`), each WP's files, and **the callers your prompt lists**: the lines outside the diff that use a changed public symbol. Read each one and check that the change keeps it working." The false-positive exception becomes "nor problems in code that was not touched, unless they are critical security issues or **a caller your prompt lists that the change breaks**: that one is a finding on the package that owns the change."
 
@@ -112,15 +112,15 @@ The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `r
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
 - AC-001 · The callers of a changed symbol are listed, from tracked code outside the diff
-  - Scenario: a `Repo` with `src/money.py` (`def split(cents, parts):` and `def parse_amount(text):`), `src/ledger.py` (line 3 `shares = split(100, 3)`, line 4 `total = parse_amount("1")`), `tests/test_ledger.py` (line 2 `from src.money import split`, line 5 `assert split(1, 1) == [1]`), `notes.md` mentioning `split`, everything committed with `git add -A` (the `.claude/` copies the `Repo` helper makes included); then `src/money.py` modified (a new line inside `split`).
-  - Action: `agentic.py callers`.
+  - Scenario: a `Repo` with `src/money.py` (`def split(cents, parts):` and `def parse_amount(text):`), `src/ledger.py` (line 3 `shares = split(100, 3)`, line 4 `total = parse_amount("1")`, line 5 `splitter = my_split(1)`), `tests/test_ledger.py` (line 2 `from src.money import split`, line 5 `assert split(1, 1) == [1]`), `notes.md` mentioning `split`, everything committed with `git add -A` (the `.claude/` copies the `Repo` helper makes included); then `src/money.py` modified (a new line inside `split`).
+  - Action: the `callers` command.
   - Expected: exit 0; the JSON's `changed == ["src/money.py"]`; `symbols == {"src/money.py": ["split", "parse_amount"]}`; `callers` holds, in this order, `src/ledger.py:3` and `tests/test_ledger.py:2` and `:5` for `split`, then `src/ledger.py:4` for `parse_amount`; each item has `symbol`, `defined_in`, `file`, `line`, `text`; `truncated` is `false`.
   - Must not: list `notes.md` (no `symbol_re`); list any line of `src/money.py` itself; match `splitter` or `my_split` (whole word only).
   - Check: `test_acceptance_v22.py::CallersTests::test_ac_001_callers_outside_the_diff`
   - WP: WP-01
 - AC-002 · New files count as changed, caps truncate, and no repo is no failure
-  - Scenario: the same repo with an untracked `src/new.py` defining `class Thing:` used once in `src/ledger.py`; a second repo where a committed `src/a.py` defines `def f():` and `def g():`, a tracked `src/b.py` calls `f()` on 12 lines, and a tracked `src/c.py` calls `g()` on 75 lines, then `src/a.py` is modified; a third directory with files but no git repo.
-  - Action: `agentic.py callers` in each.
+  - Scenario: the same repo with an untracked `src/new.py` defining `class Thing:` used once in `src/ledger.py`; a second repo where a committed `src/a.py` defines `def f():` and `def g():`, a tracked `src/b.py` calls `f()` on 12 lines, and a tracked `src/c.py` calls `g()` on 75 lines, then `src/a.py` is modified; a third directory with files but no git repo (run with `GIT_CEILING_DIRECTORIES` set to its parent, so a repo above the temp dir cannot be found).
+  - Action: the `callers` command in each.
   - Expected: first: `src/new.py` in `changed`, `Thing` in `symbols`, its caller listed; second: exactly 10 callers for `f`, 70 for `g` (the total cap of 80), `truncated == true`; third: exit 0 with `changed == []`, `callers == []`.
   - Must not: exit non-zero in any of the three; list `.claude/state/` files.
   - Check: `test_acceptance_v22.py::CallersTests::test_ac_002_new_files_caps_and_no_repo`
@@ -128,7 +128,7 @@ The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `r
 - AC-003 · The step joins the review call and reaches the reviewer in both engines
   - Scenario: two conformance scenarios: `callers reach the reviewer`, whose `gate_fail` answers `callers` with `exit_code` 0 and the JSON of section 5 holding one caller `{"symbol": "split", "defined_in": "src/a.py", "file": "src/b/x.py", "line": 7, "text": "split(1, 2)"}`; and `callers that are not JSON are ignored`, whose `gate_fail` answers `callers` with `exit_code` 0 and output `not json`.
   - Action: both conformance runners, through their summaries (`run_scenario` and the `--dump`).
-  - Expected: in both engines: the first scenario's `gates` has `callers` right after `open-stage review` and its reviewer prompt (`prompts["reviewer:reviewer#1"]`) contains `src/b/x.py`, `"line":7` and `the package that owns the changed symbol`; the second scenario's reviewer prompt equals the happy path's (`a happy path...` scenario), which contains none of those; the happy path's `gate_calls` is still 10 and its `gates` list `verify`, `open-stage review`, `callers` consecutively.
+  - Expected: in both engines: the first scenario's `gates` has `callers` right after `open-stage review` and its reviewer prompt (`prompts["reviewer:reviewer#1"]`) contains `src/b/x.py`, `"line":7` and `the package that owns the changed symbol`; the second scenario's reviewer prompt equals the happy path's (`a happy path...` scenario), which contains none of those; the happy path's `gate_calls` is still 10 and its `gates` list `verify`, `open-stage review`, `callers` consecutively; the summaries' `review_callers` is 1 in the first scenario and 0 in the other two, in both engines.
   - Must not: a second gatekeeper call for `callers`; a reviewer prompt that mentions callers when the step returned none or garbage.
   - Check: `test_acceptance_v22.py::EngineTests::test_ac_003_callers_in_the_review_call_and_prompt`
   - WP: WP-02
@@ -142,7 +142,7 @@ The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `r
 - AC-005 · Version and notes
   - Scenario: the merged repo.
   - Action: read `plugin.json`, `upgrade.NOTES`, the roadmap.
-  - Expected: version `2.2.0`; `NOTES["2.2.0"]` has at least two strings mentioning `callers` and `reviewer`; `NOTES["2.1.0"]` has 4 strings and `NOTES["2.0.0"]` 7; roadmap item 3.1 contains `Shipped in 2.2.0`.
+  - Expected: version `2.2.0`; `NOTES["2.2.0"]` has at least two strings and their concatenation mentions `callers`, `reviewer` and `install`; `NOTES["2.1.0"]` has 4 strings and `NOTES["2.0.0"]` 7; roadmap item 3.1 contains `Shipped in 2.2.0`.
   - Must not: change the older notes.
   - Check: `test_acceptance_v22.py::ReleaseTests::test_ac_005_version_and_notes`
   - WP: WP-04
@@ -151,10 +151,10 @@ The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `r
 #### WP-01 · The callers command
 - Wave 1.
 - Files: `.claude/bin/agentic.py`, `.claude/bin/test_agentic.py`.
-- Implements the constants, `changed_code_files`, `file_symbols`, `find_callers`, `callers`, the `SEQ_COMMANDS` entry and the dispatch (section 6). Consumes nothing.
+- Implements the constants, `changed_code_files`, `file_symbols`, `find_callers`, `callers`, the `SEQ_COMMANDS` entry, the dispatch and one line in the usage docstring at the top of `agentic.py` (`:4-45`) (section 6). Consumes nothing.
 - ACs: AC-001, AC-002.
 - Patterns to mirror: `agentic.py:956-970` (symbol extraction), `:572-590` (git calls that tolerate no repo), `:877-890` (`source_files`), `:1278-1279` (`SEQ_COMMANDS`), `:2180` (dispatch); `test_agentic.py:907-930` (`test_codemap_deterministic_with_public_symbols`: a repo with code files and committed state), `:1274-1290` (commits inside a test repo).
-- Gotchas: use `-z` on both git commands (`source_files` does), so a non-ASCII path is not quoted; `git diff --name-only -z HEAD` fails in a repo with no commit (`fatal: bad revision 'HEAD'`): catch `CalledProcessError` and treat as no changes, but still list untracked files from `git ls-files --others --exclude-standard`; a deleted file appears in the diff but has no content: skip it. Search files with `read_text(encoding="utf-8", errors="replace")`; a binary or unreadable file is skipped. Build one compiled regex per symbol (`re.escape`). Python 3.9: no `str | None`, no `match`. The output is a single `print(json.dumps(...))` and nothing else on stdout (the engines parse the last JSON line). Exit 0 always, also on an exception caught at the top of `callers()` (print the empty JSON with an `"error"` key and a stderr line).
+- Gotchas: use `-z` on both git commands (`source_files` does), so a non-ASCII path is not quoted; `git diff --name-only -z HEAD` fails in a repo with no commit (`fatal: bad revision 'HEAD'`): catch `CalledProcessError` and treat as no changes, but still list untracked files from `git ls-files --others --exclude-standard`; a deleted file appears in the diff but has no content: skip it. Search files with `read_text(encoding="utf-8", errors="replace")`; a binary or unreadable file is skipped. One alternation regex per searched file (`re.escape` of every symbol, joined by `|`, inside `CALLER_RE_TEMPLATE`), tried only on files whose text contains some symbol as plain text; a line that matches is then tested against each symbol's own regex, so a line such as `split(parse_amount(x))` is credited to both symbols and the symbol-major order of section 5 holds. Split lines with `text.split("\n")` and `rstrip("\r")`, not `splitlines()` (which also splits on form feeds and separators and would shift line numbers). A symbol defined twice in one file is listed once; the same name in two changed files is two entries of `symbols` but one search (`defined_in` is the first file in sorted order); a line is counted once per symbol it matches. Python 3.9: no `str | None`, no `match`. The output is a single `print(json.dumps(...))` and nothing else on stdout (the engines parse the last JSON line). Exit 0 always, also on an exception caught at the top of `callers()` (print the empty JSON with an `"error"` key and a stderr line).
 - Exact imports and APIs: `json`, `re`, `subprocess`, already imported; `source_files()`, `symbol_re()`, `ROOT`.
 - WP validation: `python3 -m unittest discover -s .claude/bin -p test_agentic.py`; `python3 -m compileall -q .claude/bin`.
 
@@ -205,10 +205,10 @@ The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `r
 ```
 
 ## 9. Test strategy
-- Unit: WP-01 in `test_agentic.py` (a changed file with no symbols; a symbol used only in the changed file; two changed files sharing a caller; a deleted file; `$` identifiers in a `.js` file; `.claude/state/` never searched; caps per symbol and total; no git; `callers` through `seq verify + open-stage review + callers` yields three steps); WP-02 through the conformance scenario and the Node assertions; WP-03 in `test_definitions.py`; WP-04 in `test_upgrade.py`.
+- Unit: WP-01 in `test_agentic.py` (a changed file with no symbols; a symbol used only in the changed file; two changed files sharing a caller; a deleted file; `$` identifiers in a `.js` file; `.claude/state/` never searched; caps per symbol and total; no git; `callers` through `seq callers` yields one step whose output's last line is the JSON); a symbol defined twice in one file (listed once); a line with two changed symbols (credited to both); WP-02 through the conformance scenario and the Node assertions; WP-03 in `test_definitions.py`; WP-04 in `test_upgrade.py`.
 - Acceptance: `.claude/bin/test_acceptance_v22.py`, AC-001…AC-005, written first and red. No real `claude`; the engines run in the simulated world.
 - QA: exploratory over `callers` (a symbol named like a keyword or a common word such as `run`, hitting the cap; a file with CRLF; a very long line; a repo whose `HEAD` is a merge; a symbol defined twice in one file) and over the prompt (`truncated` text present only when true).
-- After merging, by hand: release 2.2.0, `install` in finanzas-familiares, and a bench run (five fixtures, three sessions) against the 2.1.0 rows of `bench/RESULTS.md`: the signal is review findings and fix cycles; cost may rise with the prompt.
+- After merging, by hand: `flow-history` on main, release 2.2.0, `install` in finanzas-familiares, and a bench run (five fixtures, three sessions) against the 2.1.0 rows of `bench/RESULTS.md`: the signal is review findings and fix cycles; cost may rise with the prompt.
 
 ## 10. Decisions
 - **D1 · `git diff HEAD` plus untracked files define the change (user's choice):** what the reviewer already reads; no new state. Discarded: a baseline snapshot (state and a failure mode when the baseline is skipped).
@@ -224,6 +224,7 @@ The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `r
 - **Regex-level "callers":** a whole-word match is not a call: a comment or a string mentioning the symbol is listed. The reviewer is told to read each one; false callers cost reading, not findings.
 - **Scan time inside the verify call:** `callers` runs in the same Bash call as `verify`, the whole suite. The scan is symbols × files × lines; the plain-text pre-filter and one alternation regex per file keep it to a pass over the tracked code (not measured; the flow's own repo has about 60 code files). A huge monorepo would pay more; the step has no timeout of its own because `seq` runs each step as a process under the gatekeeper's Bash limit.
 - **Nothing to see on the flow's own repo:** `SKIP_DIRS` drops `.claude/`, so a change to the flow itself lists no callers; by design, since those files are not a project's code.
+- **Placeholder asymmetry (pre-existing):** Python's `render` expands `{key}` placeholders in substituted text, the JS concatenates; passing `callers` last protects the callers text, but a concern string containing `{callers}` would still be expanded in Python only. Agents do not write such strings in practice; a shared escaping is a later fix.
 - **Prompt size:** 80 items of about 200 characters add about 16 KB to the reviewer prompt in the worst case (not measured); typical runs on the fixtures change a handful of files with few external callers.
 - **Executed by hand, native workflow hooks:** the previous run on this repo showed project hooks not firing for Workflow subagents in this cloud session; this plan does not depend on hooks (it is run by hand), but the open question from 0004 remains.
 - **Rollback:** revert the PR; a project on 2.2.0 keeps a reviewer prompt that mentions callers the engines no longer send, harmless; the downgrade guard refuses `install` from an older flow, so a bad 2.2.0 needs a 2.2.1.
