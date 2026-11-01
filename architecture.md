@@ -1,251 +1,319 @@
-# Architecture: the prompt package (agentic-flow 2.0)
-Type: change · Size: large
+# Architecture: the stop gate and the four implementer statuses (agentic-flow 2.1)
+Type: feature · Size: large
 
 ## 1. Goal
-Six cheap improvements from the roadmap (`docs/roadmap/repo-review-2026-11.md`, items 3.2, 4.1, 4.2, 4.3, 6.5, 6.6) land together so the bench can measure them against the 1.1.4 baseline (`bench/RESULTS.md`: 24 of 24 sessions at 100%, so cost, minutes, fix cycles and audit rounds are the metrics). Findings get stricter (a concrete case, four parts, severity anchors); the reviewer and QA gain a third verdict, `needs_validation`, for what the code alone cannot settle; every report says what it did not check; implementers follow a reuse ladder and look up callers before touching shared code; the doc-updater and the architect invent no figures; the architect gets expand-contract guidance for wide refactors and the test-auditor an explicit tautological-test anti-pattern. The report schemas change, so both engines change with them and the plugin becomes 2.0.0 with upgrade notes.
+Two roadmap items (`docs/roadmap/repo-review-2026-11.md`, 2.1 and 2.2) that should cut fix cycles. First, a **stop gate**: when an implementer submits a report that says it is finished, the hook runs the acceptance command before the report is accepted; if a failure is attributed to that package, the report is refused with the failing lines and the agent keeps working, at most twice per package per stage. Second, **four implementer statuses** instead of two: `DONE`, `DONE_WITH_CONCERNS` (done, with doubts the reviewer must weigh), `NEEDS_CONTEXT` (the brief was not enough: one re-dispatch with the whole `architecture.md`, then blocked) and `BLOCKED` (as `BLOCKER` today). Both engines handle the statuses deterministically; the plugin becomes 2.1.0 with upgrade notes. The bench (4 fixtures × 3 sessions) measures the result against the 2.0.0 rows of `bench/RESULTS.md`.
 
 ## 2. Scope
 ### Included
-- Schemas and both engines (`pipeline-spec.json`, `agentic-implement.js`, `pipeline.py`): new report fields, `needs_validation` items routed to `pending` without blocking, `not_checked` collected per agent; conformance scenarios for both.
-- The agent prompts (`reviewer`, `qa`, `implementer`, `test-author`, `test-auditor`, `doc-updater`), the common rules, the `/architect` and `/implement` commands, and the definition tests that pin them.
-- `plugin.json` 2.0.0, `NOTES["2.0.0"]` in `upgrade.py`, the roadmap note (2.0 decision, `run-wave --fix` gap).
-- Acceptance tests in `.claude/bin/test_acceptance_v2.py`.
+- The gate in `agentic.py hook`, on the `StructuredOutput` tool: identity, conditions, attribution, the denial cap, its state file, and the `GATE:` line of `close-stage`.
+- `settings.json`: the hook matcher gains `StructuredOutput` and a `timeout`; `install` upgrades an already-installed matcher.
+- The implementer report schema (statuses, `concerns`, `missing_context`) in `pipeline-spec.json` and in `agentic-implement.js`; the engines' handling of each status; the reviewer prompt carries the concerns; conformance scenarios for both engines.
+- The implementer and `/implement` prompts; definition tests.
+- `plugin.json` 2.1.0, `NOTES["2.1.0"]`, roadmap note; acceptance tests in `.claude/bin/test_acceptance_v21.py`.
 ### Excluded (non-goals)
-- 3.1 (reading beyond the diff with callers), 2.x (stop gate, resume, model per WP), 3.3 (two review axes): later packages.
-- Fixing `run-wave --fix` (reads `QA.json`, the pipeline writes `QA-N.json`): noted in the roadmap only.
-- The release itself (`flow-history`, the GitHub release) and the bench run: by hand after merging (section 9).
-- Changing `constants.blocking`, the verifier, the gatekeeper, the hook, or `agentic.py`.
+- A `SubagentStop` or `Stop` gate: measured in this session, a `Stop` block does not alter a `--json-schema` structured answer, so the gate lives on the tool call that delivers the report (decision D1).
+- Resuming the same implementer in fix cycles, a model per WP, scoped re-review (roadmap 2.3, 2.4): later packages.
+- Statuses of the test-author, QA and doc-updater: they keep `DONE`/`BLOCKER` and `PASS`/`FAIL`.
+- A gate on the `verify.*` commands: only the acceptance command is run, because only it is attributable to a package by `acs`.
+- The release and the bench run: by hand after merging (section 9).
 
 ## 3. Stack
-Python 3.9+ standard library (`agentic.py`, `pipeline.py`, tests with `unittest`); Node 22 for the native workflow and its scenario runner. No new dependency.
+Python 3.9+ standard library (`agentic.py`, `pipeline.py`, tests with `unittest`; no type annotations in `agentic.py`, which has none); Node 22 for the native workflow and its scenario runner (`typescript` in `stack` for its rules). No new dependency.
 - Build: `python3 -m compileall -q .claude/bin`
-- Lint (the workflow's 39+ scenarios, both engines must agree): `node .claude/bin/test_workflow.mjs`
+- Lint (the conformance scenarios, both engines must agree): `node .claude/bin/test_workflow.mjs`
 - Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"` (about 90 s)
-- Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py`
+- Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_v21.py`
 
 ## 4. Repository structure
 ```
-.claude/workflows/pipeline-spec.json        WP-01  schemas and constants of the fallback engine
-.claude/workflows/agentic-implement.js      WP-01  the native workflow (schemas mirrored by hand)
-.claude/bin/pipeline.py                     WP-01  the fallback engine
-.claude/bin/conformance.json                WP-01  scenarios both engines run
-.claude/bin/test_pipeline.py                WP-01  conformance in Python + engine tests
-.claude/bin/test_workflow.mjs               WP-01  conformance in Node
-.claude/bin/testutil.py                     WP-01  the simulated claude (its findings carry the new fields)
-.claude/agents/reviewer.md                  WP-02
-.claude/agents/qa.md                        WP-02
-.claude/agents/implementer.md               WP-02
-.claude/agents/test-author.md               WP-02
-.claude/agents/test-auditor.md              WP-02
-.claude/agents/doc-updater.md               WP-02
-.claude/rules-library/common.md             WP-02  the reuse ladder, installed in projects by rules-sync
-.claude/commands/architect.md               WP-02  no invented figures; expand-contract
-.claude/commands/implement.md               WP-02  presents needs_validation and not_checked
-.claude/bin/test_definitions.py             WP-02  contract tests of the prompts
-.claude-plugin/plugin.json                  WP-03  version 2.0.0
-.claude/bin/upgrade.py                      WP-03  NOTES["2.0.0"]
-.claude/bin/test_upgrade.py                 WP-03
-.claude/bin/test_acceptance_upgrade.py      WP-03  pins the plugin version at :258
-docs/roadmap/repo-review-2026-11.md         WP-03  the 2.0 decision and the --fix gap
-.claude/bin/test_acceptance_v2.py           AT
-README.md, docs/how-to/README.md, docs/how-it-works.md   docs (doc-updater)
+.claude/bin/agentic.py                      WP-01  the gate in guard(), gate.json, GATE: line, status_to_state, merge_settings
+.claude/settings.json                       WP-01  matcher with StructuredOutput and timeout
+.claude/bin/test_agentic.py                 WP-01  hook, close-stage and install tests
+.claude/bin/test_acceptance_portable.py     WP-01  pins the hook matcher at :256
+.claude/workflows/pipeline-spec.json        WP-02  implementer schema and prompts (implement_full, reviewer {concerns})
+.claude/workflows/agentic-implement.js      WP-02  REPORT_SCHEMA, status handling, GATE: parsing, concerns to pending and reviewer
+.claude/bin/pipeline.py                     WP-02  the same, in Python
+.claude/bin/conformance.json                WP-02  four new scenarios
+.claude/bin/test_pipeline.py                WP-02  summary gains gate_denials; scenario assertions
+.claude/bin/test_workflow.mjs               WP-02  the same, in Node
+.claude/bin/testutil.py                     WP-02  fake claude: FAKE_CONCERNS, FAKE_NEEDS_CONTEXT
+.claude/agents/implementer.md               WP-03  the four statuses and the gate
+.claude/commands/implement.md               WP-03  presents concerns and gate denials
+.claude/bin/test_definitions.py             WP-03
+.claude-plugin/plugin.json                  WP-04  version 2.1.0
+.claude/bin/upgrade.py                      WP-04  NOTES["2.1.0"]
+.claude/bin/test_upgrade.py                 WP-04
+.claude/bin/test_acceptance_upgrade.py      WP-04  pins the plugin version at :258
+.claude/bin/test_acceptance_v2.py           WP-04  pins the plugin version at :177
+docs/roadmap/repo-review-2026-11.md         WP-04  2.1 and 2.2 shipped in 2.1.0; 2.1 corrected (not SubagentStop)
+.claude/bin/test_acceptance_v21.py          AT
+README.md, docs/how-it-works.md, docs/how-to/   docs (doc-updater)
 ```
-`.claude/rules/agentic/` is generated by `rules-sync` from `rules-library` and is git-ignored: nobody edits it.
 
 ## 4b. Existing code context
 | What an implementer needs to know | Where it is | Pattern or rule |
 |---|---|---|
-| The schemas the fallback engine sends with `--json-schema` | `.claude/workflows/pipeline-spec.json` (`schemas`: `reviewer`, `qa`, `implementer`, `test-author`, `test-auditor`, `verifier`, `doc-updater`, `gatekeeper`; `constants.blocking` = `["critical", "high"]`) | JSON Schema; `required` lists every field the agent must return. The CLI enforces it |
-| The same schemas in the native workflow | `.claude/workflows/agentic-implement.js:27-100` (`SEVERITY`, `AT_SCHEMA`, `REPORT_SCHEMA`, `FINDINGS_SCHEMA`, `VERDICT_SCHEMA`, `QA_SCHEMA`, `DOCS_SCHEMA`); `:127` `BLOCKING` | Mirrored by hand from the spec: a field added to one must be added to the other, identically. `FINDINGS_SCHEMA` serves the reviewer **and** the test-auditor: split it (see §5) |
-| Where review findings are split into confirmed / refuted / advisory | `.claude/bin/pipeline.py:341-358`; `.claude/workflows/agentic-implement.js:390-399` | `graves` = severity in blocking → verifier; the rest `advisory`. `run["review"]` dict with the three lists and `opened` |
-| Where QA defects become fix work or `pending` | `.claude/bin/pipeline.py:360-395`; `.claude/workflows/agentic-implement.js:402-430` | `blocking_impl` defects go to fix cycles; `design` and `no WP` items become `pending` with `type`; `result` is REVIEW when any pending item's `severity` is blocking, else OK. An item **without** a `severity` key never blocks: that is how `needs validation` stays non-blocking |
-| Every agent call goes through one helper | `pipeline.py:104-109` (`Pipeline.call`: returns the report dict or `None`); `agentic-implement.js:105` (`safe(agent(...))`, every call site passes `label`) | The place to collect `not_checked` from every report, once |
-| The run record both engines return | `agentic-implement.js:147` (`run = {result, stages, baseline, work_packages, verification, review, qa, test_audit, docs, fix_cycles, pending}`); `pipeline.py` builds the same dict | Add `not_checked: []` to the initial record in both |
-| Conformance: scenarios run through both engines and must match | `.claude/bin/conformance.json` (`scenarios[]` with `review`, `qa`, `verifier`, `audit`, `docs`, `gate_fail`, `verify`, `plan`, `args`); `test_pipeline.py:28-60` (`world`: how a scenario's reports are served, `pick` by round), `:129-136` (every scenario, same summary in both); `test_workflow.mjs:440-466` (`fromDecl`), `:467-480` (`summarize`: `result`, `failed_stage`, `detail`, `fix_cycles`, `pending` types sorted, `gates`, `gate_calls`, `agents`, `prompts`) | A new scenario is one JSON object in `conformance.json`; both harnesses pick it up by name. The summary must gain one key in **both** (`not_checked`, see §6) or the comparison stays blind to it |
-| The simulated `claude` | `.claude/bin/testutil.py:35-92` (`FAKE_CLAUDE`: `values` dict, `required` keys filled with `[]` when absent, `FAKE_REVIEW_FINDING` / `FAKE_QA_DEFECT`) | New required list fields come out as `[]` automatically; the finding/defect it fabricates must carry `fix` and `if_skipped` |
-| Prompt contract tests | `.claude/bin/test_definitions.py:20-33` (`AGENTS` table), `:72-130` (one test per rule: tools, injection section, claim, `# Report` with "schema" and "under N words", QA classifies `implementation`/`design`, verifier line), `:165-172` (the architect's model gate must stay before `## 3. Writing`) | Every new prompt rule gets a test of the same shape: read the file, `assertIn` a phrase |
-| The agents' `# Report` sections | `reviewer.md:71-73`, `qa.md:41-49`, `implementer.md:46-48`, `test-author.md:33-35`, `test-auditor.md:33-35`, `doc-updater.md:37-39` | "JSON that follows the schema your launcher gives you: `field` (…)". New fields are described there, in the same sentence style |
-| Where the rules the agents read live | `.claude/rules-library/common.md:16-22` (`## Design`), `:37-43` (`## Tests`); `rules-sync` copies them to `.claude/rules/agentic/` | Section headings are fixed; add bullets, not sections |
-| The architect's reconnaissance and parallelism text | `.claude/commands/architect.md:39-66`, `:90-98`, `:180-183` (sections 10 and 11 of the template) | Append paragraphs; do not move the model gate (`:99`) |
-| `/implement`'s presentation | `.claude/commands/implement.md:49-64` | One bullet per block of the result |
-| Upgrade notes | `.claude/bin/upgrade.py:19-46` (`NOTES` by version, one string per change, wrapped at 120 columns); `test_upgrade.py:62-86` (`notes_between`, version keys) | Add `"2.0.0": [...]` after `"1.1.4"`; `notes_between("1.1.4", "2.0.0")` returns it |
-| The version | `.claude-plugin/plugin.json:4` (`"version": "1.1.4"`) | `flow_version()` reads it; the release tag is `agentic-flow--v2.0.0`, made by hand |
-| Documentation drift tests | `.claude/bin/test_definitions.py:329-372` | Every tracked `.md`: links resolve, cited `agentic.py <cmd>` exist, no personal paths |
+| The hook's entry and its fail-closed wrapper | `.claude/bin/agentic.py:1985-1998` (`hook()`), `:1929-1983` (`guard(data)`) | `guard` returns to allow, calls `block(msg)` (`:1812`: prints `[agentic guard] msg` to stderr, exit 2) to deny. Any exception inside a restricted agent blocks |
+| How the hook knows who is acting | `guard` `:1932-1952`: `AGENTIC_WP` env (fallback engine, set at `:745`) or `claims.json` through `data["agent_id"]` (native workflow) | The gate uses `owner_id` after that block, exactly like the write rules; an owner that does not match `^WP-\d+$` is never gated |
+| What a `StructuredOutput` call looks like to the hook | Measured in this session with CLI 2.1.316: `tool_name` is `StructuredOutput`, `tool_input` is the report object itself (`status`, `wp`, `files`…); `agent_type` is present; exit 2 with a stderr reason denies it and the agent re-submits a corrected report (3 turns in the probe) | `tinput.get("status")` is the status. Nothing else of the report is trusted |
+| The `Stop` hook does not work for this | Measured: with `--json-schema`, `{"decision":"block"}` on `Stop` left the structured answer unchanged and the second `Stop` never fired | Decision D1 |
+| Running the acceptance command without a shell | `run_command(cmd, timeout=900, scan=None)` `:1208-1228`: returns `(code, tail)`; with a list in `scan` the last 200 lines are appended to it. `acceptance_check` `:1230-1249` wraps it but also writes a ledger line (`ledger_stage`) and prints | The gate calls `run_command` directly (no ledger line, no stdout) and takes the command from `at_entity(manifest)["command"]` (`:1232`) |
+| Exit codes that mean "could not run" | `acceptance_check` `:1240`: `code in (124, 126, 127)` | The gate lets through in that case: it cannot judge |
+| Attributing failures to packages | `attribute(manifest, lines)` `:1557-1574`: `{wp_id: {"files": [...], "acs": [...]}}` by whole path or `AC-NNN` in the text | The gate denies only on the WP's own failure (section 6): its files mentioned, or an AC that only it owns. A shared AC or another package's failure never stops this one |
+| Which lines to show the agent | `failure_lines(lines)` `:1539-1543` and `normal_failure` `:1534` pick the lines that matter | Show the lines that mention the WP's files or ACs (`attribute`'s `mentioned` logic), then the command's last 3 lines, at most `GATE_MAX_LINES` |
+| State files under `.claude/state/` with a lock | `locked_json(path, fn)` `:1673-1690` (used by `with_claims` `:1693`); constants `STATE`, `CLAIMS`, `LEDGER_JSON` `:72-77` | `GATE = STATE / "gate.json"`; `gate_denials(fn)` is `locked_json(GATE, fn)` |
+| Where a stage starts and ends | `open_stage` `:1459-1469` (snapshot, prints `{"stage","owners"}`), `close_stage` `:1472-1508` (marks `ID=state`, `--fix`, acceptance, `RESULT:` line, exit 3 on REVIEW) | `open_stage` resets the gate counters of its owners; `close_stage` prints one `GATE:` line before `RESULT:` |
+| Ledger states and the status mapping | `LEDGER_STATES` `:78`; `status_to_state(status)` `:1723-1726` (first word of the status) | Extend the mapping; `LEDGER_STATES` does not change |
+| The fallback engine launches one `claude -p` per agent | `:736-776`: `--json-schema` from `spec["schemas"][agent_type]`, `--allowedTools` from `pipeline_tools` `:1320`, `AGENTIC_WP` in the env | No change needed there: the hook sees `AGENTIC_WP` |
+| The pipeline-spec and its hand-mirrored JS twin | `.claude/workflows/pipeline-spec.json` (`schemas.implementer`, `prompts.implement`, `prompts.fix`, `prompts.fix_retry`, `prompts.reviewer`); `.claude/workflows/agentic-implement.js:56-66` (`REPORT_SCHEMA`), `:269-287` (`launchWave`), `:430` (the reviewer prompt, a literal string) | A field added to one must be added to the other identically; `test_workflow.mjs` compares them (`required` order matters: `deepEqual`) |
+| Where the wave states are decided | JS `:285`; Python `pipeline.py:285`: `error` if no report, `done` if `status == 'DONE'`, else `blocker` | Replace with `wave_states` (section 6) |
+| Where pending items are built and what blocks | JS `:258` and `:264` (`run.pending.push({type, severity, problem})`), `:465` (`run.result` is `REVIEW` if a pending item's `severity` is in `BLOCKING`); Python `:455`, `:399` | A concern item has no `severity`, so it never blocks, like the `needs validation` items (`needsItem` JS `:188`, `Pipeline.needs_item` `pipeline.py:119-125`) |
+| The run record both engines return | JS `:180` (`const run = {...}`); Python `Pipeline.__init__` (`self.run`), the same keys | Add `gate_denials: {}` next to `not_checked` |
+| Report helper and `call` | JS `report(prompt, opts)` `:182-186`; Python `Pipeline.call` `pipeline.py:106-116` | A re-dispatch is a second `report`/`call` with label `WP-01 (context)` |
+| Prompt rendering | Python `render(template, **values)` `pipeline.py:31-35`, `{key}` placeholders; `compact(value)` `pipeline.py:26` for JSON in prompts; the JS writes prompt strings inline | New placeholders: `{missing}` in `implement_full`, `{concerns}` in `reviewer` |
+| Fix counters | JS `fixCount` `:193`, incremented in `fixCycle` `:330`; Python `self.fix_count` `pipeline.py:331` | A `(context)` call is not a fix attempt and must not touch them |
+| Conformance: the shared world and the summaries | `test_pipeline.py:28-70` (`world`), `:108-119` (`summarize`), `:144` (the compared keys); `test_workflow.mjs:449-470` (`fromDecl`), `:486` (summary), `:491` (every scenario), `:518-529` (named assertions). Scenarios override reports with `reports.implementer[wp]` (`test_workflow.mjs:66`) and gatekeeper answers with `gate_fail` (`test_pipeline.py:41-43`) | New scenarios use `reports` for statuses and `gate_fail` (exit 0 is allowed there) for a `GATE:` line in a close-stage output. A `reports.implementer[wp]` override that must differ between the first and second call takes a list: first element for the first call, last element afterwards (extend `world` and `fromDecl` the same way) |
+| The simulated `claude` | `.claude/bin/testutil.py:36-95`: env knobs; the "first call only" marker-file pattern at `:78-81` | Add `FAKE_CONCERNS` and `FAKE_NEEDS_CONTEXT=<WP>` |
+| Hook tests | `test_agentic.py:57-58` (`Repo.hook(payload, wp)` returns the exit code), `:69-80` (`write_payload`, `bash_payload`) | Add `report_payload(status, wp, agent_id=None)` next to them; the fake acceptance command is a Python script written into the temp repo, as the acceptance-command tests of that file do |
+| Install tests | `test_agentic.py:933-1012` (`InstallTests`: a project `settings.json` with its own entries, `install` twice, "settings.json: unchanged") | Mirror `test_installs_the_flow_and_keeps_project_configuration` `:970` |
+| Installing settings | `merge_settings(dst, src)` `:1051-1085`: adds the flow's `PreToolUse` entry only if none ends with `hook`; `install` `:1153-1160` writes it | Extend: when the agentic entry exists but its `matcher` lacks `StructuredOutput`, append `\|StructuredOutput` to the project's matcher (never replace it: a project may have trimmed it), set the hook's `timeout` from `src` when absent, and add `"hook PreToolUse (StructuredOutput)"` to `added` |
+| Upgrade notes | `.claude/bin/upgrade.py:50-62` (`NOTES["2.0.0"]`, a list of strings); `test_acceptance_upgrade.py:258` and `test_acceptance_v2.py:177` pin the version | `NOTES["2.1.0"]`, pin `2.1.0` in both |
+| The matcher is pinned by a test | `test_acceptance_portable.py:254-258` asserts the exact matcher `Write|Edit|MultiEdit|NotebookEdit|Bash` | Update it to the new matcher (WP-01) |
+| The hook's messages say "return BLOCKER" | `agentic.py:1906`, `:1915`, `:1978`, `:1981` | They become "return the blocked status your schema allows (BLOCKED for an implementer, BLOCKER for the others)"; the rules themselves do not change |
+| Definition tests of prompts | `.claude/bin/test_definitions.py:179` reads `implement.md`; the 2.0.0 tests near the end pin phrases | One test per rule, asserting the exact phrase |
+| What `/implement` presents | `.claude/commands/implement.md:60-64` (pending, needs validation, not_checked) | Add concerns and gate denials there |
+| Docs the doc-updater touches | `docs/how-it-works.md:187-224` (hook diagram and text), `:226-244` (permission matrix), `:327` (glossary); `docs/how-to/README.md:278` (testing the flow: test counts) | The diagram gains a `StructuredOutput` branch |
+
+**What must NOT change:** `validate`'s refusal of `.claude/` ownership (`:403`), the write rules of `guard` (their wording may), `LEDGER_STATES`, the schemas of the other agents, `constants.blocking`, `close-stage`'s exit codes and its `RESULT:` line.
 
 ## 5. Data model
-Report shapes, as JSON Schema fragments. `required` lists are exact; both engines carry them identically.
-
-```jsonc
-// shared
-"severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
-"not_checked": {"type": "array", "items": {"type": "string"}}      // what the agent did not check, skipped, or sees as a risk; [] when nothing
-"needs_validation": {"type": "array", "items": {                     // a claim the code alone cannot settle; no severity, never blocks
-  "type": "object", "required": ["wp", "file", "kind", "claim", "fact", "how_to_check"],
-  "properties": {"wp": {"type": "string"}, "file": {"type": "string"}, "line": {"type": "integer"},
-                 "kind": {"type": "string", "enum": ["external", "unchanged_code"]},
-                 "claim": {"type": "string"},          // what would be wrong if the fact holds
-                 "fact": {"type": "string"},           // the exact fact that is missing (a deployment setting, a provider behaviour, code outside the diff)
-                 "how_to_check": {"type": "string"}}}} // one safe step a person can take
-
-// reviewer: required ["status", "findings", "needs_validation", "not_checked"]
-"findings" items: required ["severity", "wp", "file", "problem", "evidence", "fix", "if_skipped"]
-   // problem: what the code does and what goes wrong; evidence: the concrete case (input or situation -> wrong result), with file and line
-   // fix: the smallest change that works; if_skipped: what happens if nobody fixes it
-
-// test-auditor: required ["status", "findings", "not_checked"]; its findings keep ["severity", "wp", "file", "problem", "evidence"]
-
-// qa: required ["status", "plan", "defects", "needs_validation", "gaps"]
-"defects" items: required ["id", "severity", "wp", "kind", "section", "repro", "fix", "if_skipped"]
-
-// implementer: required ["status", "wp", "files", "checks", "internal_decisions", "blocker", "not_checked"]
-// test-author: required ["status", "coverage", "blocker", "not_checked"]
-// verifier, doc-updater, gatekeeper: unchanged (doc-updater's `unverified` already is its not_checked)
+Report of an implementer (both engines, identical):
+```json
+{"status": "DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED",
+ "wp": "WP-01", "files": [], "checks": [{"command": "", "passed": true, "detail": ""}],
+ "internal_decisions": [], "not_checked": [],
+ "concerns": ["<a doubt about the result, one sentence, with the file>"],
+ "missing_context": {"what": "<what the brief lacked>", "section": "<section of architecture.md that should have it>"},
+ "blocker": {"missing": "", "section": "", "options": []}}
 ```
+`required`: `["status", "wp", "files", "checks", "internal_decisions", "blocker", "not_checked", "concerns", "missing_context"]`, in that order in both files. `concerns` is `[]` unless the status is `DONE_WITH_CONCERNS`; `missing_context` is `null` (type `["object", "null"]`, `required: ["what", "section"]`) unless `NEEDS_CONTEXT`; `blocker` is `null` unless `BLOCKED`.
 
-The run record gains two things:
-```jsonc
-"pending": [..., {"type": "needs validation", "source": "reviewer" | "qa", "wp", "file", "line"?, "kind", "claim", "fact", "how_to_check"}]  // no "severity" key
-"not_checked": [{"agent": "<agent type>", "label": "<call label>", "items": ["..."]}]   // one entry per agent call whose report has a non-empty list; order of calls
-```
+Gate state, `.claude/state/gate.json`: `{"WP-01": {"denials": 1, "last": ["FAILED acceptance/test_ac_001.py::test_ac_001_x"]}}`. Reset per WP when its stage opens.
+
+Pending item of a concern: `{"type": "concern", "source": "WP-01", "wp": "WP-01", "problem": "<the sentence>"}`. No `severity`.
+
+Run record: `gate_denials: {"WP-01": 1}` (only WPs with at least one denial), summed from the `GATE:` lines of every close-stage, fix cycles included.
 
 ## 6. Contracts between modules
-**Engines (WP-01)**, consumed by the acceptance tests and by `/implement`'s presentation:
-- `pipeline.Pipeline(spec, gate, agent, ...).execute()` and the workflow return the run record of §5. For every reviewer `needs_validation` item and every QA one, one `pending` entry `{"type": "needs validation", "source": ...}` plus **only** the declared keys `wp`, `file`, `line` (when present), `kind`, `claim`, `fact`, `how_to_check` is appended (never a spread of the item: a `severity` an agent adds anyway must not reach `pending`, where it would block) **after** the existing `design` / `no WP` items and **before** the fix-limit items; `result` is unaffected by them (OK stays OK). Both lists are read as possibly absent (`report.get("needs_validation") or []`, `report.get("not_checked") or []`; in Node `|| []`): older reports, the existing conformance scenarios and the stubs of `test_workflow.mjs` leave them out. A `not_checked` that is not a list is dropped; a `needs_validation` item on an unknown WP goes to `pending` as it is (it never needs an owner). `run["not_checked"]` is appended in `Pipeline.call` / a Node wrapper around `safe(agent(...))` that receives the agent's `label` option (the one in the `agent(...)` options, e.g. `WP-02 (fix)`, not the `safe` label), for every report that has a non-empty `not_checked` list, including fix calls and revisions, as `{"agent": agent_type, "label": label, "items": list}`.
-- Conformance summary, both harnesses: a new key `not_checked`: the sorted list of `"<agent type>:<label>"` for the entries of `run["not_checked"]`. The comparison tuple in `test_pipeline.py:134` (`("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents")`) gains `"not_checked"`, or the comparison never sees it.
-- New scenarios in `conformance.json`, by exact name: `"needs validation goes to pending and does not block"` (reviewer PASS with one `needs_validation` item of kind `external` on WP-01, QA PASS with one of kind `unchanged_code`; expected `result` OK, `pending` types `["needs validation", "needs validation"]`) and `"not_checked is collected from every report"` (the implementer report of WP-02 and the reviewer report carry `not_checked: ["x"]`; expected `not_checked` `["implementer:WP-02", "reviewer:reviewer"]`). The scenario declaration gains an optional `reports` override: `{"implementer": {"WP-02": {"not_checked": ["x"]}}, "reviewer": {"not_checked": ["x"]}}`, merged over the default report; the implementer key is the WP id and applies to every call whose label starts with it (`WP-02` and `WP-02 (fix)`, as `world` keys reports by `label.split(" ")[0]`), served the same way by `world` and `fromDecl`; when a scenario has both `review` (per round) and `reports.reviewer`, the override merges over every round. The expected results of the two new scenarios are asserted in the test `every conformance scenario ends as described in its name` (`test_workflow.mjs:508`) and in `test_pipeline.py`'s equivalent, by scenario name.
-- `FAKE_CLAUDE` (`testutil.py`): the finding from `FAKE_REVIEW_FINDING` and the defect from `FAKE_QA_DEFECT` include `"fix": "f"` and `"if_skipped": "s"`; with `FAKE_NEEDS_VALIDATION=<WP>` the reviewer adds one `needs_validation` item of kind `external` on that WP (`file: "src/a.py"`, `claim: "c"`, `fact: "a deployment setting"`, `how_to_check: "h"`); with `FAKE_NOT_CHECKED=1` every schema that requires `not_checked` gets `["nothing else"]` (the fake fills required keys only).
+Python, `.claude/bin/agentic.py` (WP-01):
+```python
+GATE = STATE / "gate.json"
+GATE_MAX_DENIALS = 2        # per WP and stage; afterwards the report is let through
+GATE_MAX_LINES = 40         # lines shown to the agent in a denial
+GATE_STATUSES = ("DONE", "DONE_WITH_CONCERNS")
 
-**Prompts (WP-02)**, consumed by the acceptance tests as text and by the definition tests:
-- `reviewer.md` and `qa.md` carry, under a heading `# Severity anchors`, the table: `critical` = an unauthenticated actor gains code execution, full data-store access or takeover of arbitrary accounts; `high` = an actor fully defeats an explicit control with real consequences (auth bypass, cross-tenant read or write, data loss, authenticated code execution); `medium` = a real violation with limited blast radius or uncommon preconditions; `low` = disclosure of non-secret internals, or an effect that needs sustained effort for minimal gain. Plus the two sentences: "The high/medium line: does the case fully defeat an explicit control, or only weaken it?" and "If you cannot state the concrete damage, the severity is lower than it feels."
-- `reviewer.md`: a heading `# Needs validation` describing the list (kind `external`: a deployment, provider, proxy or identity setting the repo does not contain; kind `unchanged_code`: a requirement that lives in code the diff does not touch or that spans WPs), with the rule "no severity, and it never blocks: the person checks the fact". Its finding rule reads: "Every finding has four parts: `problem` (what the code does and what goes wrong), `evidence` (the concrete case: this input or situation gives this wrong result, with file and line), `fix` (the smallest change that works) and `if_skipped` (what happens if nobody fixes it). No concrete case, no finding." Its `# Report` sentence names `findings` (with `fix` and `if_skipped`), `needs_validation` and `not_checked`.
-- `qa.md`: the same four-part rule for `defects` (`repro` is the concrete case), the same `# Needs validation` text as `reviewer.md` (kinds `external` and `unchanged_code`, "no severity, and it never blocks: the person checks the fact"), `gaps` unchanged; the report sentence names `needs_validation`, `fix` and `if_skipped`.
-- `implementer.md`: a heading `# Before writing` with the reuse ladder (1 does it need to exist? 2 already in this codebase? use it as the surrounding code does; 3 standard library or platform? 4 an installed dependency? never a new one for a few lines; 5 can it be one readable line? 6 only then the minimum that works) and the rule "Before editing a function other files call, grep every caller; fix the root cause once, in the shared code, and keep the callers your change breaks working." The report sentence names `not_checked`.
-- `common.md` `## Design`, two bullets, word for word: "- **Reuse before writing.** Does it need to exist? Is it already in this codebase (a helper, a type, a pattern)? Does the standard library or the platform do it? An installed dependency? Can it be one readable line? Only then the minimum that works; never a new dependency for a few lines." and "- **Shared code.** Before editing a function other files call, grep every caller; fix the root cause once, in the shared code, and keep the callers your change breaks working."
-- `test-auditor.md`, step 3: the bullet "**Tautological:** the expected value is recomputed the way the code would compute it (`expect(add(a, b)).toBe(a + b)`, a constant compared with itself): it passes by construction. Expected values come from an independent source: a literal, a worked example, the criterion." The report sentence names `not_checked`.
-- `test-author.md`: the report sentence names `not_checked`.
-- `doc-updater.md`, rule 2, appended to the current text: "Nothing invented, numbers included: no counts, percentages, timings, costs, dates or claims about behaviour that you did not read in the code, in `architecture.md` or in a file of the repo. A figure you cannot source goes to `unverified`, not to the page."
-- `architect.md`: in `## 3. Writing architecture.md`, after the template, a paragraph "No invented figures: every number in the document (costs, times, counts, limits, line ranges) comes from a command you ran or a file you read; what you did not measure is written as 'not measured'." In `## Parallelism`, a paragraph "**Wide refactors.** A mechanical change whose blast radius spans the codebase (a rename, a retyped shared symbol) cannot land green as one WP. Sequence it as expand-contract: one WP adds the new form beside the old; migration WPs move callers in batches sized by blast radius, each green on its own; a last WP deletes the old form once no caller remains. The batches may share a wave only if they touch disjoint files." The model gate section stays where it is.
-- `implement.md` presentation: under **Pending**, a sub-bullet "**Needs validation:** each item's claim, the fact to check and how; the person checks it, it never blocks"; a new bullet **Not checked (`not_checked`)**: "per agent, what it did not check or skipped, plus QA's `gaps` and the doc-updater's `unverified`."
+GATE_TIMEOUT_S = 840        # below the hook's 900 s, so the gate times out before the CLI kills the hook
 
-**Version (WP-03)**:
-- `plugin.json` `"version": "2.0.0"`. `upgrade.NOTES["2.0.0"]`: one string per item: the stricter findings (four parts), `needs_validation` in `pending` (never blocks; the person checks the fact), `not_checked` in every report and in the result, the reuse ladder and callers rule in the common rules (`rules-sync` refreshes `.claude/rules/agentic/`), the tautological-test audit, no invented figures in docs and plans, expand-contract guidance; and the compatibility line: "Agent files you customised keep the 1.x report shape: the launchers now require the new fields, so compare them with the new versions (`.claude/state/upgrade/`) and merge."
-- `docs/roadmap/repo-review-2026-11.md`: a section `## Versioning` ("The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version.") and a new section `## Found while using the flow`, placed before `## Recommended order`, with the `run-wave --fix` gap: "the one-off command reads `.claude/state/runs/QA.json` and `REVIEW.json`, but `run-pipeline` saves `QA-N.json` and `REVIEW-N.json`, so a hand fix cycle after a pipeline run stops with 'run run-review or run-qa first'; and `--fix` takes blocking defects only, so medium and low ones have no path but the person."
+def gate_denials(fn):        # locked_json(GATE, fn); fn(data) -> dict or None
+def gate_reset(owners):      # drops the counters of those WPs (a list of IDs); called by open_stage
+def gate_check(owner_id, status):
+    """The stop gate. Returns None to let the report through, or a list of lines to show (the report is refused).
+    Loads the manifest itself, inside its own try (see "fails open"). Lets through when: status is not in
+    GATE_STATUSES (or not a string); the manifest has no acceptance command;
+    the WP already has GATE_MAX_DENIALS denials; the command cannot run (exit 124/126/127) or times out
+    (run_command(cmd, timeout=GATE_TIMEOUT_S, scan=lines)); it passes; or the failure is not the WP's own (below).
+    On a refusal, increments gate.json for owner_id and stores the lines."""
+```
+No type annotations in `agentic.py` (the file has none and must import on Python 3.9: `list[str] | None` is a `TypeError` there).
+
+**The WP's own failure:** `found = attribute(manifest, lines).get(owner_id)`; the failure is the WP's own if `found["files"]` is non-empty, or if any of `found["acs"]` is owned by `owner_id` alone (listed in no other WP's `acs`). An AC shared with another package, or a package in a later wave, never refuses this one's report.
+
+**The gate fails open:** `gate_check` catches `ManifestError` (from its own `load_manifest()`), `OSError` and `ValueError` itself, prints `[agentic guard] gate skipped: <error>` to stderr and returns None. The hook's fail-closed wrapper stays for everything else; a broken gate must not refuse reports forever (the cap is only raised on a real denial).
+`guard(data)` handles `tool == "StructuredOutput"` right after `owner_id` is resolved from the env or from `claims.json` (`:1949`) and **before** the identity block that demands a claim (`:1950-1952`): a report is never refused for a missing claim (a reviewer or QA that never claimed still delivers its report). If `owner_id` matches `^WP-\d+$` it calls `gate_check(owner_id, status)`; otherwise it returns. On a list it calls `block(...)` with:
+```
+WP-01: the report says DONE but the acceptance tests of your package fail (denial 1 of 2). Failing lines:
+  <line>
+  ...
+Run `<acceptance.command>`, fix your files and submit the report again. If a test contradicts architecture.md, return BLOCKED and say which.
+```
+`close_stage` prints, before `RESULT:`, one line `GATE: WP-01=1 WP-02=0` listing every WP in `marks` in that order (judge IDs `QA`, `AT`, `REVIEW`, `DOCS` are not listed; no line when no mark is a WP).
+`status_to_state` maps `DONE`→`done`, `DONE_WITH_CONCERNS`→`done`, `NEEDS_CONTEXT`→`blocker`, `BLOCKED`→`blocker`, `BLOCKER`→`blocker` (kept for the test-author and doc-updater), the others as today.
+`merge_settings(dst, src)` also appends `"hook PreToolUse (StructuredOutput)"` to `added` when it upgraded an existing agentic entry's `matcher` and `timeout`; a second call adds nothing.
+
+`.claude/settings.json` (WP-01): the agentic `PreToolUse` entry becomes
+```json
+{"matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|StructuredOutput",
+ "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py\" hook", "timeout": 900}]}
+```
+(`timeout` is in seconds; the CLI's default is 60; the acceptance command can take minutes.)
+
+Engines (WP-02), the same in `pipeline.py` (module-level functions) and `agentic-implement.js` (consts):
+```python
+def wave_states(wp_ids, reports) -> list[str]        # "WP-01=done" | "WP-01=blocker" | "WP-01=error" per the mapping above
+def gate_line(output) -> dict[str, int]               # parses "GATE: WP-01=1 WP-02=0" from a close-stage output; {} if absent
+def concern_item(wp, text) -> dict                    # the pending item of section 5
+```
+Behaviour per status in `launch_wave`/`launchWave`, before the states are computed:
+- `DONE_WITH_CONCERNS`: each string of `concerns` → `concern_item` appended to `concern_pending` (`self.concern_pending` / `const concernPending = []`), a list of its own like `limit_pending`; the report stays in `run["work_packages"][wp]`. Both engines rebuild `run["pending"]` after QA (JS `:421`, `:463`; Python `:348`, `:397`): those assignments become `qa_pending + limit_pending + concern_pending`, so concerns survive to the result. Every review (the first and each one after a fix cycle) gets all concerns gathered so far, and a concern stays in `pending` even when the reviewer confirms it as a finding (the finding carries the severity; the concern records who raised it).
+- `NEEDS_CONTEXT` in an implement wave (`defects_by_wp` empty), first time for that WP in this run: one more call with prompt `implement_full` (label `f"{wp} (context)"`, same agent type); the second report replaces the first in `run["work_packages"][wp]` and is mapped like any other (a second `NEEDS_CONTEXT` is `blocker`). In a fix wave `NEEDS_CONTEXT` is `blocker` with no re-dispatch.
+- `BLOCKED`, and any status outside the four (a legacy `BLOCKER` from a custom agent): `blocker` state, the wave stops, as today.
+After every close-stage of a wave (implement or fix), `gate_line(close.output)` is summed into `run["gate_denials"]` (keys with 0 are not stored) right after `run["stages"]` is appended and **before** the `if not good` stop (JS `:310`, Python `:308`), so a wave that ends in REVIEW still reports its denials.
+Reviewer prompt: `prompts.reviewer` becomes `Review the integrated code according to architecture.md.{concerns}{rules}`, built from `concern_pending` (never from `run["pending"]`, which is rebuilt only after QA), where `{concerns}` is `""` when `concern_pending` is empty, else `"\nThe implementers finished with these concerns about their own code, as JSON:\n" + compact([{"wp", "problem"}...]) + "\nCheck each one: confirm it as a finding with its severity, or leave it out if the code is right."`. The JS builds the same string.
+New prompt `prompts.implement_full`: `Implement {wp}. Your first attempt returned NEEDS_CONTEXT: {missing}. This time your brief is architecture.md, whole: read it and implement. If the document does not settle it, return BLOCKED with the section that should.{rules}`, where `{missing}` is `missing_context.what` followed by ` (section <section>)`. If `missing_context` is not an object with a string `what`, there is no re-dispatch: the status maps to `blocker` (a malformed report is not a request for context).
+Conformance summary (both runners) gains `"gate_denials": result["gate_denials"]`, and the comparison tuple at `test_pipeline.py:144` includes it.
+
+Fake `claude` (WP-02, `testutil.py`): every implementer report now carries `concerns: []` and `missing_context: null`. `FAKE_CONCERNS=1` → every implementer answers `DONE_WITH_CONCERNS` with `concerns: ["the retry loop in src/<wp>.py may spin"]`. `FAKE_NEEDS_CONTEXT=<WP>` → that WP answers `NEEDS_CONTEXT` with `missing_context: {"what": "the error type of the contract", "section": "6"}` on its first call only (the marker-file pattern), `DONE` afterwards.
 
 ## 7. Conventions
-- Prompts: English, imperative, short sections with `#` headings, the same voice as the existing files; no em-dashes. New fields are described in the `# Report` sentence in the existing style: `` `field` (what it holds) ``.
-- Schemas: `pipeline-spec.json` and `agentic-implement.js` byte-for-byte equivalent in meaning; field names `snake_case`.
-- Python 3.9 compatible (`from __future__ import annotations`, no `match`). Node: plain CommonJS/ESM as the file already is.
-- Tests of prompts are `assertIn` of exact phrases quoted in §6: implementers copy those phrases verbatim.
-- No personal paths in any `.md`; links must resolve (the drift tests run in verification).
+- The flow's existing style: English identifiers and messages; short flat functions; constants in UPPER_CASE next to their siblings (`MAX_CHECKED_COMMAND` `:185`); no new dependency; every hook path fails closed (the wrapper at `:1985` already does that for exceptions).
+- The hook writes nothing to stdout (the CLI does not show it); the agent sees stderr only on exit 2.
+- Messages to agents name the WP first, then what was refused, then what to do (`block` messages at `:1974-1981`).
+- The JS and Python engines mirror each other in behaviour; a change in one is a change in the other before any test runs.
+- Tests: `unittest`, one behaviour per test, named after it; the fake acceptance command is a script in the temp repo, never the real suite.
+- Commit format: the repo's history (`Short imperative summary (#PR)` after squash).
+- Forbidden: relaxing `validate`, touching the other agents' schemas, a `Stop`/`SubagentStop` hook, gating any owner that is not a `WP-NN`.
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-The acceptance tests import `pipeline` and `testutil` from `.claude/bin` (as `test_pipeline.py:17-22` does), read `conformance.json`, `pipeline-spec.json` and the `.md` files as text, and drive `pipeline.Pipeline` with stub agents (as `test_pipeline.py:165-169` does) or `agentic.py run-pipeline` with the simulated `claude` (as `test_pipeline.py:204-250` does).
-- AC-001 · Both engines carry the new report fields, identically
-  - Scenario: `pipeline-spec.json` and `agentic-implement.js` as shipped.
-  - Action: read `spec["schemas"]`; read the JS file as text.
-  - Expected: `reviewer.required` ⊇ `{needs_validation, not_checked}` and its findings items require `fix` and `if_skipped`; `qa.required` ⊇ `{needs_validation}` and its defects items require `fix` and `if_skipped`; `implementer`, `test-author` and `test-auditor` require `not_checked`; the `needs_validation` item schema requires exactly `wp, file, kind, claim, fact, how_to_check` with `kind` enum `external`, `unchanged_code`; the JS text contains `needs_validation`, `not_checked`, `if_skipped`, `how_to_check` and `unchanged_code`.
-  - Must not: add `needs_validation` to the test-auditor, or change `constants.blocking`.
-  - Check: `test_acceptance_v2.py::SchemaTests::test_ac_001_fields_in_both_engines`
+- AC-001 · A finished report with the package's acceptance tests red is refused
+  - Scenario: a temp repo (`test_agentic.Repo`) whose manifest has `acceptance.command` pointing at a script that exits 1 and prints `FAILED acceptance/test_x.py::test_ac_001_x - assert`, with `WP-01` (`acs: ["AC-001"]`) and `WP-02` (`acs: ["AC-002"]`). The script also creates a marker file when it runs.
+  - Action: `agentic.py hook` with `AGENTIC_WP=WP-01` and stdin `{"tool_name": "StructuredOutput", "tool_input": {"status": "DONE", "wp": "WP-01", ...}}`.
+  - Expected: exit 2; stderr contains `WP-01`, `denial 1 of 2` and the `FAILED` line; `.claude/state/gate.json` has `WP-01.denials == 1`.
+  - Must not: deny with `AGENTIC_WP=WP-02` (exit 0, no counter for `WP-02`); deny `WP-01` when the failing test names only an AC that `WP-01` shares with `WP-02` (`acs: ["AC-001", "AC-003"]` on both); run the command when the status is `BLOCKED` or `NEEDS_CONTEXT` (exit 0, no marker file).
+  - Check: `test_acceptance_v21.py::GateTests::test_ac_001_red_acceptance_refuses_the_report`
   - WP: WP-01
-- AC-002 · `needs validation` goes to `pending` and never blocks
-  - Scenario: `pipeline.Pipeline` with stub agents: every agent DONE/PASS; the reviewer returns one `needs_validation` item (kind `external`, WP-01, `fact` "TLS termination at the proxy"); QA returns one (kind `unchanged_code`) that also carries `"severity": "critical"`, which a careless agent might add.
-  - Action: `execute()`.
-  - Expected: `result` OK; `pending` has exactly two items of `type` `"needs validation"`, with `source` `reviewer` and `qa`, carrying `claim`, `fact`, `how_to_check` and **no `severity` key in either**, the QA one included; `conformance.json` has a scenario named exactly `needs validation goes to pending and does not block` (the Node side of it runs in the `lint` phase).
-  - Must not: send a `needs_validation` item to a fix cycle, to the verifier, or turn the result into REVIEW.
-  - Check: `test_acceptance_v2.py::EngineTests::test_ac_002_needs_validation_pending`
+- AC-002 · The gate gives up after two denials and resets when the stage opens
+  - Scenario: AC-001's repo, with `gate.json` at `{"WP-01": {"denials": 2, "last": []}}`.
+  - Action: the same hook call; then `agentic.py open-stage 1` and the hook call again.
+  - Expected: first call exit 0 (let through, counter stays 2); after `open-stage 1` the counter for `WP-01` is gone and the call is denied again (exit 2, `denial 1 of 2`).
+  - Must not: let a `DONE` through on a red suite when the counter is below 2; count a denial for a WP other than the owner.
+  - Check: `test_acceptance_v21.py::GateTests::test_ac_002_cap_and_reset`
   - WP: WP-01
-- AC-003 · `not_checked` is collected from every report
-  - Scenario: `pipeline.Pipeline` with stub agents where the implementer of WP-02 reports `not_checked: ["windows paths"]` and the reviewer `not_checked: ["load"]`; the others `[]`.
-  - Action: `execute()`; and `agentic.py run-pipeline` over the end-to-end temp repo of `test_pipeline.py:204-250` with `FAKE_NOT_CHECKED=1` and `FAKE_NEEDS_VALIDATION=WP-01`.
-  - Expected: `run["not_checked"]` is `[{"agent": "implementer", "label": "WP-02", "items": ["windows paths"]}, {"agent": "reviewer", "label": "reviewer", "items": ["load"]}]` (only one implementer reports, so parallel order cannot change it); the real `run-pipeline` ends `RESULT: OK`, its `workflow-result.json` has `not_checked` with one entry per agent call (at least 5) and one `pending` item of type `needs validation`; `conformance.json` has the scenario `not_checked is collected from every report`.
-  - Must not: drop empty lists into `not_checked`, or lose the entries of fix calls.
-  - Check: `test_acceptance_v2.py::EngineTests::test_ac_003_not_checked_collected`
-  - WP: WP-01
-- AC-004 · The prompts carry the package
-  - Scenario: the agent, rules and command files as shipped.
-  - Action: read them as text.
-  - Expected: `reviewer.md` and `qa.md` contain `# Severity anchors`, the four severities and "fully defeat an explicit control" and "the severity is lower than it feels"; both contain `# Needs validation`, `unchanged_code` and "never blocks"; `reviewer.md` contains "No concrete case, no finding", `` `fix` `` and `` `if_skipped` ``; `qa.md`'s `# Report` section contains `` `needs_validation` ``, `` `fix` `` and `` `if_skipped` ``; `implementer.md` contains `# Before writing`, "already in this codebase", "standard library", "grep every caller" and "root cause"; `common.md` contains "already in this codebase" and "every caller"; `test-auditor.md` contains "Tautological" and "passes by construction"; `doc-updater.md` contains "numbers included"; `architect.md` contains "No invented figures", "not measured" and "expand-contract", and its model gate still precedes `## 3. Writing`; `implement.md` contains "needs validation" and "not_checked"; the `# Report` sections of `implementer.md`, `test-author.md`, `test-auditor.md` and `reviewer.md` contain `` `not_checked` ``.
-  - Must not: remove the injection-defence section, the claim step, or the "under N words" limit from any agent (the definition tests check them).
-  - Check: `test_acceptance_v2.py::PromptTests::test_ac_004_prompts`
+- AC-003 · close-stage reports the denials and the engines sum them
+  - Scenario: AC-001's repo with `gate.json` `{"WP-01": {"denials": 1, "last": []}}` and a green acceptance script; the conformance scenario `gate denials are summed from close-stage`, whose `gate_fail` answers `close-stage 1` with exit 0 and output `WP-01: 1 file(s) changed: src/a.py\nWP-02: 1 file(s) changed: src/b/x.py\nGATE: WP-01=1 WP-02=0\nRESULT: OK`.
+  - Action: `agentic.py open-stage 1` (the gate reset leaves `WP-01` at 0, so `gate.json` is written after it), then `agentic.py close-stage 1 WP-01=done WP-02=done`; then both conformance runners on the scenario.
+  - Expected: the close-stage output has the line `GATE: WP-01=1 WP-02=0` before `RESULT: OK`; both runners' summary has `gate_denials == {"WP-01": 1}`.
+  - Must not: list `QA`, `AT`, `REVIEW` or `DOCS` in the `GATE:` line (`close-stage qa QA=pass` prints no `GATE:` line); store a WP with 0 denials in `gate_denials`.
+  - Check: `test_acceptance_v21.py::GateTests::test_ac_003_close_stage_line` (WP-01's half) and `test_acceptance_v21.py::EngineTests::test_ac_003_engines_sum` (WP-02's half)
+  - WP: WP-01, WP-02
+- AC-004 · The four statuses map deterministically in both engines
+  - Scenario: the conformance scenarios `concerns go to pending and to the reviewer` (`reports.implementer["WP-01"] = {"status": "DONE_WITH_CONCERNS", "concerns": ["the retry loop in src/a.py may spin"]}`), `needs context is re-dispatched once with the whole document` (`WP-02`: `[{"status": "NEEDS_CONTEXT", "missing_context": {...}}, {"status": "DONE"}]`), `needs context twice is a blocker` (`WP-02` answers `NEEDS_CONTEXT` on both calls, and `gate_fail: [{"prefix": "close-stage 1 ", "exit_code": 3, "output": "RESULT: REVIEW"}]`, as the scenario "a wave in REVIEW stops before the next" does, because the simulated gatekeeper answers exit 0 otherwise) and `needs context in a fix wave is a blocker` (`review: [{"status": "FAIL", "findings": [<one high finding on WP-01>]}]`; `reports.implementer["WP-01"] = [{"status": "DONE"}, {"status": "NEEDS_CONTEXT", "missing_context": {...}}]`, because the implement and the `(fix)` call share the key `WP-01`; and `gate_fail` on `close-stage 1 ` exit 3 with `--fix` in the prefix: `{"prefix": "close-stage 1 WP-01=blocker", "exit_code": 3, "output": "RESULT: REVIEW"}`).
+  - Action: both conformance runners.
+  - Expected: scenario 1: result `OK`, `pending` contains `concern`, the reviewer prompt (`prompts["reviewer:reviewer#1"]`) contains `the retry loop in src/a.py may spin`, the close-stage of wave 1 carries `WP-01=done`. Scenario 2: `agents` contains `implementer:WP-02 (context)` once, its prompt contains `architecture.md, whole` and `the error type of the contract`, the wave closes `WP-02=done`, result `OK`. Scenario 3: the wave closes `WP-02=blocker`, result `REVIEW`, `failed_stage` `wave 1`, `implementer:WP-02 (context)` exactly once. Scenario 4: the first wave closes `WP-01=done`, the fix wave closes `WP-01=blocker --fix`, result `REVIEW`, `failed_stage` `fix wave 1`, no `(context)` call.
+  - Must not: a concern item with a `severity`; a third dispatch of `WP-02`; a `(context)` call counted as a fix attempt.
+  - Check: `test_acceptance_v21.py::EngineTests::test_ac_004_status_mapping`
   - WP: WP-02
-- AC-005 · Version 2.0.0 with notes, and the roadmap updated
-  - Scenario: `plugin.json`, `upgrade.py`, the roadmap.
-  - Action: read `plugin.json`; `upgrade.notes_between("1.1.4", "2.0.0")`; read the roadmap.
-  - Expected: version `2.0.0`; the notes are non-empty and mention `needs_validation`, `not_checked`, "four parts", "reuse" and "customised"; `notes_between("1.1.4", "1.1.4")` is empty; the roadmap contains `## Versioning`, "2.0" and "run-wave --fix".
-  - Must not: change the 1.1.x notes: `notes_between("1.0.0", "1.1.4")` equals the list the test freezes as a literal copied from `upgrade.py` before the change.
-  - Check: `test_acceptance_v2.py::VersionTests::test_ac_005_version_and_notes`
+- AC-005 · Both engines carry the same implementer schema and the simulated claude speaks it
+  - Scenario: `pipeline-spec.json` and `agentic-implement.js` as merged; a temp project with the fake `claude` and `FAKE_CONCERNS=1`.
+  - Action: compare `schemas.implementer` of the spec with `REPORT_SCHEMA` extracted from the JS (as `test_acceptance_v2.py::SchemaTests` does); run `agentic.py run-pipeline` in the temp project.
+  - Expected: `status.enum == ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"]`, `required` identical in both and containing `concerns` and `missing_context`; `workflow-result.json` has `result == "OK"`, one `concern` pending item per WP and `gate_denials == {}`.
+  - Must not: `BLOCKER` in the implementer enum; a difference in `required` order between the two files.
+  - Check: `test_acceptance_v21.py::SchemaTests::test_ac_005_schema_in_both_engines_and_fake`
+  - WP: WP-02
+- AC-006 · The prompts say it
+  - Scenario: the merged `implementer.md` and `implement.md`.
+  - Action: read them.
+  - Expected: `implementer.md` names the four statuses, one line each, containing these phrases: `DONE_WITH_CONCERNS` with "one sentence per concern, with the file"; `NEEDS_CONTEXT` with "you will get the whole document once"; `BLOCKED` with "a contract does not match"; and the gate: "a report that says DONE while the acceptance tests of your criteria fail is refused, twice at most". `implement.md` has a bullet for `concern` items and one for `gate_denials`.
+  - Must not: the token `BLOCKER` anywhere in `implementer.md`.
+  - Check: `test_acceptance_v21.py::PromptTests::test_ac_006_prompts`
   - WP: WP-03
+- AC-007 · Version and notes
+  - Scenario: the merged repo.
+  - Action: read `plugin.json`, `upgrade.NOTES`, the roadmap.
+  - Expected: version `2.1.0`; `NOTES["2.1.0"]` has at least three strings, mentioning `gate`, `DONE_WITH_CONCERNS` and `settings.json` between them; the roadmap's "Versioning" section names 2.1.0 for items 2.1 and 2.2.
+  - Must not: `NOTES["2.0.0"]` changed (seven strings, same first sentence).
+  - Check: `test_acceptance_v21.py::ReleaseTests::test_ac_007_version_and_notes`
+  - WP: WP-04
+- AC-008 · install upgrades the hook matcher of a 2.0 project
+  - Scenario: a temp `settings.json` with the 2.0.0 agentic entry whose matcher the project trimmed to `Write|Edit|Bash` (no `timeout`) and a project-owned `PreToolUse` entry (`matcher: "Bash"`, another command).
+  - Action: `agentic.merge_settings(dst, src)` with the repo's `settings.json` as `src`, twice.
+  - Expected: the agentic entry's matcher is exactly `Write|Edit|Bash|StructuredOutput`, its hook has `timeout == 900`, `added` contains `hook PreToolUse (StructuredOutput)`; the project's entry is unchanged; the second call's `added` is empty.
+  - Must not: duplicate the agentic entry; alter the project's entry.
+  - Check: `test_acceptance_v21.py::InstallTests::test_ac_008_matcher_upgrade`
+  - WP: WP-01
 
 ### Work packages
-#### WP-01 · Engines and schemas
-- Wave 1. Files: `.claude/workflows/pipeline-spec.json`, `.claude/workflows/agentic-implement.js`, `.claude/bin/pipeline.py`, `.claude/bin/conformance.json`, `.claude/bin/test_pipeline.py`, `.claude/bin/test_workflow.mjs`, `.claude/bin/testutil.py`.
-- Implements §5 and the engine contracts of §6; consumes nothing (the prompts are text the agents read; the engines only need the schemas).
-- ACs: AC-001, AC-002, AC-003.
-- Patterns to mirror: `.claude/bin/pipeline.py:341-395` (review and QA routing: keep the structure, add the `needs validation` pending items where `baseline` is built), `.claude/workflows/agentic-implement.js:385-430` (the same in Node), `.claude/bin/test_pipeline.py:28-60` (`world`), `.claude/bin/test_workflow.mjs:440-480` (`fromDecl`, `summarize`), `.claude/bin/conformance.json:261-310` (two review scenarios to copy the shape from).
-- Gotchas: `FINDINGS_SCHEMA` in the JS serves both the reviewer and the test-auditor; split into `REVIEW_SCHEMA` (with `needs_validation`, `not_checked`, `fix`, `if_skipped`) and `AUDIT_SCHEMA` (old findings + `not_checked`). The spec already has separate `reviewer` and `test-auditor` schemas: edit each. The pending items must have **no** `severity` key, or `BLOCKING.has(p.severity)` / `p.get("severity") in self.blocking` would be the only thing standing between them and a REVIEW. `run["not_checked"]` must be initialised in the run record before any agent call and appended in the one helper (`Pipeline.call`; in Node a wrapper around `safe(agent(...))` that knows `agentType` and `label`), so fix calls and revisions are not missed. The conformance summary key must be added to **both** harnesses or `test_every_scenario_is_the_same_in_both_engines` cannot see it. `world` serves a default DONE report per WP: the new `reports` override merges over it. `FAKE_CLAUDE` fills missing required keys with `[]`, which is right for lists; the fabricated finding/defect must carry the two new strings. Keep `pipeline-spec.json` valid JSON (no comments).
-- Exact imports: none new.
-- Validation: `node .claude/bin/test_workflow.mjs` ends `scenarios OK` with 0 failures; `python3 -m unittest discover -s .claude/bin -p test_pipeline.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py -k Schema -k Engine` (unittest's `-k` is a substring; one flag per pattern).
+#### WP-01 · The gate in the hook, the GATE: line, the settings
+- Wave 1.
+- Files: `.claude/bin/agentic.py`, `.claude/settings.json`, `.claude/bin/test_agentic.py`, `.claude/bin/test_acceptance_portable.py`.
+- Implements `gate_check`, `gate_reset`, `gate_denials`, the `GATE:` line, `status_to_state`, `merge_settings` (section 6). Consumes nothing.
+- ACs: AC-001, AC-002, AC-003 (the close-stage half), AC-008.
+- Patterns to mirror: `guard` write rules `:1961-1983` (message shape, `block`), `with_claims`/`locked_json` `:1673-1696` (state file), `acceptance_check` `:1230-1249` (exit codes), `attribute` `:1557-1574`, `failure_lines` `:1539-1543`, `open_stage` `:1459-1469`, `close_stage` `:1472-1508`, `merge_settings` `:1051-1085`; tests `test_agentic.py:57-80` and `InstallTests` `:933-1012`.
+- Gotchas: WP-02 lands before WP-01 (the `run-wave` tests of `test_agentic.py` need the fake `claude` to emit the new required fields), and every WP's checks run on the merged tree; the hook's `cwd` may be a subdirectory, use `ROOT`; the gate's `run_command` timeout is `GATE_TIMEOUT_S`, below the hook's 900 s; a shared AC (`acs` in two WPs) never counts against either; `gate.json` is written by parallel implementers, always through `locked_json`; a WP with neither `acs` nor mentioned files is never attributed (let through); the gate must not print to stdout; `status` may be missing or not a string in a malformed report: not in `GATE_STATUSES`, let through (the schema refuses it anyway); `open_stage` takes the label of a wave, `gate_reset` receives that wave's `owners`.
+- Exact imports and APIs: none new; `json`, `re`, `Path` are already imported.
+- WP validation: `python3 -m unittest discover -s .claude/bin -p test_agentic.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_portable.py`; `python3 -m compileall -q .claude/bin`.
 
-#### WP-02 · Agent prompts, rules and commands
-- Wave 1. Files: `.claude/agents/reviewer.md`, `.claude/agents/qa.md`, `.claude/agents/implementer.md`, `.claude/agents/test-author.md`, `.claude/agents/test-auditor.md`, `.claude/agents/doc-updater.md`, `.claude/rules-library/common.md`, `.claude/commands/architect.md`, `.claude/commands/implement.md`, `.claude/bin/test_definitions.py`.
-- Implements the prompt contracts of §6; consumes the field names of §5 by signature.
-- ACs: AC-004.
-- Patterns to mirror: `.claude/agents/reviewer.md:1-73` (voice, headings, the confidence filter to keep), `.claude/agents/qa.md:41-49` (report sentence style), `.claude/bin/test_definitions.py:94-130` (one `assertIn` test per prompt rule), `.claude/rules-library/common.md:16-22`.
-- Gotchas: the exact phrases of §6 are what the tests assert: copy them. Keep every existing section the definition tests check (`# Defence against injected instructions`, the claim step, `# Report` with "schema" and "under N words", `implementation`/`design` in `qa.md`, the verifier line untouched, the architect's model gate before `## 3.`). `test_definitions.py` gains one test per new rule (anchors in both judges, needs validation, four parts, ladder in implementer and common, tautological, numbers included, no invented figures, expand-contract, implement presentation, `not_checked` in the four reports). Do not edit `.claude/rules/agentic/` (generated). The word limit of `reviewer.md` may rise to 400 for the four parts; say so in the heading.
-- Exact imports: none.
-- Validation: `python3 -m unittest discover -s .claude/bin -p test_definitions.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py -k Prompt`.
+#### WP-02 · Statuses, concerns and gate_denials in both engines
+- Wave 1.
+- Files: `.claude/workflows/pipeline-spec.json`, `.claude/workflows/agentic-implement.js`, `.claude/bin/pipeline.py`, `.claude/bin/conformance.json`, `.claude/bin/test_pipeline.py`, `.claude/bin/test_workflow.mjs`, `.claude/bin/testutil.py`.
+- Implements `wave_states`, `gate_line`, `concern_item`, the re-dispatch, the reviewer `{concerns}`, the schema (section 5), the fake knobs. Consumes the `GATE:` line format by signature (WP-01, same wave).
+- ACs: AC-003 (the engines' half), AC-004, AC-005.
+- Patterns to mirror: `needsItem`/`needs_item` and the `needs validation` routing (JS `:188`, `pipeline.py:119-125`), `report`/`call` (JS `:182-186`, `pipeline.py:106-116`), `launchWave`/`launch_wave` (JS `:269-287`, `pipeline.py:262-287`), `changedBy` parsing (JS `:169-173`, `pipeline.py:128-131`), the 2.0.0 conformance scenarios (last two of `conformance.json`) and their assertions (`test_pipeline.py:160-166`, `test_workflow.mjs:525-529`), fake knobs `testutil.py:78-95`.
+- Gotchas: `concern_pending` must be added wherever `run["pending"]` is rebuilt (two places per engine) or the concerns vanish; `required` order identical in the spec and the JS (`deepEqual`); the engines record the *second* report of a re-dispatched WP; `fixCount`/`fix_count` must not count a `(context)` call; the reviewer prompt is built once per review from `concern_pending`; `summarize` in both runners must add `gate_denials` or the conformance comparison fails; the fake must emit `concerns: []` and `missing_context: null` in every implementer report or `structured_report` refuses it; `world`/`fromDecl` must accept a list override per WP (first call, then last element).
+- Exact imports and APIs: `render` (`pipeline.py:31`), `compact` (`pipeline.py:26`), `self.seq`/`seq`, `self.step`/`step`.
+- WP validation: `node .claude/bin/test_workflow.mjs`; `python3 -m unittest discover -s .claude/bin -p test_pipeline.py`; `python3 -m compileall -q .claude/bin`.
 
-#### WP-03 · Version 2.0.0, upgrade notes and the roadmap
-- Wave 1. Files: `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, `.claude/bin/test_upgrade.py`, `.claude/bin/test_acceptance_upgrade.py`, `docs/roadmap/repo-review-2026-11.md`.
-- Implements the version contract of §6; consumes nothing.
-- ACs: AC-005.
-- Patterns to mirror: `.claude/bin/upgrade.py:19-46` (notes), `.claude/bin/test_upgrade.py:62-86` (`notes_between` tests), `docs/roadmap/repo-review-2026-11.md:1-20` (tone).
-- Gotchas: `test_acceptance_upgrade.py:258` asserts the plugin version is `"1.1.4"`: change it to `"2.0.0"` (it pins the shipped version on purpose; keep it a literal). Notes are plain strings wrapped at 120 columns, one per change, no Markdown; `test_upgrade.py` gets one test that `notes_between("1.1.4", "2.0.0")` names `needs_validation` and `not_checked`; the roadmap's cited `agentic.py <cmd>` must exist (`run-wave` does; write "`run-wave --fix`" as plain text, not as `` `agentic.py --fix` ``); no personal paths.
-- Exact imports: none.
-- Validation: `python3 -m unittest discover -s .claude/bin -p test_upgrade.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_upgrade.py`; `python3 -m unittest discover -s .claude/bin -p test_definitions.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py -k Version`.
+#### WP-03 · The prompts
+- Wave 1.
+- Files: `.claude/agents/implementer.md`, `.claude/commands/implement.md`, `.claude/bin/test_definitions.py`.
+- Implements the texts of AC-006. Consumes the schema of section 5 by signature.
+- ACs: AC-006.
+- Patterns to mirror: the "# Report" section of `implementer.md` (last paragraph); the "Ambiguity" and "Active guardrails" sections (`NEEDS_CONTEXT` replaces "stop and return BLOCKER" for a missing decision; `BLOCKED` for contradictions, mismatched contracts and guardrails); `implement.md:60-64` (one bullet per pending type); the 2.0.0 tests at the end of `test_definitions.py`.
+- Gotchas: `test_definitions.py` already pins phrases of `implementer.md` ("not_checked", the reuse ladder): keep them; `BLOCKER` must disappear from `implementer.md` but stays in `test-author.md` and `doc-updater.md`; the report paragraph must list `concerns` and `missing_context` with when each is non-empty.
+- WP validation: `python3 -m unittest discover -s .claude/bin -p test_definitions.py`.
+
+#### WP-04 · Version, notes, roadmap
+- Wave 1.
+- Files: `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, `.claude/bin/test_upgrade.py`, `.claude/bin/test_acceptance_upgrade.py`, `.claude/bin/test_acceptance_v2.py`, `docs/roadmap/repo-review-2026-11.md`.
+- ACs: AC-007.
+- Patterns to mirror: `NOTES["2.0.0"]` `upgrade.py:50-62` (tone: what changed, what the project must do); `test_acceptance_upgrade.py:258` and `test_acceptance_v2.py:177` (the version pins: both become `2.1.0`).
+- Notes to write (at least): the gate and its two denials; the four statuses and that a customised `implementer.md` from 2.0 must be merged (`BLOCKER` is no longer in the schema); `settings.json` matcher and timeout upgraded by `install` (a hand-edited agentic entry must be checked); `gate_denials` and `concern` items in `workflow-result.json`. Roadmap: item 2.1 corrected (`PreToolUse` on `StructuredOutput`, measured; not `SubagentStop`), "Versioning" names 2.1.0, "Recommended order" step 3 marked shipped.
+- WP validation: `python3 -m unittest discover -s .claude/bin -p "test_*upgrade.py"`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py`.
 
 ```json wp-manifest
 {
-  "stack": ["python"],
-  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(node .claude/bin/test_workflow.mjs)", "Bash(node .claude/bin/test_workflow.mjs:*)"],
-  "acceptance": {"files": [".claude/bin/test_acceptance_v2.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py"},
+  "stack": ["python", "typescript"],
+  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(node .claude/bin/test_workflow.mjs)"],
+  "acceptance": {"files": [".claude/bin/test_acceptance_v21.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v21.py"},
   "verify": {"build": "python3 -m compileall -q .claude/bin", "lint": "node .claude/bin/test_workflow.mjs", "tests": "python3 -m unittest discover -s .claude/bin -p test_*.py"},
-  "docs": {"files": ["README.md", "docs/how-to/README.md", "docs/how-it-works.md"], "codemap": null},
+  "docs": {"files": ["README.md", "docs/how-it-works.md", "docs/how-to/"], "codemap": null},
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/workflows/pipeline-spec.json", ".claude/workflows/agentic-implement.js", ".claude/bin/pipeline.py", ".claude/bin/conformance.json", ".claude/bin/test_pipeline.py", ".claude/bin/test_workflow.mjs", ".claude/bin/testutil.py"],
-     "acs": ["AC-001", "AC-002", "AC-003"],
-     "mirror": [".claude/bin/pipeline.py:341-395", ".claude/workflows/agentic-implement.js:385-430", ".claude/bin/test_pipeline.py:28-60", ".claude/bin/test_workflow.mjs:440-480", ".claude/bin/conformance.json:261-310"]},
-    {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude/agents/reviewer.md", ".claude/agents/qa.md", ".claude/agents/implementer.md", ".claude/agents/test-author.md", ".claude/agents/test-auditor.md", ".claude/agents/doc-updater.md", ".claude/rules-library/common.md", ".claude/commands/architect.md", ".claude/commands/implement.md", ".claude/bin/test_definitions.py"],
-     "acs": ["AC-004"],
-     "mirror": [".claude/agents/reviewer.md:1-73", ".claude/agents/qa.md:41-49", ".claude/bin/test_definitions.py:94-130", ".claude/rules-library/common.md:16-22"]},
-    {"id": "WP-03", "wave": 1, "depends_on": [], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", ".claude/bin/test_upgrade.py", ".claude/bin/test_acceptance_upgrade.py", "docs/roadmap/repo-review-2026-11.md"],
-     "acs": ["AC-005"],
-     "mirror": [".claude/bin/upgrade.py:19-46", ".claude/bin/test_upgrade.py:62-86", "docs/roadmap/repo-review-2026-11.md:1-20"]}
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/agentic.py", ".claude/settings.json", ".claude/bin/test_agentic.py", ".claude/bin/test_acceptance_portable.py"],
+     "acs": ["AC-001", "AC-002", "AC-003", "AC-008"], "mirror": [".claude/bin/agentic.py:1929-1983", ".claude/bin/agentic.py:1557-1574", ".claude/bin/agentic.py:1459-1508", ".claude/bin/agentic.py:1051-1085"]},
+    {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude/workflows/pipeline-spec.json", ".claude/workflows/agentic-implement.js", ".claude/bin/pipeline.py", ".claude/bin/conformance.json", ".claude/bin/test_pipeline.py", ".claude/bin/test_workflow.mjs", ".claude/bin/testutil.py"],
+     "acs": ["AC-003", "AC-004", "AC-005"], "mirror": [".claude/bin/pipeline.py:106-131", ".claude/bin/pipeline.py:262-287", ".claude/workflows/agentic-implement.js:169-193", ".claude/workflows/agentic-implement.js:269-287"]},
+    {"id": "WP-03", "wave": 1, "depends_on": [], "files": [".claude/agents/implementer.md", ".claude/commands/implement.md", ".claude/bin/test_definitions.py"],
+     "acs": ["AC-006"], "mirror": [".claude/agents/implementer.md", ".claude/commands/implement.md:60-64"]},
+    {"id": "WP-04", "wave": 1, "depends_on": [], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", ".claude/bin/test_upgrade.py", ".claude/bin/test_acceptance_upgrade.py", ".claude/bin/test_acceptance_v2.py", "docs/roadmap/repo-review-2026-11.md"],
+     "acs": ["AC-007"], "mirror": [".claude/bin/upgrade.py:50-62"]}
   ]
 }
 ```
 
 ## 9. Test strategy
-- Unit: WP-01 extends `test_pipeline.py` / `test_workflow.mjs` through the two conformance scenarios; WP-02 extends `test_definitions.py` with one test per prompt rule; WP-03 extends `test_upgrade.py`.
-- Acceptance: `.claude/bin/test_acceptance_v2.py` from AC-001…AC-005, written first and red (the fields, phrases and version do not exist yet). AC-003's end-to-end part uses the simulated `claude`, so nothing is spent. The whole-suite agreement (definitions, conformance in both engines) is what the verify phases run; no acceptance test re-runs the suites (it would double the verify time inside one gatekeeper call).
-- QA: exploratory over the engines (a `needs_validation` item on an unknown WP stays in `pending` as it is; a `not_checked` of the wrong type is dropped; a fix cycle that also reports `not_checked` is collected under its `(fix)` label) and over the prompts (phrases that contradict an older sentence in the same file).
-- Measurement, by hand after merging: `python3 bench/bench.py run` (4 fixtures × 3 runs, about 7 USD and 40 minutes) and a results PR; compare against the 1.1.4 rows in `bench/RESULTS.md` on cost, minutes, fix cycles and audit rounds. A rise in cost without a fall in cycles is a finding against the package, to be taken item by item.
+- Unit: WP-01 in `test_agentic.py` (gate: each let-through condition, a report from a reviewer that never claimed is let through, the denial message, the counter, the reset, the `GATE:` line, `status_to_state`, the matcher upgrade and its idempotence); WP-02 through the five new conformance scenarios in both runners plus the fake knobs; WP-03 in `test_definitions.py`; WP-04 in `test_upgrade.py`.
+- Acceptance: `.claude/bin/test_acceptance_v21.py`, AC-001…AC-008, written first and red (the gate, the statuses, the version do not exist yet). AC-005's end-to-end part uses the simulated `claude`, so nothing is spent. No acceptance test re-runs the whole suites.
+- QA: exploratory over the gate (a non-string status; a WP with no `acs` and unmentioned files; a corrupt `gate.json`; a `StructuredOutput` call from QA or the test-author, never gated; a report whose `wp` differs from the owner: the owner wins) and over the engines (`concerns` with non-strings; `NEEDS_CONTEXT` from a custom agent; a `GATE:` line with an unknown WP; a `GATE:` line in a fix wave summed with the implement wave's).
+- After merging, by hand: release 2.1.0, then `python3 bench/bench.py run --sessions 3` on the four fixtures, compared with the 2.0.0 rows of `bench/RESULTS.md`; the metrics are fix cycles, gate denials (new, from the kept session results), cost and minutes.
 
 ## 10. Decisions
-- **D1 · `needs_validation` as a separate list in the report (user's choice):** no severity by construction, routed to `pending` as its own type, visible to the person and to the bench. Discarded: a fifth severity value (contradicts "no severity"; the engines would treat it as advisory) and prompt-only (invisible to `pending`).
-- **D2 · `not_checked` as a required schema field (user's choice)** on the four agents that lack an equivalent; QA keeps `gaps` and the doc-updater `unverified` rather than renaming them (older customised agents keep working for those two).
-- **D3 · The reuse ladder in `common.md` and `implementer.md` (user's choice):** the rules reach every agent and every project through `rules-sync`; the implementer prompt makes it a step.
-- **D4 · Severity anchors duplicated in `reviewer.md` and `qa.md`** rather than placed in `common.md`: the rules are about code the agents write, the anchors are about judging; six lines twice is cheaper than a new rule section.
-- **D5 · One wave, three WPs:** the engines only need the field names, the prompts only the names, the version nothing; all are fixed in §5-§6.
-- **D6 · Both engines in one WP:** the conformance test fails whenever they disagree, so splitting them across WPs would leave each one red until the other lands.
-- **D7 · 2.0.0 (user's decision):** the report schemas and the prompts change what a customised agent must return; semver major, with a compatibility note.
-- **D8 · Measurement protocol: 4 fixtures × 3 runs (user's choice)**, the baseline's protocol, so the ranges compare.
+- **D1 · The gate is a `PreToolUse` hook on `StructuredOutput`, not `Stop`/`SubagentStop` (measured):** with `--json-schema` the structured answer is delivered before `Stop` fires and a block does not change it; a denied `StructuredOutput` makes the agent correct and re-submit in the same context. Roadmap item 2.1 said `SubagentStop`; the roadmap is corrected. Discarded: a check inside the engines after the report (would need a new dispatch, losing the agent's context, which is the whole point).
+- **D2 · Acceptance attributed to the WP, nothing else (user's choice):** only the acceptance tests have a deterministic owner (`acs` and paths); a `verify.*` failure would blame the wrong package in a parallel wave.
+- **D3 · Two denials per WP and stage (user's choice):** a third attempt in the same context rarely helps and the fix cycles already exist; the count resets when the stage opens so a fix wave gets its own two.
+- **D4 · Deterministic status mapping (user's choice):** `DONE_WITH_CONCERNS` is `done` plus pending items without severity, handed to the reviewer who can promote them to findings; `NEEDS_CONTEXT` buys one re-dispatch with the whole document, only in implement waves (in a fix wave the agent already has the code and the defects; a second miss is a plan problem, so `blocker`); `BLOCKED` is the old `BLOCKER`. Discarded: letting the launcher model decide (not reproducible, not measurable).
+- **D5 · `BLOCKER` is removed from the implementer enum**, kept for the test-author and doc-updater, and kept in `status_to_state` so their fallback runs still map. A hard rename rather than an alias: an alias would let a 2.0 customised `implementer.md` keep working while its prompt lies about the statuses.
+- **D6 · `gate_denials` reach the run through `close-stage` output**, not by the engines reading `gate.json`: the engines have no disk (the native workflow runs inside the Workflow tool) and every state fact already travels in gatekeeper output.
+- **D7 · Version 2.1.0, not 3.0:** the implementer schema and the settings change, so projects upgrade with `install` and read the notes, but no plan, manifest or command changes; the roadmap's "Versioning" section already said 2.x for sections 2-7.
+- **D8 · The hook `timeout` is set in `settings.json` and upgraded by `install`:** without it the CLI kills the hook at 60 s and a killed hook is read as allowed by the CLI. 900 s matches `run_command`'s cap.
+- **D9 · The gate fails open on its own errors and only on the WP's own failure:** a hook that refused every report because the manifest did not parse would stall a run with no cap; a shared AC would make the first finisher pay for the other's unfinished work. The write rules keep failing closed.
+- **D10 · The gate runs the whole acceptance command, not only the WP's tests:** the manifest has one command and no per-WP selection; attribution filters the result. Discarded: deriving a `-k AC-001` filter (framework-specific; the flow is language-agnostic).
 
 ## 11. Risks and open questions
-- **This plan cannot be run by `/implement` in this repo:** `validate` refuses any WP that owns a path under `.claude/` (`agentic.py:403`) and the hook blocks agents' writes there; both are security rules, not to be relaxed. The flow cannot implement itself. The WPs are executed by hand in this session, in the order WP-01, WP-02, WP-03, with the acceptance tests written and red first, the WP validation commands and the verify phases run as the manifest states, and one commit per WP. The manifest stays truthful rather than valid. A "maintainer mode" for the flow's own repo is a roadmap item, not part of this change.
-- **The bench may show more cost, not less:** four-part findings and `not_checked` lists add output tokens; the package pays off only if fix cycles or audit rounds fall. The baseline has one fix cycle and one extra audit round in 24 sessions, so the signal is thin; a null result is possible and is still a result.
-- **Customised agents in projects:** a project that edited `reviewer.md` keeps its 1.x version (install leaves edited files alone) and the launcher's new schema will reject its reports as incomplete. The upgrade note says to merge; `init` relays it.
-- **Prompt text drifting from the tests:** the acceptance and definition tests pin exact phrases, so a later rewording must update them; that is intended.
-- **Two engines by hand:** a field added to one schema and not the other passes neither AC-001 nor conformance; the WP runs both before DONE.
-- **Rollback:** revert the PR; projects on 2.0.0 that run `install` from 1.1.4 are refused by the downgrade guard, so a bad 2.0.0 needs a 2.0.1, not a revert of the release.
+- **This plan cannot be run by `/implement` in this repo:** `validate` refuses any WP that owns a path under `.claude/` (`agentic.py:403`) and the hook blocks agents' writes there; both are security rules, not to be relaxed. The WPs are executed by hand in this session, with the acceptance tests written and red first, the WP validation commands and the verify phases run as the manifest states, and one commit per WP. The manifest stays truthful rather than valid.
+- **The native workflow is untested here:** the `StructuredOutput` denial was measured with `claude -p --agent` (the fallback engine's shape). Whether the Workflow tool's subagents fire `PreToolUse` on `StructuredOutput` with an `agent_id` that `claims.json` knows is assumed, not measured; the bench runs `run-pipeline`, so the measurement covers the fallback only. If the native workflow does not fire it, the gate is simply absent there (no hook call, no denial) and the statuses still work.
+- **Cost:** each gated report runs the acceptance suite once more (the implementer should have run it already); on the fixtures that is seconds. A denial costs one more agent turn, cheaper than a fix cycle. The bench decides; a null or negative result is still a result.
+- **Hook timeout:** a project whose `settings.json` was hand-edited may keep the 60 s default; the upgrade note says so and `install` fixes the standard entry. The gate's 840 s also count against the fallback engine's per-agent `timeout_s` (`agentic.json`); on the fixtures the acceptance suites take seconds, but a project with a slow suite should raise `timeout_s` or expect a `TIMEOUT` status; the note says so.
+- **False denials in a parallel wave:** a half-written file of WP-02 can break an import in WP-01's acceptance test; the output names `AC-001` and WP-01 is refused for a failure that is not its own. The cap of two bounds the damage and the report then goes through. A deterministic rule ("an import or collection error never counts") was considered and left out: the markers differ per framework and language. If the bench shows denials without a later fix, revisit.
+- **Customised implementers:** a project with an edited `implementer.md` from 2.0 keeps a prompt that says `BLOCKER` while the schema refuses it; the CLI forces one of the four values. The note tells them to merge.
+- **Rollback:** revert the PR; projects on 2.1.0 are refused by the downgrade guard, so a bad 2.1.0 needs a 2.1.1.
