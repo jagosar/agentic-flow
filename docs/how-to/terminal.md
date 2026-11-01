@@ -1,15 +1,17 @@
 # Guide: Claude Code in the terminal
 
 **Goal:** run the whole flow from a terminal, interactively or from scripts.
-**Status:** tested with Claude Code 2.1.302, with real agents:
-- a complete `/implement` with the native workflow, from wave 0 to a closed ledger;
-- an existing codebase, with no regressions and backward-compatible data;
-- a fix cycle with an injected defect, plus the living documentation;
-- the fallback mode, end to end.
+**Status:** tested with Claude Code 2.1.302, with real agents: a complete `/implement` with the native workflow, an existing codebase, a fix cycle with an injected defect and the fallback mode, end to end.
 
 Before you start, meet the [requirements](README.md#requirements) and [install the flow in your project](README.md#install-the-flow-in-a-project).
 
-## 1. Install and start
+## What this environment needs
+
+- A shell with `git` and `python3`, and the `claude` CLI signed in to a Pro, Max, Team or Enterprise plan.
+- **Dynamic workflows enabled** (on Pro, in `/config`). The template already sets `"enableWorkflows": true` in `.claude/settings.json`.
+- The `claude` CLI on the `PATH` for the fallback mode (sections 5 and 6).
+
+## 1. Open a session
 
 The native installer is recommended; it updates itself:
 
@@ -44,7 +46,7 @@ Inside the session:
 - Before writing `architecture.md`, it tells you which model it is running on and asks whether to go ahead. If it is not Opus, choose **Pause to switch model**, run `/model opus` and reply `continue`.
 - You get `architecture.md`, the message `Manifest valid` and a request for approval.
 
-Read the document in your editor, then commit it:
+Read the document in your editor, approve it, then commit it:
 
 ```bash
 git add architecture.md && git commit -m "Architecture: gRPC payments"
@@ -62,6 +64,10 @@ git add architecture.md && git commit -m "Architecture: gRPC payments"
 
 <p align="center"><img src="../assets/screens/report.png" width="760" alt="A real /implement report: result OK, both packages DONE, verification and acceptance green, QA PASS, one fix cycle, documentation updated, proposed commits."></p>
 
+- The report lists each package with one of four statuses: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`.
+- It also lists the stop gate denials (`gate_denials`), the review and QA results, and the pending items: design questions, needs validation, concerns and fix limits. Each package can also report what it did not check (`not_checked`).
+- Nothing is committed until you approve the proposed commits. The steps are in [the working cycle](README.md#the-working-cycle).
+
 While it runs, from the session or another terminal:
 
 ```bash
@@ -72,13 +78,14 @@ python3 .claude/bin/agentic.py status
 python3 .claude/bin/agentic.py stop
 ```
 
-If a stage stops on a blocker, fix the cause and resume from that wave:
+## 4. Review and deliver
 
-```
-/implement 2
-```
+- Review the changes with `git diff` or your editor. `git status` shows only the packages' files, the acceptance tests, the QA tests and the documentation zone.
+- Commit when you approve the proposed commits. The flow's agents cannot commit or push; the main session only does it when you ask.
+- If a package ends `BLOCKED`, or `NEEDS_CONTEXT` a second time, the stage stops. Fix the cause (usually a gap in `architecture.md`, revisited with `/architect`) and resume from that wave with `/implement <wave>`, for example `/implement 2`.
+- Run the project's own test suite yourself, with the command from section 3 of `architecture.md`.
 
-## 4. Without the launcher: stage by stage
+## 5. Without the launcher: stage by stage
 
 With an approved `architecture.md`, the whole pipeline can run from the shell (this is the fallback mode, which needs the `claude` CLI). It exits `0` when all is well and `3` when something needs review, and saves the result in `.claude/state/runs/workflow-result.json`:
 
@@ -100,9 +107,7 @@ for n in $(python3 .claude/bin/agentic.py pipeline-plan | python3 -c "import jso
 python3 .claude/bin/agentic.py acceptance --expect green && python3 .claude/bin/agentic.py run-review && python3 .claude/bin/agentic.py run-qa
 ```
 
-## 5. Fixing defects by hand
-
-Read what the reviewer and QA found:
+To fix defects by hand, read what the reviewer and QA found:
 
 ```bash
 python3 -c "import json; [print(r, json.load(open(f'.claude/state/runs/{r}.json'))['result'][:2000]) for r in ('REVIEW', 'QA')]"
@@ -129,12 +134,6 @@ tmux new -s agentic
 ```
 
 To follow the session from your phone, turn on Remote Control inside Claude Code with `/remote-control`.
-
-## Check
-
-- `git status` shows only the packages' files, `acceptance/`, `qa/` and the documentation zone.
-- Each stage ends in `RESULT: OK`.
-- Run the project's own test suite yourself, with the command from section 3 of `architecture.md`.
 
 ## Troubleshooting
 

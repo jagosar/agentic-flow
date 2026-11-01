@@ -9,8 +9,9 @@ Before you start, meet the [requirements](README.md#requirements) and [install t
 
 - **The CLI installed.** The plugin does not bundle its own copy, so it is mandatory.
 - The **Claude Code [Beta]** plugin from the JetBrains Marketplace.
+- In your interactive session, Manual mode for edits. The official documentation warns that, in JetBrains IDEs, `acceptEdits` mode can modify IDE configuration files that the IDE executes. The flow's agents use `acceptEdits`, but the hook only lets them write their own package's files, so they cannot touch `.idea/` or anything outside the manifest.
 
-## 1. Install
+## 1. Open a session
 
 1. Install the CLI:
 
@@ -19,38 +20,38 @@ Before you start, meet the [requirements](README.md#requirements) and [install t
    ```
 
 2. Go to `Settings → Plugins → Marketplace`, search for **Claude Code [Beta]**, install it and restart the IDE.
+3. Use `Ctrl+Esc` (`Cmd+Esc` on a Mac) or the Claude Code button. Or run `claude` in the integrated terminal, at the project root. From an external terminal, connect to the IDE with `/ide`.
+4. Make diffs open in the IDE: run `/config` and set **Diff tool** to `auto`.
 
-A Claude Code button appears in the IDE.
-
-## 2. Open Claude Code
-
-- Use `Ctrl+Esc` (`Cmd+Esc` on a Mac) or the Claude Code button.
-- Or run `claude` in the integrated terminal, at the project root.
-- From an external terminal, connect to the IDE with `/ide`.
-
-Make diffs open in the IDE: run `/config` and set **Diff tool** to `auto`.
-
-## 3. Use the flow
-
-Exactly as in the [terminal](terminal.md):
+## 2. Design
 
 ```
 /architect <your request>
 ```
 
+- Before writing `architecture.md`, the architect tells you which model it is running on. If it is not Opus, pause, switch the model and reply `continue`.
+- Read `architecture.md`, approve it, then commit it from the **Commit** window (`Alt+0`).
+
+## 3. Build
+
 ```
 /implement
 ```
 
-- Changes are written straight to disk. Review them in the **Commit** window (`Alt+0`) or in **Git → Local Changes**.
+- Follow it with `/workflows`. Changes are written straight to disk.
+- Review them in the **Commit** window (`Alt+0`) or in **Git → Local Changes**.
+
+When it finishes you get the same report as in the [terminal guide](terminal.md#3-build):
+
+- The report lists each package with one of four statuses: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`.
+- It also lists the stop gate denials (`gate_denials`), the review and QA results, and the pending items: design questions, needs validation, concerns and fix limits. Each package can also report what it did not check (`not_checked`).
+- Nothing is committed until you approve the proposed commits. The steps are in [the working cycle](README.md#the-working-cycle).
+
+## 4. Review and deliver
+
 - The QA report is in the `/implement` summary and in `.claude/state/runs/workflow-result.json`.
-
-## Security
-
-The official documentation warns that, in JetBrains IDEs, `acceptEdits` mode can modify IDE configuration files that the IDE executes, so it recommends Manual mode for edits.
-
-- **In your interactive session:** follow that advice.
-- **The flow's agents** use `acceptEdits`, but the hook only lets them write their own package's files, so they cannot touch `.idea/` or anything outside the manifest.
+- Commit and push from the IDE, or ask the session. The flow's agents cannot commit or push.
+- If a package ends `BLOCKED`, or `NEEDS_CONTEXT` a second time, the stage stops. Fix the cause (usually a gap in `architecture.md`, revisited with `/architect`) and resume from that wave with `/implement <wave>`, for example `/implement 2`.
 
 ## Troubleshooting
 
@@ -61,6 +62,8 @@ The official documentation warns that, in JetBrains IDEs, `acceptEdits` mode can
 | Windows with WSL | In **Claude command**, use `wsl -d Ubuntu -- bash -lic "claude"`, with your distribution |
 | "No available IDEs detected" on WSL2 | Follow the WSL section of the official guide (a firewall rule, or mirrored networking) |
 | `Esc` does not interrupt | In `Settings → Tools → Terminal`, untick "Move focus to the editor with Escape" |
+
+For anything else, see the [common table](README.md#troubleshooting).
 
 ## References
 

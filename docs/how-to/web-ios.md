@@ -1,25 +1,21 @@
 # Guide: cloud sessions (web and iOS)
 
 **Goal:** run the flow in a Claude Code cloud session, started from the browser, your phone, Desktop or the terminal.
-**Status:** not tested. This guide follows the official documentation for cloud sessions.
+**Status:** not tested. This guide follows the official documentation for cloud sessions. The flow's authors did not verify that hooks fire in a cloud session: a bench run there saw none fire.
 
-Before you start, read the [requirements](README.md#requirements). Nothing needs installing on your machine.
+Before you start, meet the [requirements](README.md#requirements) and [install the flow in your project](README.md#install-the-flow-in-a-project).
 
-## What a cloud session is
+## What this environment needs
 
-- It runs in an Anthropic virtual machine (Ubuntu 24.04, with Python 3, git and other tools preinstalled) on a clone of your GitHub repo.
-- It keeps working when you close your laptop.
+- A cloud session runs in an Anthropic virtual machine (Ubuntu 24.04, with Python 3, git and other tools preinstalled) on a clone of your GitHub repo. It keeps working when you close your laptop.
 - It is available on Pro, Max and Team, counts against your plan's usage limits with no extra charge, and always uses your subscription.
-- It loads the repo's `.claude/agents/` and `.claude/settings.json` (hooks and permissions), so the flow's guardrails apply here too.
+- The official documentation says it loads the repo's `.claude/agents/` and `.claude/settings.json` (hooks and permissions). The flow's authors did not verify this: the guardrails that depend on hooks may not apply here.
+- A GitHub connection, either way:
+  - **In the browser:** install the **Claude GitHub App** during the first setup at [claude.ai/code](https://claude.ai/code).
+  - **From the terminal:** run `/web-setup`, which reuses your `gh` login.
+- The branch with `.claude/` (and `architecture.md`, if it exists) pushed. The cloud clones what is on GitHub, not your local copy.
 
-## 1. Prepare
-
-1. Connect GitHub, either way:
-   - **In the browser:** install the **Claude GitHub App** during the first setup at [claude.ai/code](https://claude.ai/code).
-   - **From the terminal:** run `/web-setup`, which reuses your `gh` login.
-2. Push the branch with `.claude/` (and `architecture.md`, if it exists). The cloud clones what is on GitHub, not your local copy.
-
-## 2. Start a session
+## 1. Open a session
 
 Pick one:
 
@@ -32,11 +28,15 @@ Pick one:
   claude --cloud "/implement"
   ```
 
-## 3. Use the flow
+## 2. Design
 
 ```
 /architect <your request>
 ```
+
+The architect's interview suits a phone well: short questions with options. Design on the phone and, once you approve, build on Desktop. To continue a cloud session in your terminal: `claude --teleport`. Commit and push `architecture.md` before building.
+
+## 3. Build
 
 ```
 /implement
@@ -44,14 +44,20 @@ Pick one:
 
 - **The cloud uses the native workflow**, as locally: workflows are available in cloud sessions and their progress is saved with the session. The fallback mode (`claude -p` processes) has not been tested inside the VM.
 - Changes appear behind the `+N -M` indicator; open it to see the diff and comment on lines.
-- When it finishes, create the pull request from the session.
 
-## From your phone
+When it finishes you get the same report as in the [terminal guide](terminal.md#3-build):
 
-The architect's interview suits a phone well: short questions with options. Two ways to use it:
+- The report lists each package with one of four statuses: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`.
+- It also lists the stop gate denials (`gate_denials`), the review and QA results, and the pending items: design questions, needs validation, concerns and fix limits. Each package can also report what it did not check (`not_checked`).
+- Nothing is committed until you approve the proposed commits. The steps are in [the working cycle](README.md#the-working-cycle).
 
-- **Design on the phone, build on Desktop:** run `/architect` from the iPhone and, once you approve, `/implement` on Desktop. To continue a cloud session in your terminal: `claude --teleport`.
-- **Everything on your machine:** start the session on Desktop or in the terminal and follow it from your phone with **Remote Control**.
+Because hooks were not verified here, check the diff yourself before you approve.
+
+## 4. Review and deliver
+
+- Create the pull request from the session once you approve.
+- If a package ends `BLOCKED`, or `NEEDS_CONTEXT` a second time, the stage stops. Fix the cause (usually a gap in `architecture.md`, revisited with `/architect`) and resume from that wave with `/implement <wave>`, for example `/implement 2`.
+- To run everything on your machine and follow it from your phone, start the session on Desktop or in the terminal and turn on **Remote Control**.
 
 ## Troubleshooting
 
@@ -60,6 +66,8 @@ The architect's interview suits a phone well: short questions with options. Two 
 | The session does not see `.claude/` or `architecture.md` | That branch was not pushed. The cloud clones the remote |
 | No repositories appear | Check the GitHub connection (the App installed on the repo, or `/web-setup`) |
 | Usage limits run out | Cloud sessions share limits with the rest of your usage. Run fewer packages per wave, or wait for the reset |
+
+For anything else, see the [common table](README.md#troubleshooting).
 
 ## References
 
