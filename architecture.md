@@ -110,7 +110,7 @@ def fix_defects(spec, wp_id, include_all=False, reports=None):
     Blocking severities only unless include_all; reports defaults to latest_reports(include_all)."""
 def run_wave(manifest, wave, only=None, fix=False, include_all=False)
 ```
-Messages: no source at all: `--fix needs a review or QA report: .claude/state/runs/workflow-result.json, REVIEW-<n>.json / QA-<n>.json or REVIEW.json / QA.json. Run run-pipeline, run-review or run-qa first.`; a WP without defects: `<WP>: no <blocking|> defect from review or QA is attributed to it (read from <origins>).` (`blocking ` dropped with `--all`). `--all` without `--fix`: `die("Uso: run-wave N [WP...] [--fix [--all]]")`.
+Messages: no source at all: `--fix needs a review or QA report: .claude/state/runs/workflow-result.json, REVIEW-<n>.json / QA-<n>.json or REVIEW.json / QA.json. Run run-pipeline, run-review or run-qa first.`; a WP without defects: `<WP>: no <blocking|> defect from review or QA is attributed to it. Read from <origins>.` (`blocking ` dropped with `--all`; the first sentence is pinned by `test_acceptance.py:186`). `--all` without `--fix`: `die("Uso: run-wave N [WP...] [--fix [--all]]")`.
 
 Engines (WP-02): `run.verification_failures = []` in the run record; right after `if (!ok(v))` / `if not self.ok(v):`:
 ```

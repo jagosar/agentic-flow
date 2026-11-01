@@ -1539,6 +1539,48 @@ class LauncherTests(Base):
         self.assertEqual(r.returncode, 1)
         self.assertIn("run-review or run-qa", r.stderr)
 
+    def write_run(self, name, data, when):
+        runs = self.repo.dir / ".claude/state/runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        path = runs / name
+        path.write_text(json.dumps(data), encoding="utf-8")
+        os.utime(path, (when, when))
+
+    def reviewer(self, problem, severity="high"):
+        return {"structured_output": {"status": "FAIL", "needs_validation": [], "not_checked": [],
+                                      "findings": [dict(FINDING, problem=problem, severity=severity)]}}
+
+    def test_fix_reads_the_newest_source_and_ties_go_to_the_one_off_report(self):
+        base = time.time() - 100
+        self.write_run("workflow-result.json", {"review": {"confirmed": [dict(FINDING, problem="record")]}, "qa": None}, base)
+        self.write_run("REVIEW-3.json", self.reviewer("per-agent"), base)
+        self.write_run("REVIEW.json", self.reviewer("one-off"), base)
+        self.repo.run("run-wave", "1", "WP-02", "--fix")
+        self.assertIn("one-off", self.prompt_of("WP-02"))
+        self.write_run("REVIEW-3.json", self.reviewer("per-agent"), base + 10)
+        self.repo.run("mark", "WP-02", "done")
+        self.repo.dir.joinpath(".claude/state/ledger.json").unlink()
+        self.repo.run("run-wave", "1", "WP-02", "--fix")
+        self.assertIn("per-agent", self.prompt_of("WP-02"))
+
+    def test_a_record_without_review_lets_an_older_file_provide_it(self):
+        base = time.time() - 100
+        self.write_run("REVIEW.json", self.reviewer("older review"), base)
+        self.write_run("workflow-result.json", {"review": None, "qa": {"defects": []}}, base + 10)
+        r = self.repo.run("run-wave", "1", "WP-02", "--fix")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("older review", self.prompt_of("WP-02"))
+
+    def test_unreadable_reports_are_skipped(self):
+        base = time.time() - 100
+        self.write_run("REVIEW.json", self.reviewer("good one"), base)
+        runs = self.repo.dir / ".claude/state/runs"
+        (runs / "workflow-result.json").write_text("{broken", encoding="utf-8")
+        (runs / "REVIEW-x.json").write_text("{}", encoding="utf-8")
+        r = self.repo.run("run-wave", "1", "WP-02", "--fix")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("good one", self.prompt_of("WP-02"))
+
     # ---------- ledger, mark y stop ----------
 
     def status(self):

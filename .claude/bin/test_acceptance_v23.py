@@ -61,8 +61,11 @@ class FixCase(unittest.TestCase):
         os.utime(path, (self.clock, self.clock))
 
     def clear(self):
+        """A fresh start for the next case: no reports and no fix count in the ledger (the cap is 2 per package)."""
         shutil.rmtree(self.runs)
         self.runs.mkdir(parents=True)
+        for name in ("ledger.json", "ledger.md"):
+            (self.repo.dir / ".claude" / "state" / name).unlink(missing_ok=True)
 
     def fix(self, *extra):
         return self.repo.run("run-wave", "1", "WP-02", *extra)
