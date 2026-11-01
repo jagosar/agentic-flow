@@ -229,6 +229,77 @@ class ResultsFileTests(TempCase):
         self.assertIsNone(bench._git_output(["rev-parse", "--short", "HEAD"], self.tmp))
 
 
+
+def ab_run(arm, fixture="fx", result="OK", cost=1.0, seconds=60.0, output=100, killed=3, total=4, cycles=0):
+    return {"arm": arm, "fixture": fixture, "index": 1, "result": result, "seconds": seconds, "fix_cycles": cycles,
+            "usage": {"cost_usd": cost, "output": output}, "oracle": {"passed": 3, "total": 4},
+            "mutation": {"killed": killed, "total": total}}
+
+
+class StatisticsTests(TempCase):
+    def test_geometric_mean_rejects_empty_and_non_positive(self):
+        self.assertAlmostEqual(bench.geometric_mean([2.0, 8.0]), 4.0)
+        for bad in ([], [1.0, -1.0], [0.0], [None]):
+            self.assertIsNone(bench.geometric_mean(bad))
+
+    def test_sign_test_two_sided_and_capped(self):
+        self.assertAlmostEqual(bench.sign_test(0, 5), 0.0625)
+        self.assertAlmostEqual(bench.sign_test(6, 0), 0.03125)
+        self.assertEqual(bench.sign_test(2, 2), 1.0)
+
+    def test_bootstrap_without_usable_fixtures_is_none(self):
+        self.assertIsNone(bench.bootstrap_interval({}, seed=0))
+        self.assertIsNone(bench.bootstrap_interval({"f": ([], [1.0])}, seed=0))
+        self.assertIsNone(bench.bootstrap_interval({"f": ([0.0, 0.0], [1.0])}, seed=0, iterations=50))
+
+    def test_compare_skips_errors_timeouts_and_zero_medians(self):
+        runs = [ab_run("a", cost=0.0), ab_run("b", cost=1.0), ab_run("a", fixture="g", result="timeout"),
+                ab_run("b", fixture="g", result="timeout")]
+        out = bench.compare(runs, seed=0)
+        self.assertIsNone(out["fixtures"]["fx"]["cost_usd"], "a zero median of A gives no ratio")
+        self.assertEqual(out["fixtures"]["fx"]["minutes"], 1.0)
+        self.assertTrue(all(v is None for v in out["fixtures"]["g"].values()), "timeouts are not measurements")
+        self.assertEqual(out["overall"]["minutes"]["ties"], 1)
+
+    def test_compare_differences_for_rates_and_counts(self):
+        out = bench.compare([ab_run("a", killed=2, cycles=0), ab_run("b", killed=4, cycles=1)], seed=0)
+        self.assertEqual((out["fixtures"]["fx"]["mutation"], out["fixtures"]["fx"]["fix_cycles"]), (0.5, 1))
+
+
+class AbSourceTests(TempCase):
+    def test_a_flow_directory_is_used_as_is(self):
+        (self.tmp / ".claude" / "bin").mkdir(parents=True)
+        (self.tmp / ".claude" / "bin" / "agentic.py").write_text("", encoding="utf-8")
+        self.assertEqual(bench.resolve_source(str(self.tmp), self.tmp, self.tmp / "w"), (self.tmp.resolve(), False))
+
+    def test_garbage_is_refused_before_any_checkout(self):
+        with self.assertRaises(bench.BenchError):
+            bench.resolve_source("no-such-ref", self.tmp, self.tmp / "w")
+        self.assertFalse((self.tmp / "w").exists())
+
+    def test_arms_alternate_by_index_and_keep_their_own_sessions(self):
+        seen = []
+
+        def fake_once(fixture, index, source, auth, timeout_s, base_env, keep):
+            seen.append((index, keep.name))
+            return make_run(fixture=fixture.name)
+
+        (self.tmp / "src" / ".claude" / "bin").mkdir(parents=True)
+        (self.tmp / "src" / ".claude" / "bin" / "agentic.py").write_text("", encoding="utf-8")
+        with mock.patch.object(bench, "_run_once", fake_once), mock.patch.object(bench, "selftest", lambda f: []), \
+                mock.patch.object(bench, "_validate_args", lambda *a: None):
+            path = bench.ab([self.tmp / "fx"], str(self.tmp / "src"), str(self.tmp / "src"), 3, self.tmp / "out")
+        self.assertEqual(seen, [(1, "a"), (1, "b"), (2, "b"), (2, "a"), (3, "a"), (3, "b")])
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(doc["schema"], "ab-1")
+        self.assertTrue(path.with_suffix(".md").is_file())
+
+    def test_record_counts_failed_verifications_and_tolerates_garbage(self):
+        good = bench._record(Path("f"), 1, "OK", {"verification_failures": [{}, {}]}, 1.0, {"passed": 0, "total": 0})
+        bad = bench._record(Path("f"), 1, "OK", {"verification_failures": "x"}, 1.0, {"passed": 0, "total": 0})
+        self.assertEqual((good["verification_failures"], bad["verification_failures"]), (2, 0))
+
+
 if __name__ == "__main__":
     unittest.main()
 
