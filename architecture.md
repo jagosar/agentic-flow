@@ -51,7 +51,7 @@ python3 bench/bench.py ab --a <ref> --b <ref>          # compares two versions o
 python3 .claude/bin/agentic.py stop [WP-02]            # stops every running agent, or only the one named
 ```
 - Acceptance tests match by regex and substring, never by exact whitespace: `^python3 bench/bench\.py ab --a .*#` and the substrings `every running agent` and `only the one named`.
-- The new sentence ends line 248: `To compare two versions of the flow on the same fixtures, use the [A/B comparison](bench.md#compare-two-versions-ab).`
+- The new sentence ends line 248: "To compare two versions of the flow on the same fixtures, use the A/B comparison.", where "A/B comparison" is a Markdown link to `bench.md#compare-two-versions-ab`.
 - No commit, no push: the flow's agents cannot.
 
 ## 8. Work packages and acceptance criteria
