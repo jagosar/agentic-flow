@@ -125,7 +125,7 @@ class Pipeline:
         self.context_given = set()  # packages already re-dispatched once with the whole document
         self.run = {"result": "REVIEW", "stages": [], "baseline": None, "work_packages": {}, "verification": None,
                     "review": None, "qa": None, "test_audit": None, "docs": None, "fix_cycles": 0, "pending": [],
-                    "not_checked": [], "gate_denials": {}}
+                    "not_checked": [], "gate_denials": {}, "verification_failures": []}
 
     # ---------- utilities ----------
     def stop(self, stage, detail, **extra):
@@ -199,6 +199,14 @@ class Pipeline:
 
     def waves_of(self, by):
         return sorted({self.plan["wave_of"][wp] for wp in by})
+
+    def record_verification_failure(self, v):
+        """Keeps each failed verification in the result: the run's last verification overwrites the earlier ones."""
+        v = v if isinstance(v, dict) else {}
+        failing = [{"name": p.get("name"), "status": p.get("status"), "tail": p.get("tail") or []}
+                   for p in v.get("phases") or [] if p.get("status") in ("regression", "fails")]
+        self.run["verification_failures"].append({"fix_cycle": self.run["fix_cycles"], "blocking": v.get("blocking") or [],
+                                                  "suspects": v.get("suspects") or {}, "failing": failing})
 
     def verification_defects(self, v):
         v = v or {}
@@ -408,6 +416,7 @@ class Pipeline:
                 return self.stop("verification", LOST)
             run["verification"] = lines_json(v["output"])
             if not self.ok(v):
+                self.record_verification_failure(run["verification"])
                 # A phase fails: the packages that own what it mentions get it as a defect; if nobody owns it, a person decides.
                 defects = self.verification_defects(run["verification"])
                 if not defects:

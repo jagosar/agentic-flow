@@ -492,6 +492,7 @@ const summarize = ({ result, calls, gates, gateCalls }) => {
     not_checked: (result.not_checked || []).map(e => `${e.agent}:${e.label}`).sort(),
     gate_denials: result.gate_denials || {},
     review_callers: (result.review && result.review.callers) || 0,
+    verification_failures: (result.verification_failures || []).length,
   }
 }
 if (process.argv.includes('--dump')) {
@@ -551,6 +552,9 @@ test('every conformance scenario ends as described in its name', async () => {
   assert.ok(reached.prompts['reviewer:reviewer#1'].includes('src/b/x.py'))
   const ignoredCallers = await run1('callers that are not JSON are ignored')
   assert.equal(ignoredCallers.review_callers, 0)
+  for (const [name, count] of [['verification fails on a package: it is fixed and verified again', 1], ['verification never gets fixed', 3], ['verification fails with no owner', 1], ['happy path', 0]]) {
+    assert.equal((await run1(name)).verification_failures, count, name)
+  }
   assert.ok(!ignoredCallers.prompts['reviewer:reviewer#1'].includes('Callers'))
   const odd = await run1('a finding on an unknown package named like a built-in goes to no WP')
   assert.deepEqual([odd.result, odd.pending], ['REVIEW', ['no WP']])
