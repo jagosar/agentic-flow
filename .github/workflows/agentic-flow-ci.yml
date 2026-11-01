@@ -30,11 +30,15 @@ jobs:
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 45 || 15 }}
     strategy:
       fail-fast: false
-      # A pull request runs the oldest and the newest Python on Linux. The full matrix (Python 3.9, 3.12 and 3.14 on
-      # Linux, plus Windows and macOS) runs when the change reaches main and on demand. On a private repository, a
-      # Windows minute counts double and a macOS minute ten times: the full matrix on every push of every pull request
-      # used about 1,860 billed minutes of the 2,000 included in one day.
-      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"os":["ubuntu-latest"],"python":["3.9","3.14"]}' || '{"os":["ubuntu-latest"],"python":["3.9","3.12","3.14"],"include":[{"os":"windows-latest","python":"3.12"},{"os":"macos-latest","python":"3.12"}]}') }}
+      # The repository is public, so GitHub-hosted runners cost nothing: every pull request runs the full matrix.
+      # (While it was private, a Windows minute counted double and a macOS minute ten times, and the full matrix on
+      # every push used 1,860 of the 2,000 included minutes in one day: pull requests then ran Linux only.)
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.9", "3.12", "3.14"]
+        include:
+          - {os: windows-latest, python: "3.12"}
+          - {os: macos-latest, python: "3.12"}
     defaults:
       run:
         shell: bash  # Git Bash on Windows, as Claude Code uses there
