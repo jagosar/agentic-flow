@@ -80,7 +80,7 @@ Write the code and the plan in English, with commands in the plan using `python3
 
 ## Commit results by hand
 
-CI never commits. After a run you want to keep, add the results file, the folder next to it with every session's `workflow-result.json` (what the agents really reported: findings, pending items, `not_checked`, usage per agent) and the regenerated report:
+CI never commits. After a run you want to keep, add the results file, the folder next to it with every session's `workflow-result.json` (what the agents really reported: findings, pending items, `not_checked`, `gate_denials`, usage per agent) and the regenerated report:
 
 ```bash
 git add bench/results/ bench/RESULTS.md && git commit -m "Bench results"

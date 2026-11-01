@@ -83,6 +83,7 @@ Models are set by alias (`opus`, `sonnet`, and `haiku` for the gatekeeper only),
 | Breaking what already worked | A baseline before any change: a regression blocks, a pre-existing failure is reported |
 | False positives from review | An independent verifier must refute a finding with confidence to dismiss it |
 | Endless fix loops | At most two fix cycles per package; then you decide |
+| A package that says DONE with its acceptance tests red | The stop gate runs the acceptance command before the report is accepted and refuses it, with the failing lines, twice at most |
 | Documentation that invents things | The doc-updater must verify each claim; `docs-check` validates links and paths; the code map is generated without a model; claimed edits are compared with the files that actually changed |
 | Prompt injection from the repo | Every agent treats repository content as data, not instructions |
 | A failure in the guardrail itself | The hook fails closed inside an agent |
@@ -105,9 +106,9 @@ Tested end to end with real agents:
 - **The new pipeline pieces:** a full `/architect` and `/implement` run with the native workflow used the test-auditor, the Haiku gatekeeper and batched gatekeeper calls (`seq`). The `run-pipeline` fallback engine also ran end to end with the real `claude -p --json-schema` output.
 - **The plugin and the fallback mode:** `/agentic-flow:init` installed the flow in a TypeScript repo in a real session. The earlier fallback mode (one `agentic.py run-*` command per stage) also ran end to end.
 
-The flow tests itself with 295 Python tests and 39 workflow scenarios with simulated agents, plus 42 tests of the measurement bench. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
+The flow tests itself with 311 Python tests and 39 workflow scenarios with simulated agents, plus 42 tests of the measurement bench. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
 
-Not confirmed with real agents: the briefs (each implementer and the test-author read a slice of `architecture.md`), the single JSON-schema runner behind the one-off `run-*` commands, the token telemetry (`usage.jsonl`) and fix attempts that receive the previous attempt's diff. They are covered by simulated agents and by a fake `claude`.
+Not confirmed with real agents: the stop gate inside the native workflow (measured only with `claude -p`, the fallback engine's shape), the briefs (each implementer and the test-author read a slice of `architecture.md`), the single JSON-schema runner behind the one-off `run-*` commands, the token telemetry (`usage.jsonl`) and fix attempts that receive the previous attempt's diff. They are covered by simulated agents and by a fake `claude`.
 
 Not yet tested: the interactive interview in the UI, installing the plugin from the marketplace, and the VS Code, JetBrains, cloud and GitHub Actions setups.
 

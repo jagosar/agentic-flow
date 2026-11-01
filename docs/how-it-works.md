@@ -168,8 +168,10 @@ States as they appear in the ledger (`agentic.py status`).
 stateDiagram-v2
     [*] --> pending: approved in architecture.md
     pending --> running: open-stage N and claim, or run-wave N (fallback)
-    running --> done: report DONE and ownership check OK
-    running --> blocker: report BLOCKER
+    running --> running: report DONE with red acceptance tests (stop gate, twice at most)
+    running --> done: report DONE or DONE_WITH_CONCERNS, ownership check OK
+    running --> running: report NEEDS_CONTEXT (once, with the whole document)
+    running --> blocker: report BLOCKED, or NEEDS_CONTEXT again
     running --> error: foreign write, process failure
     running --> timeout: exceeds timeout_s
     running --> stopped: agentic.py stop
@@ -180,13 +182,15 @@ stateDiagram-v2
     done --> [*]: acceptance green, no defects from review or QA
 ```
 
+An implementer ends in one of four statuses. `DONE_WITH_CONCERNS` is done, and each concern goes to the result's `pending` list (type `concern`, no severity) and to the reviewer, who may confirm it as a finding. `NEEDS_CONTEXT` (the brief was not enough) buys one more call with the whole `architecture.md`; a second one is a blocker, and in a fix cycle it is a blocker at once. `BLOCKED` is a blocker. Before a `DONE` is accepted, the **stop gate** runs the acceptance command: if a failure is the package's own (its files, or a criterion only it owns), the hook refuses the report with the failing lines and the agent keeps working in the same context, twice at most per package and stage; `close-stage` reports the denials and the result keeps them in `gate_denials`.
+
 The ledger is written by `agentic.py`, not by the model, so it survives context compaction and answers "how is it going?". This one is from the run above; `DONE (fix)` marks the package that went through a fix cycle:
 
 <p align="center"><img src="assets/screens/ledger.png" width="760" alt="The ledger after a real run: every stage OK from baseline to docs-check, and six agents done or passed, WP-02 marked DONE (fix)."></p>
 
 ## 4. Guardrails: the hook's decision
 
-The `PreToolUse` hook (`agentic.py hook`) runs before every Write, Edit, MultiEdit, NotebookEdit and Bash call. It **fails closed**: inside an agent of the flow, any error blocks.
+The `PreToolUse` hook (`agentic.py hook`) runs before every Write, Edit, MultiEdit, NotebookEdit and Bash call, and before the `StructuredOutput` call that delivers an agent's report. It **fails closed**: inside an agent of the flow, any error blocks. The one exception is the stop gate, which fails open: a gate that could not run its check lets the report through and says so on stderr, so a broken manifest never stalls a run with no cap.
 
 ```mermaid
 flowchart TD
@@ -195,6 +199,11 @@ flowchart TD
     NV -->|no| ID{"Who is it?"}
     ID -->|main session| OK[["Allow"]]
     ID -->|"claim (workflow) or AGENTIC_WP (fallback)"| T{"Tool type"}
+    T -->|"StructuredOutput<br/>(the report)"| RP{"A WP that says DONE<br/>or DONE_WITH_CONCERNS?"}
+    RP -->|no| OK
+    RP -->|yes| GT{"Acceptance command red<br/>on this package's own tests,<br/>under 2 denials?"}
+    GT -->|yes| BLK
+    GT -->|no| OK
     T -->|Bash| GB{"git write, install<br/>dependencies or claude -p?"}
     GB -->|yes| BLK
     GB -->|no| OK
@@ -235,7 +244,7 @@ Tracked files are always compared, even in a folder named like an artefact (`cov
 | verifier | latest Sonnet | nothing | nothing (reads only) | write |
 | test-auditor | latest Sonnet | nothing | nothing (reads only) | write |
 | test-author (`AT`) | latest Sonnet | `acceptance.files` (default `acceptance/`) | `allow_bash` + the acceptance command | write production code |
-| implementer (`WP-NN`) | latest Sonnet | its package's `files` | `allow_bash` + the acceptance command | touch other files, `acceptance/`, git, dependencies |
+| implementer (`WP-NN`) | latest Sonnet | its package's `files` | `allow_bash` + the acceptance command | touch other files, `acceptance/`, git, dependencies; report `DONE` with its acceptance tests red (the stop gate refuses it, twice at most) |
 | reviewer (`REVIEW`) | latest Sonnet | nothing | `git diff/status/log` + `allow_bash` | write |
 | qa (`QA`) | latest Sonnet | `qa.files` (default `qa/`) | `allow_bash` | write production code |
 | doc-updater (`DOCS`) | latest Sonnet | `docs.files` (default `README.md`, `CHANGELOG.md`, `docs/`) | `git diff/status/log` | write code, tests, the codemap, `docs/architecture/` |
@@ -295,7 +304,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 ├── rules/agentic/          installed by rules-sync; Claude Code loads .claude/rules/
 ├── bin/
 │   ├── agentic.py          validate · pipeline-plan · open/close-stage · seq · verify · stack · rules-sync · codemap ·
-│   │                       docs-check · install · run-pipeline · run-* · status · stop · hook
+│   │                       docs-check · install · run-pipeline · run-* · status · stop · hook (guardrails and the stop gate)
 │   ├── brief.py            slices architecture.md into the briefs the agents read
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer
 │   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
@@ -335,6 +344,8 @@ acceptance/  qa/            acceptance and QA tests
 - **Finding:** what the reviewer and QA report, in four parts: the problem, the concrete case (`evidence` or `repro`), the smallest `fix` and what happens `if_skipped`. Both judges share severity anchors; no concrete case, no finding.
 - **Needs validation:** a claim the code alone cannot settle, from the reviewer or QA: a deployment or provider setting the repo does not contain (`external`), or code the diff does not touch (`unchanged_code`). It names the missing fact and how to check it, carries no severity, goes to the result's `pending` list and never blocks: you check the fact.
 - **`not_checked`:** what each agent did not check, skipped, or sees as a risk, in its report; the result lists them per agent call and `/implement` shows them.
+- **Stop gate:** before an implementer's `DONE` or `DONE_WITH_CONCERNS` report is accepted, the hook runs the manifest's acceptance command. If a failure is the package's own (its files mentioned, or a criterion only it owns), the report is refused with the failing lines and the agent keeps working in the same context: twice at most per package and stage (`.claude/state/gate.json`, reset when the stage opens). It cannot run a `Stop` or `SubagentStop` hook: a structured answer is already delivered when those fire. It fails open on its own errors. `close-stage` prints `GATE: WP-01=1 WP-02=0` and the result keeps `gate_denials`.
+- **Implementer statuses:** `DONE`; `DONE_WITH_CONCERNS` (done; each concern is a `pending` item of type `concern`, with no severity, and goes to the reviewer, who may confirm it as a finding); `NEEDS_CONTEXT` (the brief lacked a decision: one more call with the whole `architecture.md`, then a blocker; in a fix cycle, a blocker at once); `BLOCKED` (what `BLOCKER` was: the document contradicts itself, a contract does not match, a guardrail stops the work). The test-author and the doc-updater keep `DONE`/`BLOCKER`.
 - **Fix attempt:** at most 2 per work package. From the second one on, the agent receives the defects the first attempt was given and the diff of what it changed (`runs/<ID>.fix-N.diff`), so it does not repeat the same fix.
 - **`seq`:** `agentic.py seq a + b + c`, several of the workflow's commands in one gatekeeper call, stopping at the first that fails.
 - **Manifest:** the `json wp-manifest` block in `architecture.md`, read by every guardrail.
