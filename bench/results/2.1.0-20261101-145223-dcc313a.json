@@ -1,0 +1,309 @@
+{
+  "schema": 1,
+  "flow_version": "2.1.0",
+  "flow_commit": "dcc313a",
+  "dirty": false,
+  "started": "2026-11-01T14:52:23",
+  "repeat": 3,
+  "auth": "subscription",
+  "runs": [
+    {
+      "fixture": "inventory",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 144.5,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 92549,
+        "cache_read": 276506,
+        "output": 13912,
+        "turns": 59,
+        "cost_usd": 0.5368426
+      }
+    },
+    {
+      "fixture": "inventory",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 126.1,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 50097,
+        "cache_read": 283332,
+        "output": 13560,
+        "turns": 56,
+        "cost_usd": 0.3642052
+      }
+    },
+    {
+      "fixture": "inventory",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 137.1,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 50027,
+        "cache_read": 327039,
+        "output": 13923,
+        "turns": 59,
+        "cost_usd": 0.3719139
+      }
+    },
+    {
+      "fixture": "tally",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 9,
+      "seconds": 205.2,
+      "oracle": {
+        "passed": 39,
+        "total": 39
+      },
+      "usage": {
+        "input": 98367,
+        "cache_read": 437770,
+        "output": 26142,
+        "turns": 81,
+        "cost_usd": 0.698513
+      }
+    },
+    {
+      "fixture": "tally",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 9,
+      "seconds": 253.5,
+      "oracle": {
+        "passed": 39,
+        "total": 39
+      },
+      "usage": {
+        "input": 99835,
+        "cache_read": 501356,
+        "output": 29425,
+        "turns": 77,
+        "cost_usd": 0.7435576
+      }
+    },
+    {
+      "fixture": "tally",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 9,
+      "seconds": 265.3,
+      "oracle": {
+        "passed": 39,
+        "total": 39
+      },
+      "usage": {
+        "input": 103457,
+        "cache_read": 547365,
+        "output": 32180,
+        "turns": 76,
+        "cost_usd": 0.7901925
+      }
+    },
+    {
+      "fixture": "tempconv",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 148.4,
+      "oracle": {
+        "passed": 17,
+        "total": 17
+      },
+      "usage": {
+        "input": 47225,
+        "cache_read": 301725,
+        "output": 14105,
+        "turns": 60,
+        "cost_usd": 0.3599985
+      }
+    },
+    {
+      "fixture": "tempconv",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 173.4,
+      "oracle": {
+        "passed": 17,
+        "total": 17
+      },
+      "usage": {
+        "input": 48707,
+        "cache_read": 347501,
+        "output": 16437,
+        "turns": 63,
+        "cost_usd": 0.3938121
+      }
+    },
+    {
+      "fixture": "tempconv",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 135.8,
+      "oracle": {
+        "passed": 17,
+        "total": 17
+      },
+      "usage": {
+        "input": 45868,
+        "cache_read": 245733,
+        "output": 13242,
+        "turns": 53,
+        "cost_usd": 0.3403613
+      }
+    },
+    {
+      "fixture": "vault",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 2,
+      "agents": 10,
+      "seconds": 283.7,
+      "oracle": {
+        "passed": 30,
+        "total": 30
+      },
+      "usage": {
+        "input": 92389,
+        "cache_read": 495063,
+        "output": 29460,
+        "turns": 82,
+        "cost_usd": 0.7134823
+      }
+    },
+    {
+      "fixture": "vault",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 2,
+      "agents": 10,
+      "seconds": 278.9,
+      "oracle": {
+        "passed": 30,
+        "total": 30
+      },
+      "usage": {
+        "input": 93300,
+        "cache_read": 456068,
+        "output": 28043,
+        "turns": 79,
+        "cost_usd": 0.6990648
+      }
+    },
+    {
+      "fixture": "vault",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 8,
+      "seconds": 197.8,
+      "oracle": {
+        "passed": 30,
+        "total": 30
+      },
+      "usage": {
+        "input": 77495,
+        "cache_read": 434950,
+        "output": 25600,
+        "turns": 73,
+        "cost_usd": 0.609323
+      }
+    }
+  ],
+  "summary": {
+    "inventory": {
+      "runs": 3,
+      "ok": 3,
+      "oracle_rate_median": 1.0,
+      "oracle_rate_min": 1.0,
+      "oracle_rate_max": 1.0,
+      "fix_cycles_median": 0,
+      "cost_usd_median": 0.372,
+      "output_median": 13912,
+      "minutes_median": 2.285
+    },
+    "tally": {
+      "runs": 3,
+      "ok": 3,
+      "oracle_rate_median": 1.0,
+      "oracle_rate_min": 1.0,
+      "oracle_rate_max": 1.0,
+      "fix_cycles_median": 0,
+      "cost_usd_median": 0.744,
+      "output_median": 29425,
+      "minutes_median": 4.225
+    },
+    "tempconv": {
+      "runs": 3,
+      "ok": 3,
+      "oracle_rate_median": 1.0,
+      "oracle_rate_min": 1.0,
+      "oracle_rate_max": 1.0,
+      "fix_cycles_median": 0,
+      "cost_usd_median": 0.36,
+      "output_median": 14105,
+      "minutes_median": 2.473
+    },
+    "vault": {
+      "runs": 3,
+      "ok": 3,
+      "oracle_rate_median": 1.0,
+      "oracle_rate_min": 1.0,
+      "oracle_rate_max": 1.0,
+      "fix_cycles_median": 0,
+      "cost_usd_median": 0.699,
+      "output_median": 28043,
+      "minutes_median": 4.648
+    }
+  }
+}
