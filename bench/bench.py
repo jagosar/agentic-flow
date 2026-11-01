@@ -334,7 +334,15 @@ def selftest(fixture: Path) -> list[str]:
     return problems
 
 
-def _run_once(fixture: Path, index: int, source: Path, auth: str, timeout_s: float, base_env: dict) -> dict:
+def _keep_session(project: Path, keep: Path, fixture: Path, index: int) -> None:
+    """Copies the session's workflow-result.json (what the agents really reported) next to the results file."""
+    source = project / ".claude" / "state" / "runs" / "workflow-result.json"
+    if source.is_file():
+        keep.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, keep / f"{fixture.name}-{index}.json")
+
+
+def _run_once(fixture: Path, index: int, source: Path, auth: str, timeout_s: float, base_env: dict, keep: Path) -> dict:
     project = Path(tempfile.mkdtemp(prefix="bench-run-"))
     started = time.monotonic()
     try:
@@ -347,6 +355,7 @@ def _run_once(fixture: Path, index: int, source: Path, auth: str, timeout_s: flo
         state = _pipeline(project, env, timeout_s)
         seconds = time.monotonic() - started
         result = _read_result(project)
+        _keep_session(project, keep, fixture, index)
         verdict = result.get("result") if result else None
         outcome = "timeout" if state == "timeout" else (verdict if verdict in ("OK", "REVIEW") else "error")
         return _record(fixture, index, outcome, result, seconds, _run_oracle(fixture, project))
@@ -439,8 +448,8 @@ def _validate(fixtures: list[Path], source: Path, repeat: int, auth: str, timeou
 
 def run(fixtures: list[Path], source: Path, repeat: int, out_dir: Path, auth: str = "subscription",
         timeout_s: float = 3600, env: dict | None = None) -> Path:
-    """Runs each fixture `repeat` times and writes one results file in out_dir (rewritten after each run);
-    returns its path. A run that fails or times out is recorded, never raised. Raises BenchError, before any
+    """Runs each fixture `repeat` times and writes one results file in out_dir (rewritten after each run), plus
+    every session's workflow-result.json in <out_dir>/<results stem>/<fixture>-<index>.json; returns the results path. A run that fails or times out is recorded, never raised. Raises BenchError, before any
     spend, for bad input or a fixture whose instruments fail selftest."""
     fixtures = [Path(f) for f in fixtures]
     source, out_dir = Path(source), Path(out_dir)
@@ -460,7 +469,7 @@ def run(fixtures: list[Path], source: Path, repeat: int, out_dir: Path, auth: st
            "started": started.isoformat(), "repeat": repeat, "auth": auth, "runs": [], "summary": {}}
     for fixture in fixtures:
         for index in range(1, repeat + 1):
-            doc["runs"].append(_run_once(fixture, index, source, auth, timeout_s, base_env))
+            doc["runs"].append(_run_once(fixture, index, source, auth, timeout_s, base_env, path.with_suffix("")))
             doc["summary"] = _summaries(doc["runs"])
             path.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
