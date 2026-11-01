@@ -182,8 +182,7 @@ python3 .claude/bin/agentic.py docs-check              # links, anchors and path
 python3 .claude/bin/agentic.py install ../other-repo   # installs or updates the flow in another repo
 python3 .claude/bin/agentic.py briefs                  # writes each agent's slice of architecture.md in .claude/state/briefs/
 python3 .claude/bin/agentic.py status                  # the ledger: every agent and stage, with tokens and cost
-python3 .claude/bin/agentic.py stop                    # stops every running agent
-python3 .claude/bin/agentic.py stop WP-02              # stops one
+python3 .claude/bin/agentic.py stop [WP-02]            # stops every running agent, or only the one named
 python3 .claude/bin/agentic.py mark WP-02 blocker note # annotates by hand
 # Fallback mode: the whole pipeline (or --start-wave N, or --resume after the last finished wave):
 python3 .claude/bin/agentic.py run-pipeline
@@ -198,6 +197,7 @@ python3 .claude/bin/agentic.py run-review              # code reviewer (read-onl
 python3 .claude/bin/agentic.py run-qa                  # QA agent
 python3 .claude/bin/agentic.py run-docs                # doc-updater, after codemap
 python3 .claude/bin/agentic.py check-wave 1            # ownership check
+python3 bench/bench.py ab --a <ref> --b <ref>          # compares two versions of the flow (see the bench guide)
 ```
 
 - **Exit codes:** `0` all good, `1` usage error or invalid manifest, `3` needs review, `4` the fix-cycle limit was reached.
@@ -245,7 +245,7 @@ python3 -m unittest discover -s bench -p "test_*.py"
 python3 -m unittest discover -s bench/acceptance
 ```
 
-The suites cover the guardrails and the commands, and the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. CI runs them on Linux, macOS and Windows. Change a prompt and break one of those rules, and a test fails.
+The suites cover the guardrails and the commands, and the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. CI runs them on Linux, macOS and Windows. Change a prompt and break one of those rules, and a test fails. To compare two versions of the flow on the same fixtures, use the [A/B comparison](bench.md#compare-two-versions-ab).
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 
 ## Official references
