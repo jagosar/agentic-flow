@@ -122,6 +122,8 @@ The full decision diagram is in [How it works](docs/how-it-works.md#4-guardrails
 
 ## Credits
 
+agentic-flow is released under the [MIT licence](LICENSE).
+
 Several ideas are adapted from [ECC](https://github.com/affaan-m/ECC) (MIT, © 2026 Affaan Mustafa):
 - the independent judge and ceremony scaled to the size of the change;
 - confidence-filtered review and phased verification;
