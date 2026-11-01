@@ -49,6 +49,56 @@ class RemoveTreeTests(TempCase):
     def test_a_missing_folder_is_not_an_error(self):
         bench.remove_tree(self.tmp / "never-created")
 
+
+ORACLE = ("import os\nimport unittest\n\nclass T(unittest.TestCase):\n"
+          "    def test_a(self): self.assertTrue(os.path.exists('a.py'))\n"
+          "    def test_b(self): self.assertTrue(os.path.exists('b.py'))\n")
+
+
+class IsolationTests(TempCase):
+    def test_child_env_drops_user_context_and_keeps_the_claude_command(self):
+        env = bench._child_env({"AGENTIC_CLAUDE": "python3 /x/claude_fake.py", "AGENTIC_WP": "WP-01", "PATH": "p"},
+                               self.tmp)
+        self.assertEqual(env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"], "1")
+        self.assertEqual(env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1")
+        self.assertEqual(env["AGENTIC_CLAUDE"], "python3 /x/claude_fake.py --setting-sources project,local")
+        self.assertNotIn("AGENTIC_WP", env)
+        self.assertEqual(env["CLAUDE_PROJECT_DIR"], str(self.tmp))
+        self.assertEqual(bench._child_env({}, self.tmp)["AGENTIC_CLAUDE"], "claude --setting-sources project,local")
+
+
+class SelftestTests(TempCase):
+    def fixture(self, good=("a.py", "b.py"), bad=("a.py",), oracle=ORACLE, name="fx"):
+        fx = self.tmp / name
+        (fx / "repo").mkdir(parents=True)
+        (fx / "oracle").mkdir()
+        (fx / "oracle" / "test_oracle.py").write_text(oracle, encoding="utf-8")
+        for name, files in (("good", good), ("bad", bad)):
+            (fx / "reference" / name).mkdir(parents=True)
+            for rel in files:
+                (fx / "reference" / name / rel).write_text("x = 1\n", encoding="utf-8")
+        return fx
+
+    def test_sound_instruments_have_no_problems(self):
+        self.assertEqual(bench.selftest(self.fixture()), [])
+
+    def test_each_broken_instrument_is_named(self):
+        cases = {
+            "good": self.fixture(good=("a.py",), name="fx-good"),                 # the good reference fails a test
+            "bad": self.fixture(bad=("a.py", "b.py"), name="fx-bad"),             # the bad reference passes everything
+            "bare": self.fixture(oracle=ORACLE + "    def test_free(self): pass\n", name="fx-bare"),  # green, no code
+        }
+        for expected, fx in cases.items():
+            with self.subTest(case=expected):
+                problems = bench.selftest(fx)
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn(expected, problems[0])
+                self.assertIn(fx.name, problems[0])
+
+    def test_an_oracle_without_tests_is_a_problem(self):
+        fx = self.fixture(oracle="import unittest\n")
+        self.assertTrue(any("no tests" in p for p in bench.selftest(fx)), bench.selftest(fx))
+
 class SummaryTests(TempCase):
     def test_median_of_an_even_count_is_the_mean_of_the_middle_two_rounded(self):
         self.assertEqual(bench._rounded([1, 2]), 1.5)

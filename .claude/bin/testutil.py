@@ -49,7 +49,8 @@ ident = os.environ.get("AGENTIC_WP")
 start = time.time_ns()
 log = os.path.join(os.environ["FAKE_LOG_DIR"], f"call-{start}-{os.getpid()}.json")
 call = {"t": start, "agent": agent, "id": ident, "argv": argv, "prompt": prompt,
-        "env": {k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}}
+        "env": {k: os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                                               "CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY")}}
 def save():
     with open(log, "w", encoding="utf-8") as f:
         json.dump(call, f)

@@ -1,4 +1,4 @@
-"""Acceptance tests of the measurement bench (AC-001 ... AC-008). Black box: they load bench/bench.py and run its
+"""Acceptance tests of the measurement bench (AC-001 ... AC-010). Black box: they load bench/bench.py and run its
 command line; every run uses the simulated `claude` of .claude/bin/testutil.py, so they never spend money."""
 from __future__ import annotations
 
@@ -31,7 +31,11 @@ ORACLE_PY = ("import os\nimport unittest\n\n\nclass Oracle(unittest.TestCase):\n
              "    def test_a(self):\n        self.assertTrue(os.path.exists('src/a.py'))\n\n"
              "    def test_b(self):\n        self.assertTrue(os.path.exists('src/b/x.py'))\n\n"
              "    def test_c(self):\n        self.assertTrue(os.path.exists('src/c.py'))\n\n"
-             "    def test_never(self):\n        self.fail('always red')\n")
+             "    def test_d(self):\n        self.assertTrue(os.path.exists('src/d.py'))\n")
+GOOD_FILES = ("src/a.py", "src/b/x.py", "src/c.py", "src/d.py")  # reference/good passes the whole oracle
+BAD_FILES = ("src/a.py", "src/b/x.py")                            # reference/bad fails part of it
+ISOLATION_ENV = {"CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+ISOLATION_FLAGS = ["--setting-sources", "project,local"]
 
 
 def load_bench():
@@ -60,7 +64,16 @@ def make_fixture(root: Path) -> Path:
     (fixture / "repo" / "architecture.md").write_text(plan, encoding="utf-8")
     (fixture / "repo" / "acc.py").write_text(ACC_PY, encoding="utf-8")
     (fixture / "oracle" / "test_oracle.py").write_text(ORACLE_PY, encoding="utf-8")
+    write_reference(fixture, "good", GOOD_FILES)
+    write_reference(fixture, "bad", BAD_FILES)
     return fixture
+
+
+def write_reference(fixture: Path, name: str, files: tuple) -> None:
+    for rel in files:
+        target = fixture / "reference" / name / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x = 1\n", encoding="utf-8")
 
 
 class Sandbox:
@@ -176,6 +189,18 @@ class SharedRunTests(unittest.TestCase):
         for call in calls:
             self.assertNotIn(".bench_oracle", call["prompt"])
             self.assertNotIn("test_oracle", call["prompt"])
+
+
+    def test_ac_009_sessions_are_isolated(self):
+        """Every simulated claude call ran without the user's settings, CLAUDE.md files or auto memory."""
+        calls = testutil.fake_calls(self.box.logs)
+        self.assertGreater(len(calls), 0)
+        for call in calls:
+            argv = call["argv"]
+            self.assertLess(argv.index("--setting-sources"), argv.index("-p"), argv)
+            self.assertEqual(argv[argv.index("--setting-sources") + 1], "project,local", argv)
+            for var, value in ISOLATION_ENV.items():
+                self.assertEqual(call["env"].get(var), value, (var, call["env"]))
 
 
 class RepeatAndReportTests(unittest.TestCase):
@@ -373,6 +398,51 @@ class CiTests(unittest.TestCase):
                       [sys.executable, "-m", "unittest", "test_definitions", "test_acceptance_portable"], env)
         self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
 
+
+
+class SelftestTests(unittest.TestCase):
+    """AC-010: the instruments are checked before any spend."""
+
+    def break_bad_reference(self, box: Sandbox) -> None:
+        shutil.rmtree(box.fixture / "reference" / "bad")
+        write_reference(box.fixture, "bad", GOOD_FILES)  # a "bad" reference that passes the oracle
+
+    def test_ac_010_selftest_passes_for_sound_fixtures(self):
+        box = Sandbox()
+        self.addCleanup(box.cleanup)
+        proc = box.bench("selftest", "--fixture", str(box.fixture))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn(f"{FIXTURE_NAME}: ok", proc.stdout)
+        real = box.bench("selftest", "--source", str(REPO))
+        self.assertEqual(real.returncode, 0, real.stdout + real.stderr)
+        for name in ("tempconv", "inventory"):
+            self.assertIn(f"{name}: ok", real.stdout)
+        self.assertEqual(testutil.fake_calls(box.logs), [])
+        self.assertEqual(box.leftovers(), [])
+
+    def test_ac_010_broken_instruments_stop_before_any_spend(self):
+        box = Sandbox()
+        self.addCleanup(box.cleanup)
+        self.break_bad_reference(box)
+        proc = box.bench("selftest", "--fixture", str(box.fixture))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("bad", proc.stdout + proc.stderr)
+        run = box.bench(*box.run_args("--repeat", "1"))
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertNotIn("Traceback", run.stderr)
+        self.assertEqual(testutil.fake_calls(box.logs), [], "no claude call before the instruments pass")
+        self.assertEqual(box.result_files(), [])
+        oracle = box.fixture / "oracle" / "test_oracle.py"
+        oracle.write_text(oracle.read_text(encoding="utf-8") + "\n    def test_free(self):\n        pass\n",
+                          encoding="utf-8")
+        shutil.rmtree(box.fixture / "reference" / "bad")
+        write_reference(box.fixture, "bad", BAD_FILES)
+        proc = box.bench("selftest", "--fixture", str(box.fixture))
+        self.assertEqual(proc.returncode, 1, "an oracle test that passes with no code is a broken instrument")
+        shutil.rmtree(box.fixture / "reference" / "good")
+        missing = box.bench(*box.run_args("--repeat", "1"))
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("reference", missing.stderr)
 
 if __name__ == "__main__":
     unittest.main()

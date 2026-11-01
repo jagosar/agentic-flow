@@ -7,6 +7,8 @@
 
 The bench runs the real pipeline (`agentic.py run-pipeline`, one `claude -p` per agent) on small fixture repos, three times each. For every run it records the result, the fix cycles, the tokens, the cost and the time. As an independent judge, it also counts how many of the fixture's hidden oracle tests the produced code passes. The oracle is never copied into the project before the pipeline ends.
 
+Every agent session is isolated from the person running the bench: no user settings (`--setting-sources project,local`), no `CLAUDE.md` of the user or of a parent directory, no auto memory (`CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`). Two people measure the same flow. A fixture that relies on a `CLAUDE.md` of its own would not see it either.
+
 It does **not** measure:
 
 - The native workflow (`/implement` through the Workflow tool), which needs an interactive session. The agents, prompts and rules it uses are the ones the bench measures.
@@ -29,6 +31,14 @@ python3 bench/bench.py run --fixture tempconv --repeat 1
 
 It prints one line per run and the path of the results file, then regenerates `bench/RESULTS.md`.
 
+Before the first run it checks every fixture's instruments and stops, spending nothing, if one is broken. The same check on its own, with no `claude` involved:
+
+```bash
+python3 bench/bench.py selftest
+```
+
+A fixture is sound when its oracle has tests, passes none of them on the bare repo, all of them on `reference/good` and not all of them on `reference/bad`. An oracle that is green with no code, or that a plausible wrong implementation passes, measures nothing.
+
 ## Run it from GitHub Actions
 
 1. In GitHub, go to `Settings → Secrets and variables → Actions → New repository secret`, name it `ANTHROPIC_API_KEY` and paste a Console API key. Never paste it in a chat or commit it.
@@ -46,12 +56,14 @@ One row per results file and fixture, newest first. Columns: Version, Commit (`-
 Create `bench/fixtures/<name>/`:
 
 ```
-fixture.json   {"name": "<name>", "description": "<one line>", "difficulty": "simple" | "trap"}
-repo/          the project the flow works on: code, tests and architecture.md (a valid plan); committed as is
-oracle/        test_*.py (unittest); never copied into the project before run-pipeline returns
+fixture.json      {"name": "<name>", "description": "<one line>", "difficulty": "simple" | "trap"}
+repo/             the project the flow works on: code, tests and architecture.md (a valid plan); committed as is
+oracle/           test_*.py (unittest); never copied into the project before run-pipeline returns
+reference/good/   a correct implementation, copied over repo/ by selftest: the oracle must pass it whole
+reference/bad/    a plausible wrong one (right on the happy path, wrong on the edge cases): the oracle must catch it
 ```
 
-Write the code and the plan in English, with commands in the plan using `python3`, and no dependencies. Try it with `--fixture <name> --repeat 1`.
+Write the code and the plan in English, with commands in the plan using `python3`, and no dependencies. Check it with `selftest --fixture <name>`, then try it with `--fixture <name> --repeat 1`.
 
 ## Commit results by hand
 
