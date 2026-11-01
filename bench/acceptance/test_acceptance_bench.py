@@ -191,6 +191,18 @@ class SharedRunTests(unittest.TestCase):
             self.assertNotIn("test_oracle", call["prompt"])
 
 
+    def test_ac_011_each_session_result_is_kept(self):
+        """Next to the results file, a folder with every session's workflow-result.json: what the agents really reported."""
+        results = self.box.result_files()[0]
+        kept = results.with_suffix("")  # <out>/<results stem>/
+        self.assertTrue(kept.is_dir(), kept)
+        files = sorted(p.name for p in kept.glob("*.json"))
+        self.assertEqual(files, [f"{FIXTURE_NAME}-1.json"])
+        session = json.loads((kept / files[0]).read_text(encoding="utf-8"))
+        for key in ("result", "pending", "not_checked", "usage", "work_packages"):
+            self.assertIn(key, session)
+        self.assertEqual(session["result"], "OK")
+
     def test_ac_009_sessions_are_isolated(self):
         """Every simulated claude call ran without the user's settings, CLAUDE.md files or auto memory."""
         calls = testutil.fake_calls(self.box.logs)
