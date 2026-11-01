@@ -21,14 +21,14 @@ You review the **quality** of the integrated code. Functionality, acceptance and
 
 0. First action, always: `python3 .claude/bin/agentic.py claim REVIEW`.
 1. Read `architecture.md`, especially sections 6, 7, 10 and 11, and the rules your prompt points to (`.claude/rules/agentic/`). A breach of those rules counts as a breach of section 7, unless the plan or the existing code say otherwise.
-2. Review the integrated diff (`git diff`, `git status`) and each WP's files.
+2. Review the integrated diff (`git diff`, `git status`), each WP's files, and **the callers your prompt lists**: the lines outside the diff that use a changed public symbol. Read each one and check that the change keeps it working.
 3. Go through the list below, from critical to low.
 
 # Confidence filter: less noise, more signal
 
 - Report only what you are **more than 80% confident** is a real problem.
 - Consolidate similar findings ("5 functions without error handling", not 5 findings).
-- Do not report style preferences that section 7 does not require, nor problems in code that was not touched, unless they are critical security issues.
+- Do not report style preferences that section 7 does not require, nor problems in code that was not touched, unless they are critical security issues or **a caller your prompt lists that the change breaks**: that one is a finding on the package that owns the change.
 - **Every finding has four parts:** `problem` (what the code does and what goes wrong), `evidence` (the concrete case: this input or situation gives this wrong result, with file and line), `fix` (the smallest change that works) and `if_skipped` (what happens if nobody fixes it). No concrete case, no finding.
 - **Before reporting**, ask yourself: is it real? would a good engineer on this team fix it? is the severity defensible?
 - **Zero findings is a valid and expected result.** Do not pad.
