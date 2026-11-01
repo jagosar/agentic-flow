@@ -1,0 +1,502 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "acceptance/test_storage.py::test_name_with_folders"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "acceptance/test_storage.py::test_plain_name"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "acceptance/test_storage.py::test_empty_name_is_rejected"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "acceptance/test_tokens.py::test_round_trip"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "acceptance/test_tokens.py::test_expiry_is_exclusive"
+            ]
+          },
+          {
+            "ac": "AC-006",
+            "tests": [
+              "acceptance/test_tokens.py::test_foreign_and_malformed_tokens"
+            ]
+          },
+          {
+            "ac": "AC-007",
+            "tests": [
+              "acceptance/test_tokens.py::test_issue_rejects_bad_arguments"
+            ]
+          },
+          {
+            "ac": "AC-008",
+            "tests": [
+              "acceptance/test_catalogue.py::test_find_is_case_insensitive_and_sorted"
+            ]
+          },
+          {
+            "ac": "AC-009",
+            "tests": [
+              "acceptance/test_catalogue.py::test_percent_and_underscore_are_literal"
+            ]
+          },
+          {
+            "ac": "AC-010",
+            "tests": [
+              "acceptance/test_catalogue.py::test_files_are_per_owner"
+            ]
+          },
+          {
+            "ac": "AC-011",
+            "tests": [
+              "acceptance/test_catalogue.py::test_blank_values_are_rejected"
+            ]
+          },
+          {
+            "ac": "AC-012",
+            "tests": [
+              "acceptance/test_catalogue.py::test_second_catalogue_keeps_rows"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Red state confirmed: all 3 modules fail with ModuleNotFoundError (vault.storage, vault.tokens, vault.catalogue), not syntax errors. No test can be green yet.",
+          "Names follow the ACs, but the tests are in unittest classes (file::Class::test), not bare functions.",
+          "Path traversal (e.g. '../x', absolute names) in upload_path is NOT tested: the architecture says names are untrusted, but section 6 and the ACs define no behaviour for it. This is a spec gap worth deciding before implementation.",
+          "Tokens: tampering with the payload or signature of a real token is not tested beyond the AC-006 cases; the spec only names those cases.",
+          "Catalogue: no injection-style search text (quotes) test beyond % and _; not required by any AC."
+        ]
+      },
+      "check": "AT: 3 file(s) changed: acceptance/test_catalogue.py, acceptance/test_storage.py, acceptance/test_tokens.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: tests/test_storage.py, vault/storage.py\nWP-02: 2 file(s) changed: tests/test_tokens.py, vault/tokens.py\nWP-03: 2 file(s) changed: tests/test_catalogue.py, vault/catalogue.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0 WP-02=0 WP-03=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "..",
+          "----------------------------------------------------------------------",
+          "Ran 2 tests in 0.000s",
+          "",
+          "OK"
+        ]
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "vault/storage.py",
+        "tests/test_storage.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "18 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "test_storage ACs pass; only error is test_tokens failing to import vault.tokens (WP-02, not yet present)"
+        }
+      ],
+      "internal_decisions": [
+        "Names are untrusted, so upload_path raises ValueError for absolute names, names resolving outside base (../), names resolving to base itself, and NUL bytes, in addition to the empty-name rule.",
+        "Path built with abspath/normpath/commonpath; symlinks are not resolved (no disk access)."
+      ],
+      "blocker": null,
+      "not_checked": [
+        "Symlink escapes inside base are not handled, since the contract does no disk access.",
+        "Windows path semantics were not tested."
+      ],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE",
+      "wp": "WP-02",
+      "files": [
+        "vault/tokens.py",
+        "tests/test_tokens.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "25 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "12 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Token format: b64url(file_id).expiry.b64url(HMAC-SHA256 over the first two parts)",
+        "Any parse, decode or type error in verify becomes InvalidToken",
+        "Non-ASCII file_id rejected in issue with ValueError"
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-03": {
+      "status": "DONE",
+      "wp": "WP-03",
+      "files": [
+        "vault/catalogue.py",
+        "tests/test_catalogue.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "18 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "The catalogue ACs pass. The one error is vault.tokens missing, which is WP-02's module."
+        }
+      ],
+      "internal_decisions": [
+        "LIKE with ESCAPE '\\' and the text escaped (backslash, %, _)",
+        "ORDER BY name in SQL for the sort",
+        "commit after the table is created and after each insert"
+      ],
+      "blocker": null,
+      "not_checked": [
+        "Non-ASCII names are not checked; section 6 says they are out of scope."
+      ],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          ".........................",
+          "----------------------------------------------------------------------",
+          "Ran 25 tests in 0.003s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "opened": true,
+    "callers": 0
+  },
+  "qa": {
+    "status": "PASS",
+    "plan": [
+      "Baseline: tests/ (25) and acceptance/ (12) all pass.",
+      "Contracts and edge cases, applied: wrote qa/test_qa.py with 15 tests. They cover path traversal, absolute names, NUL, sibling-prefix escape and inner `..`; many malformed, tampered and non-string tokens; ids that round-trip or are rejected; LIKE escaping with backslash, quotes and SQL injection; owner isolation; blank tab/newline values; and two catalogues on one connection.",
+      "Integration: discarded, because the three modules do not consume each other.",
+      "Regression: discarded, because the repo had no earlier code beyond the version file.",
+      "Non-functional: only the security cases above. Performance and accessibility discarded because architecture.md does not mention them.",
+      "No medium or low defects were found, so no test is left red on purpose.",
+      "Rerun command from the repo root: python3 -m unittest discover -s qa"
+    ],
+    "defects": [],
+    "gaps": [
+      "The architecture says nothing about non-ASCII owners, file names or search text, so those were not tested.",
+      "`verify` accepts an empty secret, because only `issue` validates it. Section 6 does not require `verify` to reject one, so it is not reported.",
+      "No concurrency tests: sqlite3 connection sharing across threads is outside the contract.",
+      "Linux only. Windows path semantics were not tested.",
+      "My first attempt to write the test file through the shell was rejected by a hook that reported 'Contains Unicode whitespace'. I did not work around the hook. I wrote the file with the Write tool instead, and the test file contains no such characters."
+    ],
+    "needs_validation": []
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "severity": "medium",
+        "wp": "AT",
+        "file": "acceptance/test_storage.py",
+        "line": 12,
+        "problem": "The brief says names come from untrusted users and the path is kept inside `base`. No test covers a name that escapes the base, such as `../x` or `/etc/passwd`. The contract line is not turned into a test.",
+        "evidence": "`return os.path.join(os.path.abspath(base), name)` passes all three storage tests, and it lets `../../etc/passwd` or an absolute name escape the base."
+      },
+      {
+        "severity": "medium",
+        "wp": "AT",
+        "file": "acceptance/test_tokens.py",
+        "line": 25,
+        "problem": "AC-006 covers only a foreign secret and three plain malformed strings. It has no tampered token, such as a changed expiry or file id with the old signature. It has no malformed string that looks like a real token but has bad encoding, such as `!!.!!`. A weak signature that leaves out the expiry would pass. A decoder that leaks `binascii.Error` or `UnicodeDecodeError` would also pass, though the criterion says no other exception may be raised.",
+        "evidence": "`issue` returns `b64(id).b64(expiry).sha256(secret+id)`, so the expiry is not signed. `verify` splits on `.` and raises `InvalidToken` when the part count is not 2. This passes all four token tests, and an attacker can edit the expiry."
+      },
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_catalogue.py",
+        "line": 16,
+        "problem": "The return value of `add` (the new row id) is never asserted, though the contract states it. `issue` is only tested with `file-42`, so a different id would not be checked.",
+        "evidence": "An `add` that returns `0` or `None` passes every catalogue test."
+      }
+    ]
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "README: added usage for upload_path, tokens (issue/verify/InvalidToken) and Catalogue (add/find), plus test commands"
+      ],
+      "unverified": [
+        "No CHANGELOG entry: CHANGELOG.md does not exist and is outside docs.files",
+        "Test and acceptance commands not run; copied from architecture.md"
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 0,
+  "pending": [
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "No CHANGELOG entry: CHANGELOG.md does not exist and is outside docs.files",
+        "Test and acceptance commands not run; copied from architecture.md"
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Red state confirmed: all 3 modules fail with ModuleNotFoundError (vault.storage, vault.tokens, vault.catalogue), not syntax errors. No test can be green yet.",
+        "Names follow the ACs, but the tests are in unittest classes (file::Class::test), not bare functions.",
+        "Path traversal (e.g. '../x', absolute names) in upload_path is NOT tested: the architecture says names are untrusted, but section 6 and the ACs define no behaviour for it. This is a spec gap worth deciding before implementation.",
+        "Tokens: tampering with the payload or signature of a real token is not tested beyond the AC-006 cases; the spec only names those cases.",
+        "Catalogue: no injection-style search text (quotes) test beyond % and _; not required by any AC."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "I did not run the tests, because the vault package does not exist yet.",
+        "I did not read architecture.md beyond the brief.",
+        "I did not read the rules files .claude/rules/agentic/common.md and python.md."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-03",
+      "items": [
+        "Non-ASCII names are not checked; section 6 says they are out of scope."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-01",
+      "items": [
+        "Symlink escapes inside base are not handled, since the contract does no disk access.",
+        "Windows path semantics were not tested."
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "Did not run the unit or acceptance suites; other stages cover them.",
+        "Symlink handling in upload_path: it normalises the path lexically and does not resolve symlinks under base. The architecture excludes file writes, so I left it alone.",
+        "Very long search text: SQLite caps LIKE patterns at 50,000 bytes by default and would raise OperationalError. I judged this too minor to report.",
+        "Read the test files only briefly."
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "usage": {
+    "total": {
+      "input": 73136,
+      "cache_read": 382082,
+      "output": 25200,
+      "turns": 67,
+      "cost_usd": 0.5826122
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 14938,
+        "cache_read": 80597,
+        "output": 6179,
+        "cost_usd": 0.12957770000000002,
+        "turns": 12
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 8647,
+        "cache_read": 19606,
+        "output": 1936,
+        "cost_usd": 0.0558966,
+        "turns": 7
+      },
+      {
+        "id": "WP-03",
+        "agent": "implementer",
+        "label": "WP-03",
+        "input": 6359,
+        "cache_read": 40523,
+        "output": 2405,
+        "cost_usd": 0.05352230000000001,
+        "turns": 8
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 5833,
+        "cache_read": 53191,
+        "output": 2341,
+        "cost_usd": 0.05204109999999999,
+        "turns": 10
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 7844,
+        "cache_read": 69280,
+        "output": 4047,
+        "cost_usd": 0.07875000000000001,
+        "turns": 9
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 8394,
+        "cache_read": 28015,
+        "output": 1258,
+        "cost_usd": 0.0489455,
+        "turns": 7
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 12904,
+        "cache_read": 63827,
+        "output": 5586,
+        "cost_usd": 0.11383869999999999,
+        "turns": 7
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 8217,
+        "cache_read": 27043,
+        "output": 1448,
+        "cost_usd": 0.0500403,
+        "turns": 7
+      }
+    ]
+  }
+}
