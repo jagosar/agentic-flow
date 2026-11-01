@@ -57,6 +57,8 @@ def world(decl):
             return {"exit_code": 0, "output": json.dumps({"path": "docs/CODEMAP.md", "files": 3, "changed": True})}
         if cmd == "docs-check":
             return {"exit_code": 0, "output": json.dumps({"ok": True, "checked": 2, "broken": []})}
+        if cmd == "callers":
+            return {"exit_code": 0, "output": json.dumps({"changed": [], "symbols": {}, "callers": [], "truncated": False})}
         return {"exit_code": 0, "output": "RESULTADO: OK"}
 
     def gate(cmds, label):
@@ -122,7 +124,8 @@ def summarize(result, state):
             "pending": sorted(p.get("type") for p in result.get("pending", [])), "gates": state["gates"],
             "gate_calls": state["gate_calls"], "agents": sorted(agents), "prompts": prompts,
             "not_checked": sorted(f"{e['agent']}:{e['label']}" for e in result.get("not_checked", [])),
-            "gate_denials": result.get("gate_denials", {})}
+            "gate_denials": result.get("gate_denials", {}),
+            "review_callers": (result.get("review") or {}).get("callers", 0)}
 
 
 def run_scenario(decl):
@@ -147,7 +150,7 @@ class ConformanceTests(unittest.TestCase):
         for decl in CONFORMANCE["scenarios"]:
             with self.subTest(scenario=decl["name"]):
                 mine, theirs = run_scenario(decl), self.workflow[decl["name"]]
-                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents", "not_checked", "gate_denials"):
+                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents", "not_checked", "gate_denials", "review_callers"):
                     self.assertEqual(mine[key], theirs[key], key)
                 self.assertEqual(mine["prompts"], theirs["prompts"], "the agents must receive the same prompts")
 
@@ -181,6 +184,12 @@ class EngineTests(unittest.TestCase):
         in_fix = run_scenario(by_name["needs context in a fix wave is a blocker"])
         self.assertEqual((in_fix["result"], in_fix["failed_stage"]), ("REVIEW", "fix wave 1"))
         self.assertFalse([a for a in in_fix["agents"] if "(context)" in a])
+        reached = run_scenario(by_name["callers reach the reviewer"])
+        self.assertEqual(reached["review_callers"], 1)
+        self.assertIn("src/b/x.py", reached["prompts"]["reviewer:reviewer#1"])
+        ignored = run_scenario(by_name["callers that are not JSON are ignored"])
+        self.assertEqual(ignored["review_callers"], 0)
+        self.assertNotIn("Callers", ignored["prompts"]["reviewer:reviewer#1"])
 
     def test_halted_is_not_swallowed_like_an_agent_error(self):
         def agent(prompt, agent_type, label, ident):

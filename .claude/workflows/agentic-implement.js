@@ -164,7 +164,7 @@ const BLOCKING = new Set(['critical', 'high'])
 const brief = id => `.claude/state/briefs/${id}.md`
 const REFUTE_CONFIDENCE = 0.7
 // verify and baseline run the whole suite: each goes in a gatekeeper call of its own, so it fits in one Bash timeout.
-const WAVE_TAIL = ['verify', 'open-stage review']
+const WAVE_TAIL = ['verify', 'open-stage review', 'callers']
 const LOST = 'the gatekeeper returned no usable result (a timeout or garbled output); the command may have run anyway: check `agentic.py status` before resuming'
 // Files that close-stage saw change for an ID ("WP-01: 2 file(s) changed: a, b"). Used to compare what an agent
 // says it did with what is on disk.
@@ -478,7 +478,14 @@ while (true) {
   const concerns = concernPending.length
     ? `\nThe implementers finished with these concerns about their own code, as JSON:\n${JSON.stringify(concernPending.map(c => ({ wp: c.wp, problem: c.problem })))}\nCheck each one: confirm it as a finding with its severity, or leave it out if the code is right.`
     : ''
-  const review = await report('Review the integrated code according to architecture.md.' + concerns + RULES, { agentType: 'reviewer', label: 'reviewer', schema: REVIEW_SCHEMA })
+  // What the `callers` step reported: the lines outside the diff that use a changed public symbol; [] when the step is
+  // missing, failed or is not its JSON.
+  const foundCallers = post[2] ? lastJson(post[2].output) : null
+  const callerItems = foundCallers && Array.isArray(foundCallers.callers) && foundCallers.callers.length ? foundCallers.callers : []
+  const callers = callerItems.length
+    ? `\nCallers, outside the diff, of the public symbols this change defines or modifies (the reviewer must read them), as JSON:\n${JSON.stringify(callerItems)}\nA change that breaks one of them is a finding on the package that owns the changed symbol, even though the caller's file was not touched.${foundCallers.truncated ? ' The list is truncated.' : ''}`
+    : ''
+  const review = await report('Review the integrated code according to architecture.md.' + callers + concerns + RULES, { agentType: 'reviewer', label: 'reviewer', schema: REVIEW_SCHEMA })
   if (!review) return stop('review', 'the reviewer returned no report')
   const graves = review.findings.filter(f => BLOCKING.has(f.severity))
   const verdicts = await parallel(graves.map(f => () =>
@@ -487,7 +494,7 @@ while (true) {
   const confirmed = graves.filter((f, i) => !(verdicts[i] && verdicts[i].is_real === false && verdicts[i].confidence >= REFUTE_CONFIDENCE))
   const refuted = graves.filter(f => !confirmed.includes(f))
   const advisory = review.findings.filter(f => !BLOCKING.has(f.severity))
-  run.review = { confirmed, refuted, advisory, opened: ok(post[1]) }
+  run.review = { confirmed, refuted, advisory, opened: ok(post[1]), callers: callerItems.length }
   needsReview = (review.needs_validation || []).map(i => needsItem('reviewer', i))
   // The reviewer is read-only: if closing its stage finds changes, someone wrote where nobody may.
   const afterReview = await seq([`close-stage review REVIEW=${confirmed.length ? 'fail' : 'pass'}`, 'open-stage qa'], 'close-stage review')

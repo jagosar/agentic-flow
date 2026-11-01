@@ -33,6 +33,7 @@ async function simulate(scenario = {}, args = {}) {
     if (cmd === 'baseline') return { exit_code: 0, output: JSON.stringify({ phases: [{ name: 'tests', passed: true }], preexisting_failures: [] }) }
     if (cmd === 'codemap') return { exit_code: 0, output: JSON.stringify({ path: 'docs/CODEMAP.md', files: 3, changed: true }) }
     if (cmd === 'docs-check') return { exit_code: 0, output: JSON.stringify({ ok: true, checked: 2, broken: [] }) }
+    if (cmd === 'callers') return { exit_code: 0, output: JSON.stringify({ changed: [], symbols: {}, callers: [], truncated: false }) }
     return { exit_code: 0, output: 'RESULTADO: OK' }
   }
   const agent = async (prompt, opts) => {
@@ -305,7 +306,7 @@ test('gatekeeper calls are batched: close-stage travels with the next open-stage
   assert.deepEqual(gates, [
     'pipeline-plan', 'briefs', 'baseline', 'open-stage acceptance', 'close-stage acceptance AT=done --expect red', 'open-stage 1',
     'close-stage 1 WP-01=done WP-02=done', 'open-stage 2',
-    'close-stage 2 WP-03=done', 'verify', 'open-stage review',
+    'close-stage 2 WP-03=done', 'verify', 'open-stage review', 'callers',
     'close-stage review REVIEW=pass', 'open-stage qa', 'close-stage qa QA=pass',
   ])
 })
@@ -317,7 +318,7 @@ test('baseline and verify run the whole suite: each travels without another long
   const withBaseline = prompts.filter(p => /(^|[ +])baseline( |$)/.test(p))
   const withVerify = prompts.filter(p => /(^|[ +])verify( |$)/.test(p))
   assert.deepEqual(withBaseline, ['baseline'])
-  assert.deepEqual(withVerify, ['seq verify + open-stage review'])
+  assert.deepEqual(withVerify, ['seq verify + open-stage review + callers'])
 })
 
 test('briefs that cannot be written stop the run before anything starts', async () => {
@@ -490,6 +491,7 @@ const summarize = ({ result, calls, gates, gateCalls }) => {
     pending: (result.pending || []).map(p => p.type).sort(), gates, gate_calls: gateCalls, agents: agents.sort(), prompts,
     not_checked: (result.not_checked || []).map(e => `${e.agent}:${e.label}`).sort(),
     gate_denials: result.gate_denials || {},
+    review_callers: (result.review && result.review.callers) || 0,
   }
 }
 if (process.argv.includes('--dump')) {
@@ -544,6 +546,12 @@ test('every conformance scenario ends as described in its name', async () => {
   assert.deepEqual([twice.result, twice.failed_stage, twice.agents.filter(a => a === 'implementer:WP-02 (context)').length], ['REVIEW', 'wave 1', 1])
   const inFix = await run1('needs context in a fix wave is a blocker')
   assert.deepEqual([inFix.result, inFix.failed_stage, inFix.agents.filter(a => a.includes('(context)')).length], ['REVIEW', 'fix wave 1', 0])
+  const reached = await run1('callers reach the reviewer')
+  assert.equal(reached.review_callers, 1)
+  assert.ok(reached.prompts['reviewer:reviewer#1'].includes('src/b/x.py'))
+  const ignoredCallers = await run1('callers that are not JSON are ignored')
+  assert.equal(ignoredCallers.review_callers, 0)
+  assert.ok(!ignoredCallers.prompts['reviewer:reviewer#1'].includes('Callers'))
   const odd = await run1('a finding on an unknown package named like a built-in goes to no WP')
   assert.deepEqual([odd.result, odd.pending], ['REVIEW', ['no WP']])
   const asText = await run1('start_wave given as text works like a number')
