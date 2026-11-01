@@ -59,7 +59,7 @@ def acceptance_script(lines, code):
 
 def gate_state(repo):
     path = repo.dir / ".claude" / "state" / "gate.json"
-    return json.loads(text(path)) if path.exists() else {}
+    return json.loads(text(path) or "{}") if path.exists() else {}
 
 
 def js_const(name):
