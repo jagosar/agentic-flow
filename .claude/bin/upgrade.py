@@ -47,6 +47,15 @@ NOTES = {
         "The agents run-pipeline starts list StructuredOutput in their tools: without it, claude -p --agent returns "
         "no structured report and every fallback run stopped at wave 0 with NO REPORT.",
     ],
+    "2.2.0": [
+        "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
+        "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "
+        "use it as a whole word, tests included, at most 10 per symbol and 80 in total. The list travels in the "
+        "reviewer's prompt, and a caller the change breaks is a finding on the package that owns the change.",
+        "reviewer.md changes (the callers in its process and in its false-positive rule); install refreshes it "
+        "unless the project edited it, in which case merge the two sentences. Nothing else changes for projects: "
+        "the step joins the gatekeeper call that already runs verify and open-stage review.",
+    ],
     "2.1.0": [
         "A stop gate: when an implementer submits a report that says DONE (or DONE_WITH_CONCERNS), the hook runs the "
         "manifest's acceptance command and refuses the report, with the failing lines, if a failure is the package's "
