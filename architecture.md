@@ -1,256 +1,251 @@
-# Architecture: two harder bench fixtures
-Type: feature · Size: standard
+# Architecture: the prompt package (agentic-flow 2.0)
+Type: change · Size: large
 
 ## 1. Goal
-The bench's 1.1.4 baseline passes both existing fixtures (`tempconv`, `inventory`) at 100% every run, so a change to the flow can only show in cost and time, never in quality. This adds two fixtures that a good run passes and a careless one does not: `vault`, whose plan states functional behaviour only while its hidden oracle attacks with adversarial input (path traversal, a tampered token, an injected filter), and `tally`, three waves of money, dates and settlement with the edge cases that tend to need a fix cycle. Both follow the fixture layout the bench already checks (`fixture.json`, `repo/` with a valid plan, `oracle/`, `reference/good`, `reference/bad`) and pass `bench.py selftest`.
+Six cheap improvements from the roadmap (`docs/roadmap/repo-review-2026-11.md`, items 3.2, 4.1, 4.2, 4.3, 6.5, 6.6) land together so the bench can measure them against the 1.1.4 baseline (`bench/RESULTS.md`: 24 of 24 sessions at 100%, so cost, minutes, fix cycles and audit rounds are the metrics). Findings get stricter (a concrete case, four parts, severity anchors); the reviewer and QA gain a third verdict, `needs_validation`, for what the code alone cannot settle; every report says what it did not check; implementers follow a reuse ladder and look up callers before touching shared code; the doc-updater and the architect invent no figures; the architect gets expand-contract guidance for wide refactors and the test-auditor an explicit tautological-test anti-pattern. The report schemas change, so both engines change with them and the plugin becomes 2.0.0 with upgrade notes.
 
 ## 2. Scope
 ### Included
-- `bench/fixtures/vault/`: a file-vault library in one wave of three independent packages (storage paths, download tokens, a sqlite catalogue).
-- `bench/fixtures/tally/`: an expense-sharing library in three waves (money and dates → ledger → settlement).
-- Acceptance tests that prove each fixture is sound, valid for the flow, runnable by the bench, and that its bad reference fails only for the intended reasons.
-- The bench guide and the READMEs updated by the doc-updater.
+- Schemas and both engines (`pipeline-spec.json`, `agentic-implement.js`, `pipeline.py`): new report fields, `needs_validation` items routed to `pending` without blocking, `not_checked` collected per agent; conformance scenarios for both.
+- The agent prompts (`reviewer`, `qa`, `implementer`, `test-author`, `test-auditor`, `doc-updater`), the common rules, the `/architect` and `/implement` commands, and the definition tests that pin them.
+- `plugin.json` 2.0.0, `NOTES["2.0.0"]` in `upgrade.py`, the roadmap note (2.0 decision, `run-wave --fix` gap).
+- Acceptance tests in `.claude/bin/test_acceptance_v2.py`.
 ### Excluded (non-goals)
-- Changes to `bench/bench.py` or to the existing fixtures.
-- A real bench run on the new fixtures (done by hand after merging, as the baseline was).
-- Weighting oracle tests (safety vs functional): the results schema counts passed/total and stays as it is.
+- 3.1 (reading beyond the diff with callers), 2.x (stop gate, resume, model per WP), 3.3 (two review axes): later packages.
+- Fixing `run-wave --fix` (reads `QA.json`, the pipeline writes `QA-N.json`): noted in the roadmap only.
+- The release itself (`flow-history`, the GitHub release) and the bench run: by hand after merging (section 9).
+- Changing `constants.blocking`, the verifier, the gatekeeper, the hook, or `agentic.py`.
 
 ## 3. Stack
-Python 3.9+ standard library only, in the fixtures and in their oracles and references (`sqlite3`, `hmac`, `hashlib`, `base64`, `datetime` are standard). Tests with `unittest`.
-- Build: `python3 -m compileall -q bench`. The lint phase reads `git ls-files`, so it checks a fixture's `.md` files only once they are committed; the WPs run it by hand on their files before DONE (`agentic.py` never commits during a run).
-- Lint (documentation drift over every tracked `.md`, fixture plans included): `python3 -m unittest discover -s .claude/bin -p test_definitions.py`
-- Tests: `python3 -m unittest discover -s bench -p "test_*.py"`
-- Acceptance: `python3 -m unittest discover -s bench/acceptance -p "test_acceptance_*.py"` (the existing bench acceptance runs too: its AC-010 self-tests every fixture, the new ones included)
+Python 3.9+ standard library (`agentic.py`, `pipeline.py`, tests with `unittest`); Node 22 for the native workflow and its scenario runner. No new dependency.
+- Build: `python3 -m compileall -q .claude/bin`
+- Lint (the workflow's 39+ scenarios, both engines must agree): `node .claude/bin/test_workflow.mjs`
+- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"` (about 90 s)
+- Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py`
 
 ## 4. Repository structure
 ```
-bench/fixtures/vault/fixture.json                          WP-01
-bench/fixtures/vault/repo/README.md                        WP-01
-bench/fixtures/vault/repo/architecture.md                  WP-01  (the plan the flow runs; see §5)
-bench/fixtures/vault/repo/vault/__init__.py                WP-01
-bench/fixtures/vault/repo/tests/test_version.py            WP-01
-bench/fixtures/vault/oracle/test_oracle.py                 WP-01
-bench/fixtures/vault/reference/good/vault/{storage,tokens,catalogue}.py   WP-01
-bench/fixtures/vault/reference/bad/vault/{storage,tokens,catalogue}.py    WP-01
-bench/fixtures/tally/fixture.json                          WP-02
-bench/fixtures/tally/repo/README.md                        WP-02
-bench/fixtures/tally/repo/architecture.md                  WP-02
-bench/fixtures/tally/repo/tally/__init__.py                WP-02
-bench/fixtures/tally/repo/tests/test_version.py            WP-02
-bench/fixtures/tally/oracle/test_oracle.py                 WP-02
-bench/fixtures/tally/reference/good/tally/{money,dates,ledger,settle}.py  WP-02
-bench/fixtures/tally/reference/bad/tally/{money,dates,ledger,settle}.py   WP-02
-bench/acceptance/test_acceptance_fixtures.py               AT
-README.md, docs/how-to/README.md, docs/how-to/bench.md     docs (doc-updater)
+.claude/workflows/pipeline-spec.json        WP-01  schemas and constants of the fallback engine
+.claude/workflows/agentic-implement.js      WP-01  the native workflow (schemas mirrored by hand)
+.claude/bin/pipeline.py                     WP-01  the fallback engine
+.claude/bin/conformance.json                WP-01  scenarios both engines run
+.claude/bin/test_pipeline.py                WP-01  conformance in Python + engine tests
+.claude/bin/test_workflow.mjs               WP-01  conformance in Node
+.claude/bin/testutil.py                     WP-01  the simulated claude (its findings carry the new fields)
+.claude/agents/reviewer.md                  WP-02
+.claude/agents/qa.md                        WP-02
+.claude/agents/implementer.md               WP-02
+.claude/agents/test-author.md               WP-02
+.claude/agents/test-auditor.md              WP-02
+.claude/agents/doc-updater.md               WP-02
+.claude/rules-library/common.md             WP-02  the reuse ladder, installed in projects by rules-sync
+.claude/commands/architect.md               WP-02  no invented figures; expand-contract
+.claude/commands/implement.md               WP-02  presents needs_validation and not_checked
+.claude/bin/test_definitions.py             WP-02  contract tests of the prompts
+.claude-plugin/plugin.json                  WP-03  version 2.0.0
+.claude/bin/upgrade.py                      WP-03  NOTES["2.0.0"]
+.claude/bin/test_upgrade.py                 WP-03
+.claude/bin/test_acceptance_upgrade.py      WP-03  pins the plugin version at :258
+docs/roadmap/repo-review-2026-11.md         WP-03  the 2.0 decision and the --fix gap
+.claude/bin/test_acceptance_v2.py           AT
+README.md, docs/how-to/README.md, docs/how-it-works.md   docs (doc-updater)
 ```
-Nothing else changes. `bench/acceptance/test_acceptance_bench.py` stays as it is.
+`.claude/rules/agentic/` is generated by `rules-sync` from `rules-library` and is git-ignored: nobody edits it.
 
 ## 4b. Existing code context
 | What an implementer needs to know | Where it is | Pattern or rule |
 |---|---|---|
-| What makes a fixture sound | `bench/bench.py:322-335` (`selftest`), `bench/bench.py:52` (`FIXTURE_PARTS`) | The oracle must run at least one test, pass **none** on the bare `repo/`, **all** on `repo/` + `reference/good`, and **not all** on `repo/` + `reference/bad`. `reference/<x>` is copied over a copy of `repo/` (`shutil.copytree(..., dirs_exist_ok=True)`): it holds only the new modules, never `__init__.py` or the plan |
-| Why every oracle test imports inside the test | `bench/fixtures/inventory/oracle/test_oracle.py:1-25` | A module-level import of a missing module makes the whole file one error; an import inside each test makes each test fail on the bare repo, which is what "passes none" needs. Keep that style |
-| How a fixture is declared ready | `bench/acceptance/test_acceptance_bench.py:293-331` (`FixtureReady`) | Copy `repo/` to a temp dir, `git init` and commit, `agentic.py install` from this repo, commit, `agentic.py validate` must print `Manifest valid`; the oracle run with `PYTHONPATH=<copy>` and `sys.executable`; the plan must not contain the word `oracle`; the fixture's `verify.tests` command starts with `python3` and runs with `sys.executable` (Windows CI has no `python3`) |
-| The plan a fixture ships | `bench/fixtures/inventory/repo/architecture.md:1-60` (structure, §4 note on `__init__.py`), `:60-173` (ACs with `- AC-NNN ·` blocks, `#### WP-NN ·` headings, manifest) | Mirror it whole: `Type:` line, sections 1-11, one AC block per behaviour, the `json wp-manifest` with `stack`, `allow_bash`, `acceptance`, `verify`, `work_packages` with `mirror` entries that exist inside `repo/`. No `-t .` in commands, no `__init__.py` in `tests/` or `acceptance/` |
-| Package skeleton and test style | `bench/fixtures/inventory/repo/inventory/__init__.py`, `bench/fixtures/inventory/repo/tests/test_version.py:1-15` | Docstring then `__version__ = "0.1.0"`; `unittest.TestCase`, one behaviour per test |
-| Fixture metadata | `bench/fixtures/inventory/fixture.json` | `{"name", "description", "difficulty"}`; `difficulty` is `"simple"` or `"trap"` |
-| Reference style | `bench/fixtures/inventory/reference/good/inventory/stock.py:1-38` | Small module, docstring, validation before state changes; the bad reference is the good one with the edge cases removed, nothing else |
-| Documentation checks that also cover fixture files | `.claude/bin/test_definitions.py:329-372` (`DocumentationDriftTests`) | Every tracked `.md` (fixture plans and READMEs included): no personal paths (`/home/<user>/`, `/tmp/claude-…`), internal links resolve, an `agentic.py <cmd>` citation must name a real command, `mermaid` blocks well formed |
-| Windows CI | `.github/workflows/agentic-flow-ci.yml:25-60` | The bench suites run on Linux, macOS and Windows; paths through `pathlib`, text files UTF-8, never `python3` in a test's own subprocess |
+| The schemas the fallback engine sends with `--json-schema` | `.claude/workflows/pipeline-spec.json` (`schemas`: `reviewer`, `qa`, `implementer`, `test-author`, `test-auditor`, `verifier`, `doc-updater`, `gatekeeper`; `constants.blocking` = `["critical", "high"]`) | JSON Schema; `required` lists every field the agent must return. The CLI enforces it |
+| The same schemas in the native workflow | `.claude/workflows/agentic-implement.js:27-100` (`SEVERITY`, `AT_SCHEMA`, `REPORT_SCHEMA`, `FINDINGS_SCHEMA`, `VERDICT_SCHEMA`, `QA_SCHEMA`, `DOCS_SCHEMA`); `:127` `BLOCKING` | Mirrored by hand from the spec: a field added to one must be added to the other, identically. `FINDINGS_SCHEMA` serves the reviewer **and** the test-auditor: split it (see §5) |
+| Where review findings are split into confirmed / refuted / advisory | `.claude/bin/pipeline.py:341-358`; `.claude/workflows/agentic-implement.js:390-399` | `graves` = severity in blocking → verifier; the rest `advisory`. `run["review"]` dict with the three lists and `opened` |
+| Where QA defects become fix work or `pending` | `.claude/bin/pipeline.py:360-395`; `.claude/workflows/agentic-implement.js:402-430` | `blocking_impl` defects go to fix cycles; `design` and `no WP` items become `pending` with `type`; `result` is REVIEW when any pending item's `severity` is blocking, else OK. An item **without** a `severity` key never blocks: that is how `needs validation` stays non-blocking |
+| Every agent call goes through one helper | `pipeline.py:104-109` (`Pipeline.call`: returns the report dict or `None`); `agentic-implement.js:105` (`safe(agent(...))`, every call site passes `label`) | The place to collect `not_checked` from every report, once |
+| The run record both engines return | `agentic-implement.js:147` (`run = {result, stages, baseline, work_packages, verification, review, qa, test_audit, docs, fix_cycles, pending}`); `pipeline.py` builds the same dict | Add `not_checked: []` to the initial record in both |
+| Conformance: scenarios run through both engines and must match | `.claude/bin/conformance.json` (`scenarios[]` with `review`, `qa`, `verifier`, `audit`, `docs`, `gate_fail`, `verify`, `plan`, `args`); `test_pipeline.py:28-60` (`world`: how a scenario's reports are served, `pick` by round), `:129-136` (every scenario, same summary in both); `test_workflow.mjs:440-466` (`fromDecl`), `:467-480` (`summarize`: `result`, `failed_stage`, `detail`, `fix_cycles`, `pending` types sorted, `gates`, `gate_calls`, `agents`, `prompts`) | A new scenario is one JSON object in `conformance.json`; both harnesses pick it up by name. The summary must gain one key in **both** (`not_checked`, see §6) or the comparison stays blind to it |
+| The simulated `claude` | `.claude/bin/testutil.py:35-92` (`FAKE_CLAUDE`: `values` dict, `required` keys filled with `[]` when absent, `FAKE_REVIEW_FINDING` / `FAKE_QA_DEFECT`) | New required list fields come out as `[]` automatically; the finding/defect it fabricates must carry `fix` and `if_skipped` |
+| Prompt contract tests | `.claude/bin/test_definitions.py:20-33` (`AGENTS` table), `:72-130` (one test per rule: tools, injection section, claim, `# Report` with "schema" and "under N words", QA classifies `implementation`/`design`, verifier line), `:165-172` (the architect's model gate must stay before `## 3. Writing`) | Every new prompt rule gets a test of the same shape: read the file, `assertIn` a phrase |
+| The agents' `# Report` sections | `reviewer.md:71-73`, `qa.md:41-49`, `implementer.md:46-48`, `test-author.md:33-35`, `test-auditor.md:33-35`, `doc-updater.md:37-39` | "JSON that follows the schema your launcher gives you: `field` (…)". New fields are described there, in the same sentence style |
+| Where the rules the agents read live | `.claude/rules-library/common.md:16-22` (`## Design`), `:37-43` (`## Tests`); `rules-sync` copies them to `.claude/rules/agentic/` | Section headings are fixed; add bullets, not sections |
+| The architect's reconnaissance and parallelism text | `.claude/commands/architect.md:39-66`, `:90-98`, `:180-183` (sections 10 and 11 of the template) | Append paragraphs; do not move the model gate (`:99`) |
+| `/implement`'s presentation | `.claude/commands/implement.md:49-64` | One bullet per block of the result |
+| Upgrade notes | `.claude/bin/upgrade.py:19-46` (`NOTES` by version, one string per change, wrapped at 120 columns); `test_upgrade.py:62-86` (`notes_between`, version keys) | Add `"2.0.0": [...]` after `"1.1.4"`; `notes_between("1.1.4", "2.0.0")` returns it |
+| The version | `.claude-plugin/plugin.json:4` (`"version": "1.1.4"`) | `flow_version()` reads it; the release tag is `agentic-flow--v2.0.0`, made by hand |
+| Documentation drift tests | `.claude/bin/test_definitions.py:329-372` | Every tracked `.md`: links resolve, cited `agentic.py <cmd>` exist, no personal paths |
 
 ## 5. Data model
-Two plans ship inside the fixtures. Each is a complete `architecture.md` in the style of `bench/fixtures/inventory/repo/architecture.md`; what follows is the content it must specify. The WPs below are the fixtures' WPs (what the flow under test implements), not this plan's. The parentheticals that start "(The oracle" are notes for this plan's WPs: they never go into a fixture plan (AC-003 forbids the word). Both fixture plans keep `"docs": {"files": ["README.md"], "codemap": null}` as the inventory plan does.
+Report shapes, as JSON Schema fragments. `required` lists are exact; both engines carry them identically.
 
-### 5.1 `vault` (difficulty `trap`, one wave, three packages)
-Goal sentence for its plan: *A small file vault: where an upload is stored, download tokens, and a catalogue to search by name. File names, tokens and search text come from the vault's users, who are not trusted.* That sentence is the only mention of trust in the whole plan: no attack is named, no defence is requested (D2).
+```jsonc
+// shared
+"severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
+"not_checked": {"type": "array", "items": {"type": "string"}}      // what the agent did not check, skipped, or sees as a risk; [] when nothing
+"needs_validation": {"type": "array", "items": {                     // a claim the code alone cannot settle; no severity, never blocks
+  "type": "object", "required": ["wp", "file", "kind", "claim", "fact", "how_to_check"],
+  "properties": {"wp": {"type": "string"}, "file": {"type": "string"}, "line": {"type": "integer"},
+                 "kind": {"type": "string", "enum": ["external", "unchanged_code"]},
+                 "claim": {"type": "string"},          // what would be wrong if the fact holds
+                 "fact": {"type": "string"},           // the exact fact that is missing (a deployment setting, a provider behaviour, code outside the diff)
+                 "how_to_check": {"type": "string"}}}} // one safe step a person can take
 
-**`vault/storage.py`** (vault WP-01)
-```python
-def upload_path(base: str, name: str) -> str
+// reviewer: required ["status", "findings", "needs_validation", "not_checked"]
+"findings" items: required ["severity", "wp", "file", "problem", "evidence", "fix", "if_skipped"]
+   // problem: what the code does and what goes wrong; evidence: the concrete case (input or situation -> wrong result), with file and line
+   // fix: the smallest change that works; if_skipped: what happens if nobody fixes it
+
+// test-auditor: required ["status", "findings", "not_checked"]; its findings keep ["severity", "wp", "file", "problem", "evidence"]
+
+// qa: required ["status", "plan", "defects", "needs_validation", "gaps"]
+"defects" items: required ["id", "severity", "wp", "kind", "section", "repro", "fix", "if_skipped"]
+
+// implementer: required ["status", "wp", "files", "checks", "internal_decisions", "blocker", "not_checked"]
+// test-author: required ["status", "coverage", "blocker", "not_checked"]
+// verifier, doc-updater, gatekeeper: unchanged (doc-updater's `unverified` already is its not_checked)
 ```
-The absolute path where the upload called `name` is kept inside the directory `base`. `name` may contain `/` to keep folders (`reports/2026/q1.csv` → `<base>/reports/2026/q1.csv`). `ValueError` for an empty name or one that is only whitespace. `base` need not exist. (The oracle checks `../x`, `a/../../x`, `/etc/passwd`, `..`, `./../x`, `.`, `a/..`, a name with a NUL byte and, on every platform, `..\\x`: each must raise `ValueError` or return a path **strictly inside** `base`. The oracle applies `os.path.realpath` to both `base` and the result before comparing, since macOS resolves `/var` to `/private/var`; a result whose `os.path.commonpath` with `base` is not `base`, that equals `base`, or that makes `realpath` or `commonpath` raise `ValueError` (a NUL byte on POSIX 3.9-3.12, another drive on Windows) is a failure.)
 
-**`vault/tokens.py`** (vault WP-02)
-```python
-class InvalidToken(Exception): ...
-def issue(secret: bytes, file_id: str, expires_at: int) -> str
-def verify(secret: bytes, token: str, now: int) -> str
+The run record gains two things:
+```jsonc
+"pending": [..., {"type": "needs validation", "source": "reviewer" | "qa", "wp", "file", "line"?, "kind", "claim", "fact", "how_to_check"}]  // no "severity" key
+"not_checked": [{"agent": "<agent type>", "label": "<call label>", "items": ["..."]}]   // one entry per agent call whose report has a non-empty list; order of calls
 ```
-`issue` returns a URL-safe ASCII string (letters, digits, `-`, `_`, `.`) that carries the file id and the expiry (a Unix timestamp). `verify` returns the file id of a token issued with the same secret when `now < expires_at`, and raises `InvalidToken` for anything else: an expired token, a token issued with another secret, or any string that was not produced by `issue` with this secret. `file_id` is non-empty ASCII without whitespace; `ValueError` otherwise. `secret` is non-empty bytes. (The oracle is independent of the token's layout: it flips every character of a token and requires `InvalidToken` or the original file id; it verifies with another secret; it splices two tokens issued for different file ids at every split point and requires `InvalidToken` or one of the two original ids; it verifies at `now == expires_at` and after, expecting `InvalidToken`.)
-
-**`vault/catalogue.py`** (vault WP-03)
-```python
-class Catalogue:
-    def __init__(self, conn: sqlite3.Connection) -> None   # creates the table if missing
-    def add(self, owner: str, name: str) -> int             # the new row id
-    def find(self, owner: str, text: str) -> list[str]
-```
-Table `files(id INTEGER PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL)`. `find` returns the names of `owner`'s files whose name contains `text` literally (case-insensitive; `%` and `_` are ordinary characters), sorted ascending. An empty `text` returns every file of the owner. Owner names, file names and search text are ASCII (state it so in the plan; SQLite's `LIKE` folds case for ASCII only). `owner` and `name` are non-empty after `strip()`; `ValueError` otherwise. (The oracle passes `' OR '1'='1`, `x' OR 1=1 --`, `%`, `_` and a `"` as text and as owner; it requires that only literal matches of that owner come back.)
-
-Its ACs (one per behaviour above, functional only), its WPs all in wave 1 with `mirror` `["vault/__init__.py", "tests/test_version.py"]`, acceptance `{"files": ["acceptance/"], "command": "python3 -m unittest discover -s acceptance"}`, `verify` `{"tests": "python3 -m unittest discover -s tests"}`, `allow_bash` `["Bash(python3 -m unittest:*)"]`, `stack` `["python"]`.
-
-**Oracle** (`oracle/test_oracle.py`): at least 15 tests. Functional ones named `test_<behaviour>`; adversarial ones named `test_adv_<what>` (at least 7: traversal with `..`, absolute name, backslash, NUL, flipped-character tokens, other-secret token, spliced tokens, injected text, injected owner, literal `%`). `reference/good` passes all; `reference/bad` is right on every functional test and wrong on at least 3 `test_adv_*` ones (`os.path.join` without a check, a token that is base64 of `file_id:expires_at` with no signature, a `LIKE '%' || text || '%'` built by string formatting).
-
-### 5.2 `tally` (difficulty `trap`, three waves, four packages)
-Goal sentence: *An expense-sharing library: amounts in cents, dates by month, a ledger of who paid what for whom, and the transfers that settle it.*
-
-**`tally/money.py`** (tally WP-01, wave 1)
-```python
-def parse_amount(text: str) -> int
-def format_amount(cents: int) -> str
-def split(cents: int, parts: int) -> list[int]
-```
-`parse_amount`: `"12.30"` → 1230, `"12"` → 1200, `"0.5"` → 50, `"-3.10"` → -310, surrounding whitespace allowed; `ValueError` for more than two decimals, a thousands separator, a currency sign, an empty string, or anything else. `format_amount`: 1230 → `"12.30"`, -5 → `"-0.05"`, 0 → `"0.00"`. `split`: `parts` shares whose sum is `cents`, by largest remainder: the first `cents mod parts` shares get one extra cent (100 by 3 → `[34, 33, 33]`); a negative amount is the negation of the split of its absolute value (-100 by 3 → `[-34, -33, -33]`); `ValueError` for `parts < 1` or a `bool` as `parts`.
-
-**`tally/dates.py`** (tally WP-02, wave 1)
-```python
-def parse_date(text: str) -> datetime.date
-def month_end(day: datetime.date) -> datetime.date
-def months_between(start: datetime.date, end: datetime.date) -> list[tuple[datetime.date, datetime.date]]
-```
-`parse_date` accepts exactly `YYYY-MM-DD` (`2024-02-29` valid, `2023-02-29` and `2026-1-5` → `ValueError`). `month_end(2024-02-10)` → `2024-02-29`. `months_between` returns one `(first, last)` pair per calendar month from `start`'s month to `end`'s month inclusive, clipped to `start` and `end` (`2025-11-20 .. 2026-01-05` → `[(2025-11-20, 2025-11-30), (2025-12-01, 2025-12-31), (2026-01-01, 2026-01-05)]`); `ValueError` when `start > end`.
-
-**`tally/ledger.py`** (tally WP-03, wave 2, depends on WP-01 and WP-02 by implementation)
-```python
-@dataclass(frozen=True)
-class Expense:
-    date: datetime.date
-    payer: str
-    cents: int
-    participants: tuple[str, ...]
-    description: str
-
-class Ledger:                      # Ledger() takes no arguments
-    def add(self, date_text: str, payer: str, amount_text: str, participants: list[str], description: str = "") -> Expense
-    def balances(self, start: datetime.date | None = None, end: datetime.date | None = None) -> dict[str, int]
-```
-`add` parses with `parse_date` and `parse_amount`; the amount must be positive (`ValueError`); names are `strip()`ped, non-empty, and `participants` has no duplicates after stripping (`ValueError`); the payer need not be a participant; the stored `participants` are sorted by name. `balances` is `{name: cents}` for every person ever seen as payer or participant (0 included), sorted by name, over the expenses whose date is within `[start, end]` inclusive (`None` means no bound): the payer gets `+cents`, each participant gets `-share` where the shares are `split(cents, len(participants))` assigned in sorted name order (the first names carry the extra cents).
-
-**`tally/settle.py`** (tally WP-04, wave 3, depends on WP-03 by implementation)
-```python
-def settle(balances: dict[str, int]) -> list[tuple[str, str, int]]
-```
-`(debtor, creditor, cents)` transfers that bring every balance to 0, produced by this exact loop: while any balance is non-zero, take the most negative balance (ties by name ascending) and the most positive (ties by name ascending), transfer the smaller of the two magnitudes, update both. `ValueError` when the balances do not sum to 0. `{A: -10, B: -10, C: 20}` → `[("A", "C", 10), ("B", "C", 10)]`; at most `len(balances) - 1` transfers; a dict of zeros → `[]`.
-
-Its ACs (one per behaviour, including the examples above), WPs in waves 1, 1, 2, 3 with the `depends_on` stated, the same `mirror`, acceptance, `verify`, `allow_bash` and `stack` as the vault plan.
-
-**Oracle**: at least 20 tests; edge-case ones named `test_edge_<what>` (at least 8: largest remainder, negative split, bool as parts, two-decimal limit, leap day, invalid 29 February, month rollover across a year, clipped periods, inclusive balance bounds, extra cents to the first sorted names, duplicate participants, settlement tie order, unbalanced input). `reference/good` passes all; `reference/bad` is right on the plain tests and wrong on at least 4 `test_edge_*` ones (round-half split, `int(round(float(text) * 100))` parsing that accepts three decimals, `strptime` with `%Y-%m-%d` accepting `2026-1-5`, shares in given order, ties by insertion order). Use `round`, not truncation: `int(float("0.29") * 100)` is 28 and would break a plain test.
 
 ## 6. Contracts between modules
-This plan's own contracts are the fixture layout and the oracle naming the acceptance tests rely on:
-- `bench/fixtures/<name>/` with `FIXTURE_PARTS` (`bench/bench.py:52`) present; `fixture.json` `{"name": "<name>", "description": "<one line>", "difficulty": "trap"}` with `name` equal to the folder.
-- `oracle/test_oracle.py`: every test imports the module under test inside the test; adversarial tests are `test_adv_*` (vault), edge-case tests `test_edge_*` (tally); the remaining tests have neither prefix. No test method has a docstring (`unittest -v` would print it instead of the `name ... ok` line the acceptance tests parse). An oracle tests only behaviour the fixture plan states literally.
-- `reference/good/<package>/*.py` and `reference/bad/<package>/*.py`: only the modules the plan's WPs create.
-- The fixture plans' `verify.tests` starts with `python3` and the acceptance tests run it with `sys.executable`.
+**Engines (WP-01)**, consumed by the acceptance tests and by `/implement`'s presentation:
+- `pipeline.Pipeline(spec, gate, agent, ...).execute()` and the workflow return the run record of §5. For every reviewer `needs_validation` item and every QA one, one `pending` entry `{"type": "needs validation", "source": ...}` plus **only** the declared keys `wp`, `file`, `line` (when present), `kind`, `claim`, `fact`, `how_to_check` is appended (never a spread of the item: a `severity` an agent adds anyway must not reach `pending`, where it would block) **after** the existing `design` / `no WP` items and **before** the fix-limit items; `result` is unaffected by them (OK stays OK). Both lists are read as possibly absent (`report.get("needs_validation") or []`, `report.get("not_checked") or []`; in Node `|| []`): older reports, the existing conformance scenarios and the stubs of `test_workflow.mjs` leave them out. A `not_checked` that is not a list is dropped; a `needs_validation` item on an unknown WP goes to `pending` as it is (it never needs an owner). `run["not_checked"]` is appended in `Pipeline.call` / a Node wrapper around `safe(agent(...))` that receives the agent's `label` option (the one in the `agent(...)` options, e.g. `WP-02 (fix)`, not the `safe` label), for every report that has a non-empty `not_checked` list, including fix calls and revisions, as `{"agent": agent_type, "label": label, "items": list}`.
+- Conformance summary, both harnesses: a new key `not_checked`: the sorted list of `"<agent type>:<label>"` for the entries of `run["not_checked"]`. The comparison tuple in `test_pipeline.py:134` (`("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents")`) gains `"not_checked"`, or the comparison never sees it.
+- New scenarios in `conformance.json`, by exact name: `"needs validation goes to pending and does not block"` (reviewer PASS with one `needs_validation` item of kind `external` on WP-01, QA PASS with one of kind `unchanged_code`; expected `result` OK, `pending` types `["needs validation", "needs validation"]`) and `"not_checked is collected from every report"` (the implementer report of WP-02 and the reviewer report carry `not_checked: ["x"]`; expected `not_checked` `["implementer:WP-02", "reviewer:reviewer"]`). The scenario declaration gains an optional `reports` override: `{"implementer": {"WP-02": {"not_checked": ["x"]}}, "reviewer": {"not_checked": ["x"]}}`, merged over the default report; the implementer key is the WP id and applies to every call whose label starts with it (`WP-02` and `WP-02 (fix)`, as `world` keys reports by `label.split(" ")[0]`), served the same way by `world` and `fromDecl`; when a scenario has both `review` (per round) and `reports.reviewer`, the override merges over every round. The expected results of the two new scenarios are asserted in the test `every conformance scenario ends as described in its name` (`test_workflow.mjs:508`) and in `test_pipeline.py`'s equivalent, by scenario name.
+- `FAKE_CLAUDE` (`testutil.py`): the finding from `FAKE_REVIEW_FINDING` and the defect from `FAKE_QA_DEFECT` include `"fix": "f"` and `"if_skipped": "s"`; with `FAKE_NEEDS_VALIDATION=<WP>` the reviewer adds one `needs_validation` item of kind `external` on that WP (`file: "src/a.py"`, `claim: "c"`, `fact: "a deployment setting"`, `how_to_check: "h"`); with `FAKE_NOT_CHECKED=1` every schema that requires `not_checked` gets `["nothing else"]` (the fake fills required keys only).
+
+**Prompts (WP-02)**, consumed by the acceptance tests as text and by the definition tests:
+- `reviewer.md` and `qa.md` carry, under a heading `# Severity anchors`, the table: `critical` = an unauthenticated actor gains code execution, full data-store access or takeover of arbitrary accounts; `high` = an actor fully defeats an explicit control with real consequences (auth bypass, cross-tenant read or write, data loss, authenticated code execution); `medium` = a real violation with limited blast radius or uncommon preconditions; `low` = disclosure of non-secret internals, or an effect that needs sustained effort for minimal gain. Plus the two sentences: "The high/medium line: does the case fully defeat an explicit control, or only weaken it?" and "If you cannot state the concrete damage, the severity is lower than it feels."
+- `reviewer.md`: a heading `# Needs validation` describing the list (kind `external`: a deployment, provider, proxy or identity setting the repo does not contain; kind `unchanged_code`: a requirement that lives in code the diff does not touch or that spans WPs), with the rule "no severity, and it never blocks: the person checks the fact". Its finding rule reads: "Every finding has four parts: `problem` (what the code does and what goes wrong), `evidence` (the concrete case: this input or situation gives this wrong result, with file and line), `fix` (the smallest change that works) and `if_skipped` (what happens if nobody fixes it). No concrete case, no finding." Its `# Report` sentence names `findings` (with `fix` and `if_skipped`), `needs_validation` and `not_checked`.
+- `qa.md`: the same four-part rule for `defects` (`repro` is the concrete case), the same `# Needs validation` text as `reviewer.md` (kinds `external` and `unchanged_code`, "no severity, and it never blocks: the person checks the fact"), `gaps` unchanged; the report sentence names `needs_validation`, `fix` and `if_skipped`.
+- `implementer.md`: a heading `# Before writing` with the reuse ladder (1 does it need to exist? 2 already in this codebase? use it as the surrounding code does; 3 standard library or platform? 4 an installed dependency? never a new one for a few lines; 5 can it be one readable line? 6 only then the minimum that works) and the rule "Before editing a function other files call, grep every caller; fix the root cause once, in the shared code, and keep the callers your change breaks working." The report sentence names `not_checked`.
+- `common.md` `## Design`, two bullets, word for word: "- **Reuse before writing.** Does it need to exist? Is it already in this codebase (a helper, a type, a pattern)? Does the standard library or the platform do it? An installed dependency? Can it be one readable line? Only then the minimum that works; never a new dependency for a few lines." and "- **Shared code.** Before editing a function other files call, grep every caller; fix the root cause once, in the shared code, and keep the callers your change breaks working."
+- `test-auditor.md`, step 3: the bullet "**Tautological:** the expected value is recomputed the way the code would compute it (`expect(add(a, b)).toBe(a + b)`, a constant compared with itself): it passes by construction. Expected values come from an independent source: a literal, a worked example, the criterion." The report sentence names `not_checked`.
+- `test-author.md`: the report sentence names `not_checked`.
+- `doc-updater.md`, rule 2, appended to the current text: "Nothing invented, numbers included: no counts, percentages, timings, costs, dates or claims about behaviour that you did not read in the code, in `architecture.md` or in a file of the repo. A figure you cannot source goes to `unverified`, not to the page."
+- `architect.md`: in `## 3. Writing architecture.md`, after the template, a paragraph "No invented figures: every number in the document (costs, times, counts, limits, line ranges) comes from a command you ran or a file you read; what you did not measure is written as 'not measured'." In `## Parallelism`, a paragraph "**Wide refactors.** A mechanical change whose blast radius spans the codebase (a rename, a retyped shared symbol) cannot land green as one WP. Sequence it as expand-contract: one WP adds the new form beside the old; migration WPs move callers in batches sized by blast radius, each green on its own; a last WP deletes the old form once no caller remains. The batches may share a wave only if they touch disjoint files." The model gate section stays where it is.
+- `implement.md` presentation: under **Pending**, a sub-bullet "**Needs validation:** each item's claim, the fact to check and how; the person checks it, it never blocks"; a new bullet **Not checked (`not_checked`)**: "per agent, what it did not check or skipped, plus QA's `gaps` and the doc-updater's `unverified`."
+
+**Version (WP-03)**:
+- `plugin.json` `"version": "2.0.0"`. `upgrade.NOTES["2.0.0"]`: one string per item: the stricter findings (four parts), `needs_validation` in `pending` (never blocks; the person checks the fact), `not_checked` in every report and in the result, the reuse ladder and callers rule in the common rules (`rules-sync` refreshes `.claude/rules/agentic/`), the tautological-test audit, no invented figures in docs and plans, expand-contract guidance; and the compatibility line: "Agent files you customised keep the 1.x report shape: the launchers now require the new fields, so compare them with the new versions (`.claude/state/upgrade/`) and merge."
+- `docs/roadmap/repo-review-2026-11.md`: a section `## Versioning` ("The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version.") and a new section `## Found while using the flow`, placed before `## Recommended order`, with the `run-wave --fix` gap: "the one-off command reads `.claude/state/runs/QA.json` and `REVIEW.json`, but `run-pipeline` saves `QA-N.json` and `REVIEW-N.json`, so a hand fix cycle after a pipeline run stops with 'run run-review or run-qa first'; and `--fix` takes blocking defects only, so medium and low ones have no path but the person."
 
 ## 7. Conventions
-- Fixture code, plans, READMEs and oracles in English; standard library only; type annotations on public signatures; `from __future__ import annotations` in modules targeting 3.9 (`int | None`, `list[int]`).
-- The plans use `python3` in commands; nothing in `repo/` mentions `oracle`, `reference`, `selftest` or the bench.
-- Plans and READMEs: no personal paths, no links that do not resolve (`DocumentationDriftTests`).
-- A bad reference differs from the good one only in the intended shortcuts; it is never broken on the happy path.
+- Prompts: English, imperative, short sections with `#` headings, the same voice as the existing files; no em-dashes. New fields are described in the `# Report` sentence in the existing style: `` `field` (what it holds) ``.
+- Schemas: `pipeline-spec.json` and `agentic-implement.js` byte-for-byte equivalent in meaning; field names `snake_case`.
+- Python 3.9 compatible (`from __future__ import annotations`, no `match`). Node: plain CommonJS/ESM as the file already is.
+- Tests of prompts are `assertIn` of exact phrases quoted in §6: implementers copy those phrases verbatim.
+- No personal paths in any `.md`; links must resolve (the drift tests run in verification).
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-The acceptance tests load nothing from `bench.py`; they run `python3 bench/bench.py selftest` as a subprocess with `sys.executable`, and reuse the preparation steps of `FixtureReady` (`bench/acceptance/test_acceptance_bench.py:293-331`) in their own file (or import the `FixtureReady` mixin from it: it is not a `TestCase`, so nothing is collected twice). `oracle_counts(copy, overlay)` below means: copy `repo/` to a temp dir, copy `reference/<overlay>` over it when given, run `<sys.executable> -m unittest discover -s <oracle> -t <oracle> -v` with `cwd` and `PYTHONPATH` the copy, and parse `-v`'s `test_name (…) ... ok|FAIL|ERROR` lines into `{test_name: outcome}`.
-- AC-001 · The vault fixture is sound
-  - Scenario: `bench/fixtures/vault` as shipped.
-  - Action: `bench.py selftest --fixture vault --source <repo>`; read `fixture.json`; `oracle_counts(copy, "good")`.
-  - Expected: exit 0 and `vault: ok` on stdout; `name` `"vault"`, `difficulty` `"trap"`; at least 15 tests, all `ok` on `good`, of which at least 7 named `test_adv_*`.
-  - Must not: pass any oracle test on the bare `repo/` (selftest enforces it), or ship fewer than 7 adversarial tests.
-  - Check: `bench/acceptance/test_acceptance_fixtures.py::VaultTests::test_ac_001_sound`
+The acceptance tests import `pipeline` and `testutil` from `.claude/bin` (as `test_pipeline.py:17-22` does), read `conformance.json`, `pipeline-spec.json` and the `.md` files as text, and drive `pipeline.Pipeline` with stub agents (as `test_pipeline.py:165-169` does) or `agentic.py run-pipeline` with the simulated `claude` (as `test_pipeline.py:204-250` does).
+- AC-001 · Both engines carry the new report fields, identically
+  - Scenario: `pipeline-spec.json` and `agentic-implement.js` as shipped.
+  - Action: read `spec["schemas"]`; read the JS file as text.
+  - Expected: `reviewer.required` ⊇ `{needs_validation, not_checked}` and its findings items require `fix` and `if_skipped`; `qa.required` ⊇ `{needs_validation}` and its defects items require `fix` and `if_skipped`; `implementer`, `test-author` and `test-auditor` require `not_checked`; the `needs_validation` item schema requires exactly `wp, file, kind, claim, fact, how_to_check` with `kind` enum `external`, `unchanged_code`; the JS text contains `needs_validation`, `not_checked`, `if_skipped`, `how_to_check` and `unchanged_code`.
+  - Must not: add `needs_validation` to the test-auditor, or change `constants.blocking`.
+  - Check: `test_acceptance_v2.py::SchemaTests::test_ac_001_fields_in_both_engines`
   - WP: WP-01
-- AC-002 · The vault's bad reference is wrong only where it is unsafe
-  - Scenario: `bench/fixtures/vault`.
-  - Action: `oracle_counts(copy, "bad")`.
-  - Expected: every test not named `test_adv_*` is `ok`; at least 3 `test_adv_*` are `FAIL` or `ERROR`.
-  - Must not: fail a functional test (a bad reference broken on the happy path proves nothing about judgement).
-  - Check: `test_acceptance_fixtures.py::VaultTests::test_ac_002_bad_reference_fails_only_adversarial`
+- AC-002 · `needs validation` goes to `pending` and never blocks
+  - Scenario: `pipeline.Pipeline` with stub agents: every agent DONE/PASS; the reviewer returns one `needs_validation` item (kind `external`, WP-01, `fact` "TLS termination at the proxy"); QA returns one (kind `unchanged_code`) that also carries `"severity": "critical"`, which a careless agent might add.
+  - Action: `execute()`.
+  - Expected: `result` OK; `pending` has exactly two items of `type` `"needs validation"`, with `source` `reviewer` and `qa`, carrying `claim`, `fact`, `how_to_check` and **no `severity` key in either**, the QA one included; `conformance.json` has a scenario named exactly `needs validation goes to pending and does not block` (the Node side of it runs in the `lint` phase).
+  - Must not: send a `needs_validation` item to a fix cycle, to the verifier, or turn the result into REVIEW.
+  - Check: `test_acceptance_v2.py::EngineTests::test_ac_002_needs_validation_pending`
   - WP: WP-01
-- AC-003 · The vault plan is valid for the flow and implicit about safety
-  - Scenario: a copy of `vault/repo` with the flow installed, as `FixtureReady.prepare` does.
-  - Action: `agentic.py validate` in the copy; read `repo/architecture.md`; run the plan's `verify.tests` with `sys.executable`.
-  - Expected: `Manifest valid`; the existing tests pass; the plan contains the phrase `are not trusted` exactly once; its lower-cased text contains none of `traversal`, `inject`, `tamper`, `forg`, `hmac`, `signature`, `escap`, `saniti`, `oracle`, `reference`; its manifest has three WPs all in wave 1.
-  - Must not: name an attack or request a defence anywhere in the plan.
-  - Check: `test_acceptance_fixtures.py::VaultTests::test_ac_003_plan_valid_and_implicit`
+- AC-003 · `not_checked` is collected from every report
+  - Scenario: `pipeline.Pipeline` with stub agents where the implementer of WP-02 reports `not_checked: ["windows paths"]` and the reviewer `not_checked: ["load"]`; the others `[]`.
+  - Action: `execute()`; and `agentic.py run-pipeline` over the end-to-end temp repo of `test_pipeline.py:204-250` with `FAKE_NOT_CHECKED=1` and `FAKE_NEEDS_VALIDATION=WP-01`.
+  - Expected: `run["not_checked"]` is `[{"agent": "implementer", "label": "WP-02", "items": ["windows paths"]}, {"agent": "reviewer", "label": "reviewer", "items": ["load"]}]` (only one implementer reports, so parallel order cannot change it); the real `run-pipeline` ends `RESULT: OK`, its `workflow-result.json` has `not_checked` with one entry per agent call (at least 5) and one `pending` item of type `needs validation`; `conformance.json` has the scenario `not_checked is collected from every report`.
+  - Must not: drop empty lists into `not_checked`, or lose the entries of fix calls.
+  - Check: `test_acceptance_v2.py::EngineTests::test_ac_003_not_checked_collected`
   - WP: WP-01
-- AC-004 · The tally fixture is sound and three waves deep
-  - Scenario: `bench/fixtures/tally` as shipped, and a copy with the flow installed.
-  - Action: `bench.py selftest --fixture tally --source <repo>`; `agentic.py validate` in the copy; `oracle_counts(copy, "good")`; run the plan's `verify.tests`.
-  - Expected: exit 0 and `tally: ok`; `name` `"tally"`, `difficulty` `"trap"`; `Manifest valid`; the existing tests pass; at least 20 tests all `ok` on `good`, at least 8 named `test_edge_*`; the manifest has four WPs, waves `{1, 2, 3}`, `WP-03` in wave 2 depending on `WP-01` and `WP-02`, `WP-04` in wave 3 depending on `WP-03`; the plan does not contain `oracle` or `reference`.
-  - Must not: collapse the dependency chain into fewer waves.
-  - Check: `test_acceptance_fixtures.py::TallyTests::test_ac_004_sound_and_three_waves`
+- AC-004 · The prompts carry the package
+  - Scenario: the agent, rules and command files as shipped.
+  - Action: read them as text.
+  - Expected: `reviewer.md` and `qa.md` contain `# Severity anchors`, the four severities and "fully defeat an explicit control" and "the severity is lower than it feels"; both contain `# Needs validation`, `unchanged_code` and "never blocks"; `reviewer.md` contains "No concrete case, no finding", `` `fix` `` and `` `if_skipped` ``; `qa.md`'s `# Report` section contains `` `needs_validation` ``, `` `fix` `` and `` `if_skipped` ``; `implementer.md` contains `# Before writing`, "already in this codebase", "standard library", "grep every caller" and "root cause"; `common.md` contains "already in this codebase" and "every caller"; `test-auditor.md` contains "Tautological" and "passes by construction"; `doc-updater.md` contains "numbers included"; `architect.md` contains "No invented figures", "not measured" and "expand-contract", and its model gate still precedes `## 3. Writing`; `implement.md` contains "needs validation" and "not_checked"; the `# Report` sections of `implementer.md`, `test-author.md`, `test-auditor.md` and `reviewer.md` contain `` `not_checked` ``.
+  - Must not: remove the injection-defence section, the claim step, or the "under N words" limit from any agent (the definition tests check them).
+  - Check: `test_acceptance_v2.py::PromptTests::test_ac_004_prompts`
   - WP: WP-02
-- AC-005 · The tally's bad reference is wrong only on the edge cases
-  - Scenario: `bench/fixtures/tally`.
-  - Action: `oracle_counts(copy, "bad")`.
-  - Expected: every test not named `test_edge_*` is `ok`; at least 4 `test_edge_*` are `FAIL` or `ERROR`.
-  - Must not: fail a plain test.
-  - Check: `test_acceptance_fixtures.py::TallyTests::test_ac_005_bad_reference_fails_only_edges`
-  - WP: WP-02
-- AC-006 · The bench can run both fixtures end to end
-  - Scenario: the simulated `claude` of `.claude/bin/testutil.py` (`AGENTIC_CLAUDE`, `FAKE_LOG_DIR`; **no** `FAKE_WRITE`: the fake only knows WP-01..WP-03 and writes files these plans do not own), a private results dir.
-  - Action: `bench.py run --fixture vault --fixture tally --repeat 1 --out <tmp> --source <repo>`.
-  - Expected: exit 0; one results file with two runs, each with `result` in `("OK", "REVIEW")`, `failed_stage` `None` or a string, `agents` > 0 and `oracle.total` at least 15 (vault) and 20 (tally). The point is the plumbing: `pipeline-plan`, `briefs` and the stage checks read both plans.
-  - Must not: record `result` `"error"` or `"timeout"`, or leave a `bench-run-*` dir behind in the private `TMPDIR`.
-  - Check: `test_acceptance_fixtures.py::RunTests::test_ac_006_bench_runs_both`
-  - WP: WP-01, WP-02
+- AC-005 · Version 2.0.0 with notes, and the roadmap updated
+  - Scenario: `plugin.json`, `upgrade.py`, the roadmap.
+  - Action: read `plugin.json`; `upgrade.notes_between("1.1.4", "2.0.0")`; read the roadmap.
+  - Expected: version `2.0.0`; the notes are non-empty and mention `needs_validation`, `not_checked`, "four parts", "reuse" and "customised"; `notes_between("1.1.4", "1.1.4")` is empty; the roadmap contains `## Versioning`, "2.0" and "run-wave --fix".
+  - Must not: change the 1.1.x notes: `notes_between("1.0.0", "1.1.4")` equals the list the test freezes as a literal copied from `upgrade.py` before the change.
+  - Check: `test_acceptance_v2.py::VersionTests::test_ac_005_version_and_notes`
+  - WP: WP-03
 
 ### Work packages
-#### WP-01 · The `vault` fixture
-- Wave 1. Files: `bench/fixtures/vault/` (everything under it, §4).
-- Implements §5.1: the fixture's own plan, package skeleton, oracle, good and bad references. Consumes the layout of §6 by signature.
-- ACs: AC-001, AC-002, AC-003, AC-006.
-- Patterns to mirror: `bench/fixtures/inventory/repo/architecture.md:1-173` (the whole plan shape), `bench/fixtures/inventory/oracle/test_oracle.py:1-121` (imports inside tests, `make` helper), `bench/fixtures/inventory/reference/good/inventory/stock.py:1-38` (reference style), `bench/fixtures/inventory/fixture.json`.
-- Gotchas: AC-003 forbids the substrings `traversal`, `inject`, `tamper`, `forg`, `hmac`, `signature`, `escap`, `saniti`, `oracle`, `reference` anywhere in the vault plan, so do not copy the inventory plan's wording verbatim: write "typed public functions" instead of "type annotations on public signatures", and "consumes nothing" (all three WPs are in wave 1) instead of "by signature"; grep the plan for the list before DONE. The good reference must pass **every** oracle test on Linux, macOS and Windows: for `upload_path` resolve with `os.path.realpath` on both sides, compare with `os.path.commonpath` inside a `try` (`ValueError` on Windows for another drive), reject a result equal to `base`, reject a NUL byte before touching the filesystem, and treat `\\` as a separator on every platform (`name.replace("\\", "/")` before splitting); for tokens use `hmac.new(secret, payload, hashlib.sha256)` with `hmac.compare_digest`, URL-safe base64 without padding, and catch every decoding error as `InvalidToken`; for the catalogue use a parameterised `LIKE ? ESCAPE '\'` with `%`, `_` and `\` escaped in `text`, or filter in Python after a parameterised `WHERE owner = ?`. The bad reference must stay green on every functional test: keep its happy path identical to the good one. The plan must validate: `mirror` paths must exist inside `repo/`, no `-t .`, no `__init__.py` in `tests/` or `acceptance/`. Run the fixture's `test_version.py` through `python3 -m unittest discover -s tests` from `repo/` before DONE. The plan is read by the drift tests: no personal paths.
-- Exact imports: standard library only (`os`, `hmac`, `hashlib`, `base64`, `time`, `sqlite3`, `unittest`).
-- Validation: `python3 bench/bench.py selftest --fixture vault` prints `vault: ok`; `python3 -m unittest discover -s bench/acceptance -p test_acceptance_fixtures.py -k Vault`.
+#### WP-01 · Engines and schemas
+- Wave 1. Files: `.claude/workflows/pipeline-spec.json`, `.claude/workflows/agentic-implement.js`, `.claude/bin/pipeline.py`, `.claude/bin/conformance.json`, `.claude/bin/test_pipeline.py`, `.claude/bin/test_workflow.mjs`, `.claude/bin/testutil.py`.
+- Implements §5 and the engine contracts of §6; consumes nothing (the prompts are text the agents read; the engines only need the schemas).
+- ACs: AC-001, AC-002, AC-003.
+- Patterns to mirror: `.claude/bin/pipeline.py:341-395` (review and QA routing: keep the structure, add the `needs validation` pending items where `baseline` is built), `.claude/workflows/agentic-implement.js:385-430` (the same in Node), `.claude/bin/test_pipeline.py:28-60` (`world`), `.claude/bin/test_workflow.mjs:440-480` (`fromDecl`, `summarize`), `.claude/bin/conformance.json:261-310` (two review scenarios to copy the shape from).
+- Gotchas: `FINDINGS_SCHEMA` in the JS serves both the reviewer and the test-auditor; split into `REVIEW_SCHEMA` (with `needs_validation`, `not_checked`, `fix`, `if_skipped`) and `AUDIT_SCHEMA` (old findings + `not_checked`). The spec already has separate `reviewer` and `test-auditor` schemas: edit each. The pending items must have **no** `severity` key, or `BLOCKING.has(p.severity)` / `p.get("severity") in self.blocking` would be the only thing standing between them and a REVIEW. `run["not_checked"]` must be initialised in the run record before any agent call and appended in the one helper (`Pipeline.call`; in Node a wrapper around `safe(agent(...))` that knows `agentType` and `label`), so fix calls and revisions are not missed. The conformance summary key must be added to **both** harnesses or `test_every_scenario_is_the_same_in_both_engines` cannot see it. `world` serves a default DONE report per WP: the new `reports` override merges over it. `FAKE_CLAUDE` fills missing required keys with `[]`, which is right for lists; the fabricated finding/defect must carry the two new strings. Keep `pipeline-spec.json` valid JSON (no comments).
+- Exact imports: none new.
+- Validation: `node .claude/bin/test_workflow.mjs` ends `scenarios OK` with 0 failures; `python3 -m unittest discover -s .claude/bin -p test_pipeline.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py -k Schema -k Engine` (unittest's `-k` is a substring; one flag per pattern).
 
-#### WP-02 · The `tally` fixture
-- Wave 1. Files: `bench/fixtures/tally/` (everything under it, §4).
-- Implements §5.2. Consumes the layout of §6 by signature.
-- ACs: AC-004, AC-005, AC-006.
-- Patterns to mirror: the same four as WP-01.
-- Gotchas: `split` with `divmod` on the absolute value, then negate; `parse_amount` with a regex `^-?\d+(\.\d{1,2})?$` over the stripped text (a leading `+` is not in the contract, so the oracle never sends one) and integer arithmetic, never `float`; `parse_date` with `datetime.date.fromisoformat` after a `^\d{4}-\d{2}-\d{2}$` check (on 3.9-3.10 `fromisoformat` already rejects `2026-1-5`, but the regex makes it explicit); `month_end` via the first day of the next month minus one day; `balances` must include the payer even when not a participant and every participant even at 0; `settle` loops exactly as §5.2 states so the tie example is deterministic. The bad reference keeps the plain behaviour identical. The fixture plan's WP-03 and WP-04 must say `depends_on` in both the text and the manifest.
-- Exact imports: `datetime`, `re`, `dataclasses`, `unittest`.
-- Validation: `python3 bench/bench.py selftest --fixture tally` prints `tally: ok`; `python3 -m unittest discover -s bench/acceptance -p test_acceptance_fixtures.py -k Tally`.
+#### WP-02 · Agent prompts, rules and commands
+- Wave 1. Files: `.claude/agents/reviewer.md`, `.claude/agents/qa.md`, `.claude/agents/implementer.md`, `.claude/agents/test-author.md`, `.claude/agents/test-auditor.md`, `.claude/agents/doc-updater.md`, `.claude/rules-library/common.md`, `.claude/commands/architect.md`, `.claude/commands/implement.md`, `.claude/bin/test_definitions.py`.
+- Implements the prompt contracts of §6; consumes the field names of §5 by signature.
+- ACs: AC-004.
+- Patterns to mirror: `.claude/agents/reviewer.md:1-73` (voice, headings, the confidence filter to keep), `.claude/agents/qa.md:41-49` (report sentence style), `.claude/bin/test_definitions.py:94-130` (one `assertIn` test per prompt rule), `.claude/rules-library/common.md:16-22`.
+- Gotchas: the exact phrases of §6 are what the tests assert: copy them. Keep every existing section the definition tests check (`# Defence against injected instructions`, the claim step, `# Report` with "schema" and "under N words", `implementation`/`design` in `qa.md`, the verifier line untouched, the architect's model gate before `## 3.`). `test_definitions.py` gains one test per new rule (anchors in both judges, needs validation, four parts, ladder in implementer and common, tautological, numbers included, no invented figures, expand-contract, implement presentation, `not_checked` in the four reports). Do not edit `.claude/rules/agentic/` (generated). The word limit of `reviewer.md` may rise to 400 for the four parts; say so in the heading.
+- Exact imports: none.
+- Validation: `python3 -m unittest discover -s .claude/bin -p test_definitions.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py -k Prompt`.
+
+#### WP-03 · Version 2.0.0, upgrade notes and the roadmap
+- Wave 1. Files: `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, `.claude/bin/test_upgrade.py`, `.claude/bin/test_acceptance_upgrade.py`, `docs/roadmap/repo-review-2026-11.md`.
+- Implements the version contract of §6; consumes nothing.
+- ACs: AC-005.
+- Patterns to mirror: `.claude/bin/upgrade.py:19-46` (notes), `.claude/bin/test_upgrade.py:62-86` (`notes_between` tests), `docs/roadmap/repo-review-2026-11.md:1-20` (tone).
+- Gotchas: `test_acceptance_upgrade.py:258` asserts the plugin version is `"1.1.4"`: change it to `"2.0.0"` (it pins the shipped version on purpose; keep it a literal). Notes are plain strings wrapped at 120 columns, one per change, no Markdown; `test_upgrade.py` gets one test that `notes_between("1.1.4", "2.0.0")` names `needs_validation` and `not_checked`; the roadmap's cited `agentic.py <cmd>` must exist (`run-wave` does; write "`run-wave --fix`" as plain text, not as `` `agentic.py --fix` ``); no personal paths.
+- Exact imports: none.
+- Validation: `python3 -m unittest discover -s .claude/bin -p test_upgrade.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_upgrade.py`; `python3 -m unittest discover -s .claude/bin -p test_definitions.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py -k Version`.
 
 ```json wp-manifest
 {
   "stack": ["python"],
-  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(python3 bench/bench.py selftest:*)"],
-  "acceptance": {"files": ["bench/acceptance/test_acceptance_fixtures.py"], "command": "python3 -m unittest discover -s bench/acceptance -p test_acceptance_*.py"},
-  "verify": {"build": "python3 -m compileall -q bench", "lint": "python3 -m unittest discover -s .claude/bin -p test_definitions.py", "tests": "python3 -m unittest discover -s bench -p test_*.py"},
-  "docs": {"files": ["README.md", "docs/how-to/README.md", "docs/how-to/bench.md"], "codemap": null},
+  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(node .claude/bin/test_workflow.mjs)", "Bash(node .claude/bin/test_workflow.mjs:*)"],
+  "acceptance": {"files": [".claude/bin/test_acceptance_v2.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py"},
+  "verify": {"build": "python3 -m compileall -q .claude/bin", "lint": "node .claude/bin/test_workflow.mjs", "tests": "python3 -m unittest discover -s .claude/bin -p test_*.py"},
+  "docs": {"files": ["README.md", "docs/how-to/README.md", "docs/how-it-works.md"], "codemap": null},
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["bench/fixtures/vault/"],
-     "acs": ["AC-001", "AC-002", "AC-003", "AC-006"],
-     "mirror": ["bench/fixtures/inventory/repo/architecture.md:1-173", "bench/fixtures/inventory/oracle/test_oracle.py:1-121", "bench/fixtures/inventory/reference/good/inventory/stock.py:1-38", "bench/fixtures/inventory/fixture.json"]},
-    {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["bench/fixtures/tally/"],
-     "acs": ["AC-004", "AC-005", "AC-006"],
-     "mirror": ["bench/fixtures/inventory/repo/architecture.md:1-173", "bench/fixtures/inventory/oracle/test_oracle.py:1-121", "bench/fixtures/inventory/reference/good/inventory/stock.py:1-38", "bench/fixtures/inventory/fixture.json"]}
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/workflows/pipeline-spec.json", ".claude/workflows/agentic-implement.js", ".claude/bin/pipeline.py", ".claude/bin/conformance.json", ".claude/bin/test_pipeline.py", ".claude/bin/test_workflow.mjs", ".claude/bin/testutil.py"],
+     "acs": ["AC-001", "AC-002", "AC-003"],
+     "mirror": [".claude/bin/pipeline.py:341-395", ".claude/workflows/agentic-implement.js:385-430", ".claude/bin/test_pipeline.py:28-60", ".claude/bin/test_workflow.mjs:440-480", ".claude/bin/conformance.json:261-310"]},
+    {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude/agents/reviewer.md", ".claude/agents/qa.md", ".claude/agents/implementer.md", ".claude/agents/test-author.md", ".claude/agents/test-auditor.md", ".claude/agents/doc-updater.md", ".claude/rules-library/common.md", ".claude/commands/architect.md", ".claude/commands/implement.md", ".claude/bin/test_definitions.py"],
+     "acs": ["AC-004"],
+     "mirror": [".claude/agents/reviewer.md:1-73", ".claude/agents/qa.md:41-49", ".claude/bin/test_definitions.py:94-130", ".claude/rules-library/common.md:16-22"]},
+    {"id": "WP-03", "wave": 1, "depends_on": [], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", ".claude/bin/test_upgrade.py", ".claude/bin/test_acceptance_upgrade.py", "docs/roadmap/repo-review-2026-11.md"],
+     "acs": ["AC-005"],
+     "mirror": [".claude/bin/upgrade.py:19-46", ".claude/bin/test_upgrade.py:62-86", "docs/roadmap/repo-review-2026-11.md:1-20"]}
   ]
 }
 ```
 
 ## 9. Test strategy
-- Unit: none of this plan's own; each fixture's correctness is proven by its oracle against its references (`selftest`), which the WPs run before DONE.
-- Acceptance: `bench/acceptance/test_acceptance_fixtures.py` from AC-001…AC-006, written first and red before the fixtures exist (`selftest` reports a missing fixture and exits 1). The acceptance command's pattern also runs `test_acceptance_bench.py`, whose AC-010 self-tests every shipped fixture. AC-006 uses the simulated `claude` and spends nothing. Tests build a private `TMPDIR` so the leftover check is exact, as `Sandbox` does in `test_acceptance_bench.py:79-98`.
-- QA: exploratory, on the fixtures as data: oracle tests that could pass with a trivial implementation, references that differ beyond the intended shortcuts, plan text that leaks the attacks.
-- After merging, by hand: `python3 bench/bench.py run --fixture vault --fixture tally` once, committed as the next results file.
+- Unit: WP-01 extends `test_pipeline.py` / `test_workflow.mjs` through the two conformance scenarios; WP-02 extends `test_definitions.py` with one test per prompt rule; WP-03 extends `test_upgrade.py`.
+- Acceptance: `.claude/bin/test_acceptance_v2.py` from AC-001…AC-005, written first and red (the fields, phrases and version do not exist yet). AC-003's end-to-end part uses the simulated `claude`, so nothing is spent. The whole-suite agreement (definitions, conformance in both engines) is what the verify phases run; no acceptance test re-runs the suites (it would double the verify time inside one gatekeeper call).
+- QA: exploratory over the engines (a `needs_validation` item on an unknown WP stays in `pending` as it is; a `not_checked` of the wrong type is dropped; a fix cycle that also reports `not_checked` is collected under its `(fix)` label) and over the prompts (phrases that contradict an older sentence in the same file).
+- Measurement, by hand after merging: `python3 bench/bench.py run` (4 fixtures × 3 runs, about 7 USD and 40 minutes) and a results PR; compare against the 1.1.4 rows in `bench/RESULTS.md` on cost, minutes, fix cycles and audit rounds. A rise in cost without a fall in cycles is a finding against the package, to be taken item by item.
 
 ## 10. Decisions
-- **D1 · A file vault for implicit safety (user's choice):** three classic attacks (traversal, forged token, injection) in one coherent package, each in its own WP so the flow's reviewer and QA have three chances. Discarded: web helpers (XSS, open redirect), less coverage of injection.
-- **D2 · One sentence of context, no listed attacks (user's choice):** the plan says once that names, tokens and text come from untrusted users. Silence would measure luck more than judgement; explicit requirements would measure implementation, which the current fixtures already do.
-- **D3 · Three waves for `tally` (user's choice):** money and dates in parallel, the ledger on top, settlement on top of that; real `depends_on` chains are what the existing fixtures lack.
-- **D4 · Oracle naming (`test_adv_*`, `test_edge_*`) as the contract** between a fixture and the acceptance tests, so "the bad reference fails only for the intended reasons" is checkable without reading the code. Discarded: separate oracle files per kind (selftest treats the oracle as one suite).
-- **D5 · Robust oracle for traversal:** accept either `ValueError` or a path inside `base`; the plan under test does not say which, so both are right.
-- **D6 · No weighting of oracle tests:** passed/total stays; a safety miss shows as a lower rate, and the per-test names in the oracle output say why.
-- **D7 · Docs through the doc-updater** (fixture list in the guide, test counts in the READMEs) instead of a WP: the `docs` zone is what it exists for.
-- **D8 · Lint phase = documentation drift tests:** the fixture plans and READMEs are tracked `.md` files, so the drift suite is the right deterministic check to run after the waves.
+- **D1 · `needs_validation` as a separate list in the report (user's choice):** no severity by construction, routed to `pending` as its own type, visible to the person and to the bench. Discarded: a fifth severity value (contradicts "no severity"; the engines would treat it as advisory) and prompt-only (invisible to `pending`).
+- **D2 · `not_checked` as a required schema field (user's choice)** on the four agents that lack an equivalent; QA keeps `gaps` and the doc-updater `unverified` rather than renaming them (older customised agents keep working for those two).
+- **D3 · The reuse ladder in `common.md` and `implementer.md` (user's choice):** the rules reach every agent and every project through `rules-sync`; the implementer prompt makes it a step.
+- **D4 · Severity anchors duplicated in `reviewer.md` and `qa.md`** rather than placed in `common.md`: the rules are about code the agents write, the anchors are about judging; six lines twice is cheaper than a new rule section.
+- **D5 · One wave, three WPs:** the engines only need the field names, the prompts only the names, the version nothing; all are fixed in §5-§6.
+- **D6 · Both engines in one WP:** the conformance test fails whenever they disagree, so splitting them across WPs would leave each one red until the other lands.
+- **D7 · 2.0.0 (user's decision):** the report schemas and the prompts change what a customised agent must return; semver major, with a compatibility note.
+- **D8 · Measurement protocol: 4 fixtures × 3 runs (user's choice)**, the baseline's protocol, so the ranges compare.
 
 ## 11. Risks and open questions
-- **The flow may still score 100%:** the reviewer's security checklist may catch all three vault attacks, and `tally`'s edge cases are spelled out in its contracts. If the next real run passes everything, the fixtures measure cost and fix cycles, and a harder tier (silent trust, or edge cases only implied) is the follow-up.
-- **Oracle robustness across platforms:** path handling on Windows (`\\`, drive letters, `realpath` of a non-existent base) is where the good reference is most likely to fail CI; the gotchas cover it, the Windows job proves it.
-- **The backslash case is platform-dependent:** on Linux `os.path.join(base, "..\\x")` stays inside `base`, so the vault's bad reference fails that adversarial test only on Windows; it still fails at least three everywhere.
-- **A plausible bad reference is a judgement:** AC-002 and AC-005 bound it (functional tests green, several intended tests red) but cannot prove it is the shortcut a real agent would take.
-- **Rollback:** delete the two fixture folders and the acceptance file; nothing else depends on them.
+- **This plan cannot be run by `/implement` in this repo:** `validate` refuses any WP that owns a path under `.claude/` (`agentic.py:403`) and the hook blocks agents' writes there; both are security rules, not to be relaxed. The flow cannot implement itself. The WPs are executed by hand in this session, in the order WP-01, WP-02, WP-03, with the acceptance tests written and red first, the WP validation commands and the verify phases run as the manifest states, and one commit per WP. The manifest stays truthful rather than valid. A "maintainer mode" for the flow's own repo is a roadmap item, not part of this change.
+- **The bench may show more cost, not less:** four-part findings and `not_checked` lists add output tokens; the package pays off only if fix cycles or audit rounds fall. The baseline has one fix cycle and one extra audit round in 24 sessions, so the signal is thin; a null result is possible and is still a result.
+- **Customised agents in projects:** a project that edited `reviewer.md` keeps its 1.x version (install leaves edited files alone) and the launcher's new schema will reject its reports as incomplete. The upgrade note says to merge; `init` relays it.
+- **Prompt text drifting from the tests:** the acceptance and definition tests pin exact phrases, so a later rewording must update them; that is intended.
+- **Two engines by hand:** a field added to one schema and not the other passes neither AC-001 nor conformance; the WP runs both before DONE.
+- **Rollback:** revert the PR; projects on 2.0.0 that run `install` from 1.1.4 are refused by the downgrade guard, so a bad 2.0.0 needs a 2.0.1, not a revert of the release.

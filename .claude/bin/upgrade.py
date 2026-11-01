@@ -47,6 +47,24 @@ NOTES = {
         "The agents run-pipeline starts list StructuredOutput in their tools: without it, claude -p --agent returns "
         "no structured report and every fallback run stopped at wave 0 with NO REPORT.",
     ],
+    "2.0.0": [
+        "Review findings and QA defects have four parts: the problem, the concrete case (evidence or repro), the "
+        "smallest fix and what happens if skipped. Both judges share severity anchors. No concrete case, no finding.",
+        "The reviewer and QA report needs_validation: a claim the code alone cannot settle (a deployment or provider "
+        "setting, code outside the diff). It has no severity, goes to the result's pending list and never blocks: "
+        "the person checks the fact.",
+        "Every report carries not_checked (what the agent did not check, skipped, or sees as a risk); the result "
+        "lists them per agent call and /implement presents them.",
+        "The common rules gain a reuse ladder (does it need to exist, is it in the repo, the standard library, an "
+        "installed dependency, one line, then the minimum) and the rule to grep every caller before editing shared "
+        "code. rules-sync refreshes .claude/rules/agentic/ on the next /implement.",
+        "The test-auditor rejects tautological tests (an expected value recomputed the way the code computes it).",
+        "The doc-updater and /architect invent no figures: counts, costs, timings and claims come from the code, the "
+        "plan or a measurement, or are written as unverified or not measured. /architect sequences wide refactors as "
+        "expand-contract.",
+        "Agent files you customised keep the 1.x report shape: the launchers now require the new fields, so compare "
+        "them with the new versions (.claude/state/upgrade/) and merge.",
+    ],
 }
 
 

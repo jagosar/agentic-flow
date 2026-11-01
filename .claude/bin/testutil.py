@@ -40,6 +40,8 @@ def claude_command(fake_py) -> str:
 #   FAKE_WRITE   implementers write their package's file;  FAKE_ROGUE  WP-02 also writes a file nobody owns
 #   FAKE_MODE    "structured" (default, with token usage), "nousage", or "text" (the old STATUS: format)
 #   FAKE_REVIEW_FINDING / FAKE_QA_DEFECT  a WP: the reviewer / QA reports one high defect on it, on its first call only
+#   FAKE_NEEDS_VALIDATION  a WP: the reviewer adds one needs_validation item on it;  FAKE_NOT_CHECKED  every report
+#   whose schema requires not_checked says ["nothing else"]
 FAKE_CLAUDE = """\
 import json, os, sys, time
 argv = sys.argv[1:]
@@ -80,10 +82,15 @@ if first:
     wp = os.environ[once]
     if agent == "reviewer":
         values.update(status="FAIL", findings=[{"severity": "high", "wp": wp, "file": "src/a.py", "problem": "p",
-                                                 "evidence": "e"}])
+                                                 "evidence": "e", "fix": "f", "if_skipped": "s"}])
     else:
         values.update(status="FAIL", defects=[{"id": "D1", "severity": "high", "wp": wp, "kind": "implementation",
-                                                "section": "6", "repro": "r"}])
+                                                "section": "6", "repro": "r", "fix": "f", "if_skipped": "s"}])
+if agent == "reviewer" and os.environ.get("FAKE_NEEDS_VALIDATION"):
+    values["needs_validation"] = [{"wp": os.environ["FAKE_NEEDS_VALIDATION"], "file": "src/a.py", "kind": "external",
+                                   "claim": "c", "fact": "a deployment setting", "how_to_check": "h"}]
+if os.environ.get("FAKE_NOT_CHECKED"):
+    values["not_checked"] = ["nothing else"]
 required = json.loads(argv[argv.index("--json-schema") + 1]).get("required", [])
 out = {"type": "result", "structured_output": {k: values.get(k, []) for k in required}}
 if mode == "structured":

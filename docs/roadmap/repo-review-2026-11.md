@@ -94,6 +94,15 @@ Without this, every prompt or agent change is decided by reasoning.
 - A reuse metric (functions reused vs created). (ponytail)
 - Screenshot freshness for the docs. (diagram-design)
 
+## Versioning
+
+The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version. The first package (3.2, 4.1, 4.2, 4.3, 6.5, 6.6) is 2.0.0; see `docs/architecture/0002-prompt-package-2-0.md`.
+
+## Found while using the flow
+
+- The one-off `run-wave --fix` reads `.claude/state/runs/QA.json` and `REVIEW.json`, but `run-pipeline` saves `QA-N.json` and `REVIEW-N.json`, so a hand fix cycle after a pipeline run stops with "run run-review or run-qa first"; and `--fix` takes blocking defects only, so medium and low ones have no path but the person.
+- The flow cannot implement itself: `validate` refuses a WP that owns a path under `.claude/` and the hook blocks agents' writes there, both on purpose. Plans that change the flow are executed by hand; a maintainer mode for the flow's own repo is an open idea.
+
 ## Recommended order
 
 1. Now: 1.1 and 1.2, then one real bench run of the current version as the baseline.

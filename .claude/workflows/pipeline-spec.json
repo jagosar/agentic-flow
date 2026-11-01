@@ -41,7 +41,8 @@
       "required": [
         "status",
         "coverage",
-        "blocker"
+        "blocker",
+        "not_checked"
       ],
       "properties": {
         "status": {
@@ -77,6 +78,12 @@
             "string",
             "null"
           ]
+        },
+        "not_checked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -84,7 +91,8 @@
       "type": "object",
       "required": [
         "status",
-        "findings"
+        "findings",
+        "not_checked"
       ],
       "properties": {
         "status": {
@@ -132,6 +140,12 @@
               }
             }
           }
+        },
+        "not_checked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -143,7 +157,8 @@
         "files",
         "checks",
         "internal_decisions",
-        "blocker"
+        "blocker",
+        "not_checked"
       ],
       "properties": {
         "status": {
@@ -213,6 +228,12 @@
               }
             }
           }
+        },
+        "not_checked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -220,7 +241,9 @@
       "type": "object",
       "required": [
         "status",
-        "findings"
+        "findings",
+        "needs_validation",
+        "not_checked"
       ],
       "properties": {
         "status": {
@@ -239,7 +262,9 @@
               "wp",
               "file",
               "problem",
-              "evidence"
+              "evidence",
+              "fix",
+              "if_skipped"
             ],
             "properties": {
               "severity": {
@@ -264,6 +289,59 @@
                 "type": "string"
               },
               "evidence": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "if_skipped": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "not_checked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "needs_validation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "wp",
+              "file",
+              "kind",
+              "claim",
+              "fact",
+              "how_to_check"
+            ],
+            "properties": {
+              "wp": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "external",
+                  "unchanged_code"
+                ]
+              },
+              "claim": {
+                "type": "string"
+              },
+              "fact": {
+                "type": "string"
+              },
+              "how_to_check": {
                 "type": "string"
               }
             }
@@ -298,7 +376,8 @@
         "status",
         "plan",
         "defects",
-        "gaps"
+        "gaps",
+        "needs_validation"
       ],
       "properties": {
         "status": {
@@ -325,7 +404,9 @@
               "wp",
               "kind",
               "section",
-              "repro"
+              "repro",
+              "fix",
+              "if_skipped"
             ],
             "properties": {
               "id": {
@@ -355,6 +436,12 @@
               },
               "repro": {
                 "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "if_skipped": {
+                "type": "string"
               }
             }
           }
@@ -363,6 +450,47 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "needs_validation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "wp",
+              "file",
+              "kind",
+              "claim",
+              "fact",
+              "how_to_check"
+            ],
+            "properties": {
+              "wp": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "external",
+                  "unchanged_code"
+                ]
+              },
+              "claim": {
+                "type": "string"
+              },
+              "fact": {
+                "type": "string"
+              },
+              "how_to_check": {
+                "type": "string"
+              }
+            }
           }
         }
       }

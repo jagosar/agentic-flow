@@ -77,8 +77,10 @@ class Pipeline:
         self.rules = ""
         self.fix_count, self.fix_history, self.limit_pending = {}, {}, []
         self.qa_pending = []  # the last QA's design and no-WP items: they stay listed whatever comes after
+        self.needs_review = []  # the last review's needs-validation items
         self.run = {"result": "REVIEW", "stages": [], "baseline": None, "work_packages": {}, "verification": None,
-                    "review": None, "qa": None, "test_audit": None, "docs": None, "fix_cycles": 0, "pending": []}
+                    "review": None, "qa": None, "test_audit": None, "docs": None, "fix_cycles": 0, "pending": [],
+                    "not_checked": []}
 
     # ---------- utilities ----------
     def stop(self, stage, detail, **extra):
@@ -103,10 +105,24 @@ class Pipeline:
 
     def call(self, agent_type, label, prompt, id=None):
         try:
-            return self._agent(prompt, agent_type, label, id)
+            report = self._agent(prompt, agent_type, label, id)
         except Exception as e:  # noqa: BLE001
             self.log(f"{label} failed: {e}")
             return None
+        # Every report says what it did not check; the run keeps them per call, fix calls and revisions included.
+        items = report.get("not_checked") if isinstance(report, dict) else None
+        if isinstance(items, list) and items:
+            self.run["not_checked"].append({"agent": agent_type, "label": label, "items": items})
+        return report
+
+    @staticmethod
+    def needs_item(source, item):
+        """A needs-validation item for pending, with its declared keys only: a severity an agent adds must never block."""
+        out = {"type": "needs validation", "source": source, "wp": item.get("wp"), "file": item.get("file")}
+        if isinstance(item.get("line"), int) and not isinstance(item.get("line"), bool):
+            out["line"] = item["line"]
+        out.update(kind=item.get("kind"), claim=item.get("claim"), fact=item.get("fact"), how_to_check=item.get("how_to_check"))
+        return out
 
     @staticmethod
     def changed_by(out, ident):
@@ -354,6 +370,7 @@ class Pipeline:
             advisory = [f for f in review["findings"] if f["severity"] not in self.blocking]
             run["review"] = {"confirmed": confirmed, "refuted": refuted, "advisory": advisory,
                              "opened": self.ok(post[1] if len(post) > 1 else None)}
+            self.needs_review = [self.needs_item("reviewer", i) for i in review.get("needs_validation") or []]
             after = self.seq([f"close-stage review REVIEW={'fail' if confirmed else 'pass'}", "open-stage qa"], "close-stage review")
             if not self.ok(self.step(after, 0)):
                 return self.stop("review", "files changed during the review stage (the reviewer must not write)")
@@ -371,7 +388,8 @@ class Pipeline:
             impl = [d for d in impl if d["wp"] in plan["wave_of"]]
             design = [d for d in qa["defects"] if d["kind"] == "design"]
             unassigned = [d for d in confirmed + [d for d in qa["defects"] if blocking_impl(d)] if d["wp"] not in plan["wave_of"]]
-            baseline = [{"type": "design", **d} for d in design] + [{"type": "no WP", **d} for d in unassigned]
+            baseline = ([{"type": "design", **d} for d in design] + [{"type": "no WP", **d} for d in unassigned]
+                        + self.needs_review + [self.needs_item("qa", i) for i in qa.get("needs_validation") or []])
             close_qa = f"close-stage qa QA={'pass' if qa['status'] == 'PASS' else 'fail'}"
 
             eligible = self.split_by_limit(impl) if impl else []

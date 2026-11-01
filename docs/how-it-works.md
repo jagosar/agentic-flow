@@ -65,6 +65,7 @@ flowchart TD
     FIX -->|"at most 2 attempts per WP"| VF
     FIX -->|limit reached| H(["You or /architect decide"])
     QA -->|design defect| H
+    RV & QA -.->|"needs validation: a fact to check, never a block"| G2
     QA -->|PASS| DOCQ{"docs section?"}
 
     subgraph D2["Living documentation (latest Sonnet)"]
@@ -331,6 +332,9 @@ acceptance/  qa/            acceptance and QA tests
 - **Wave 0:** the test-author turns the criteria into tests before any code exists.
 - **`acs`:** the criteria a work package answers for, in the manifest. With them (and with the file paths a failure mentions), `verify` names the packages behind a failure (`suspects`), which go to a fix cycle instead of stopping the run.
 - **Test audit:** after wave 0, the test-auditor looks for tests that would pass against an empty or trivial implementation. A critical or high finding sends the test-author back once; if the tests are still weak, the run stops.
+- **Finding:** what the reviewer and QA report, in four parts: the problem, the concrete case (`evidence` or `repro`), the smallest `fix` and what happens `if_skipped`. Both judges share severity anchors; no concrete case, no finding.
+- **Needs validation:** a claim the code alone cannot settle, from the reviewer or QA: a deployment or provider setting the repo does not contain (`external`), or code the diff does not touch (`unchanged_code`). It names the missing fact and how to check it, carries no severity, goes to the result's `pending` list and never blocks: you check the fact.
+- **`not_checked`:** what each agent did not check, skipped, or sees as a risk, in its report; the result lists them per agent call and `/implement` shows them.
 - **Fix attempt:** at most 2 per work package. From the second one on, the agent receives the defects the first attempt was given and the diff of what it changed (`runs/<ID>.fix-N.diff`), so it does not repeat the same fix.
 - **`seq`:** `agentic.py seq a + b + c`, several of the workflow's commands in one gatekeeper call, stopping at the first that fails.
 - **Manifest:** the `json wp-manifest` block in `architecture.md`, read by every guardrail.

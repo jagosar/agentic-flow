@@ -71,6 +71,12 @@ def world(decl):
                 break
         return {"steps": steps}
 
+    reports = decl.get("reports") or {}
+
+    def override(report, key):
+        extra = reports.get(key)
+        return {**report, **extra} if extra else report
+
     def agent(prompt, agent_type, label, ident):
         state["calls"].append((agent_type, label, prompt))
         if agent_type == "test-author":
@@ -79,15 +85,18 @@ def world(decl):
             state["audits"] += 1
             return pick(decl["audit"], state["audits"]) if decl.get("audit") else {"status": "PASS", "findings": []}
         if agent_type == "implementer":
-            return {"status": "DONE", "wp": label.split(" ")[0], "files": [], "checks": [], "internal_decisions": [], "blocker": None}
+            wp = label.split(" ")[0]
+            base = {"status": "DONE", "wp": wp, "files": [], "checks": [], "internal_decisions": [], "blocker": None}
+            extra = (reports.get("implementer") or {}).get(wp)
+            return {**base, **extra} if extra else base
         if agent_type == "reviewer":
             state["reviews"] += 1
-            return pick(decl["review"], state["reviews"]) if decl.get("review") else {"status": "PASS", "findings": []}
+            return override(pick(decl["review"], state["reviews"]) if decl.get("review") else {"status": "PASS", "findings": []}, "reviewer")
         if agent_type == "verifier":
             return decl.get("verifier") or {"is_real": True, "confidence": 0.9, "reasoning": "it holds"}
         if agent_type == "qa":
             state["qas"] += 1
-            return pick(decl["qa"], state["qas"]) if decl.get("qa") else {"status": "PASS", "plan": ["contracts"], "defects": [], "gaps": []}
+            return override(pick(decl["qa"], state["qas"]) if decl.get("qa") else {"status": "PASS", "plan": ["contracts"], "defects": [], "gaps": []}, "qa")
         if agent_type == "doc-updater":
             return decl.get("docs") or {"status": "DONE", "files": ["README.md", "CHANGELOG.md"],
                                         "changes": ["usage of the new command"], "unverified": [], "blocker": None}
@@ -106,7 +115,8 @@ def summarize(result, state):
     return {"result": result["result"], "failed_stage": result.get("failed_stage"), "detail": result.get("detail"),
             "fix_cycles": result["fix_cycles"],
             "pending": sorted(p.get("type") for p in result.get("pending", [])), "gates": state["gates"],
-            "gate_calls": state["gate_calls"], "agents": sorted(agents), "prompts": prompts}
+            "gate_calls": state["gate_calls"], "agents": sorted(agents), "prompts": prompts,
+            "not_checked": sorted(f"{e['agent']}:{e['label']}" for e in result.get("not_checked", []))}
 
 
 def run_scenario(decl):
@@ -131,7 +141,7 @@ class ConformanceTests(unittest.TestCase):
         for decl in CONFORMANCE["scenarios"]:
             with self.subTest(scenario=decl["name"]):
                 mine, theirs = run_scenario(decl), self.workflow[decl["name"]]
-                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents"):
+                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents", "not_checked"):
                     self.assertEqual(mine[key], theirs[key], key)
                 self.assertEqual(mine["prompts"], theirs["prompts"], "the agents must receive the same prompts")
 
@@ -147,6 +157,13 @@ class ConformanceTests(unittest.TestCase):
 
 
 class EngineTests(unittest.TestCase):
+    def test_new_scenarios_end_as_described(self):
+        by_name = {d["name"]: d for d in CONFORMANCE["scenarios"]}
+        needs = run_scenario(by_name["needs validation goes to pending and does not block"])
+        self.assertEqual((needs["result"], needs["pending"]), ("OK", ["needs validation", "needs validation"]))
+        collected = run_scenario(by_name["not_checked is collected from every report"])
+        self.assertEqual(collected["not_checked"], ["implementer:WP-02", "reviewer:reviewer"])
+
     def test_halted_is_not_swallowed_like_an_agent_error(self):
         def agent(prompt, agent_type, label, ident):
             raise pipeline.Halted()

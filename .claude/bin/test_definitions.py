@@ -128,6 +128,58 @@ class AgentDefinitionTests(unittest.TestCase):
         body = (AGENTS_DIR / "verifier.md").read_text(encoding="utf-8")
         self.assertIn("Uncertainty never downgrades a blocker", body)
 
+    def test_judges_share_severity_anchors_and_needs_validation(self):
+        for name in ("reviewer", "qa"):
+            body = (AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+            for phrase in ("# Severity anchors", "fully defeat an explicit control", "the severity is lower than it feels",
+                           "# Needs validation", "unchanged_code", "never blocks"):
+                with self.subTest(agent=name, phrase=phrase):
+                    self.assertIn(phrase, body)
+
+    def test_findings_have_four_parts(self):
+        self.assertIn("No concrete case, no finding", (AGENTS_DIR / "reviewer.md").read_text(encoding="utf-8"))
+        for name in ("reviewer", "qa"):
+            body = (AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+            report = body[body.index("# Report"):]
+            for field in ("`fix`", "`if_skipped`", "`needs_validation`"):
+                with self.subTest(agent=name, field=field):
+                    self.assertIn(field, report)
+
+    def test_reports_say_what_was_not_checked(self):
+        for name in ("implementer", "test-author", "test-auditor", "reviewer"):
+            with self.subTest(agent=name):
+                body = (AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+                self.assertIn("`not_checked`", body[body.index("# Report"):])
+
+    def test_implementer_reuses_before_writing(self):
+        body = (AGENTS_DIR / "implementer.md").read_text(encoding="utf-8")
+        for phrase in ("# Before writing", "already in this codebase", "standard library", "grep every caller", "root cause"):
+            self.assertIn(phrase, body)
+        common = (RULES_LIBRARY / "common.md").read_text(encoding="utf-8")
+        for phrase in ("already in this codebase", "every caller"):
+            self.assertIn(phrase, common)
+
+    def test_test_auditor_knows_tautological_tests(self):
+        body = (AGENTS_DIR / "test-auditor.md").read_text(encoding="utf-8")
+        for phrase in ("Tautological", "passes by construction"):
+            self.assertIn(phrase, body)
+
+    def test_nothing_invented_in_docs_and_plans(self):
+        self.assertIn("numbers included", (AGENTS_DIR / "doc-updater.md").read_text(encoding="utf-8"))
+        architect = (COMMANDS_DIR / "architect.md").read_text(encoding="utf-8")
+        for phrase in ("No invented figures", "not measured"):
+            self.assertIn(phrase, architect)
+
+    def test_architect_sequences_wide_refactors(self):
+        doc = (COMMANDS_DIR / "architect.md").read_text(encoding="utf-8")
+        parallelism = doc[doc.index("## Parallelism"):doc.index("## 2b.")]
+        self.assertIn("expand-contract", parallelism)
+
+    def test_implement_presents_needs_validation_and_not_checked(self):
+        doc = (COMMANDS_DIR / "implement.md").read_text(encoding="utf-8")
+        for phrase in ("Needs validation", "not_checked"):
+            self.assertIn(phrase, doc)
+
     def test_gatekeeper_only_agentic(self):
         body = (AGENTS_DIR / "gatekeeper.md").read_text(encoding="utf-8")
         self.assertIn("python3 .claude/bin/agentic.py", body)

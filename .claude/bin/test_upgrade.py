@@ -77,6 +77,12 @@ class NotesTests(unittest.TestCase):
     def test_real_notes_name_the_removed_commands(self):
         self.assertIn("wave-plan", " ".join(upgrade.notes_between("1.0.0", "1.1.0")))
 
+    def test_the_2_0_notes_name_the_new_report_fields(self):
+        notes = " ".join(upgrade.notes_between("1.1.4", "2.0.0"))
+        for word in ("needs_validation", "not_checked", "four parts", "customised"):
+            self.assertIn(word, notes)
+        self.assertEqual(upgrade.notes_between("1.1.4", "1.1.4"), [])
+
 
 class GuardTests(unittest.TestCase):
     def setUp(self):

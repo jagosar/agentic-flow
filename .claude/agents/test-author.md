@@ -32,4 +32,4 @@ You write the acceptance tests **before** anyone implements anything. You are th
 
 # Report (final answer, under 300 words)
 
-JSON that follows the schema your launcher gives you: `status` (`DONE` or `BLOCKER`), `coverage` (for each AC-NNN, the names of its tests) and, only for a `BLOCKER`, `blocker`: which criterion cannot be tested and what is missing in architecture.md.
+JSON that follows the schema your launcher gives you: `status` (`DONE` or `BLOCKER`), `coverage` (for each AC-NNN, the names of its tests), `not_checked` (what you did not check, skipped, or see as a risk; `[]` when nothing) and, only for a `BLOCKER`, `blocker`: which criterion cannot be tested and what is missing in architecture.md.
