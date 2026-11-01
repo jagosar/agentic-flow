@@ -54,15 +54,17 @@ const AT_SCHEMA = {
 }
 const REPORT_SCHEMA = {
   type: 'object',
-  required: ['status', 'wp', 'files', 'checks', 'internal_decisions', 'blocker', 'not_checked'],
+  required: ['status', 'wp', 'files', 'checks', 'internal_decisions', 'blocker', 'not_checked', 'concerns', 'missing_context'],
   properties: {
-    status: { type: 'string', enum: ['DONE', 'BLOCKER'] },
+    status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'] },
     wp: { type: 'string', pattern: '^WP-[0-9]+$' },
     files: { type: 'array', items: { type: 'string' } },
     checks: { type: 'array', items: { type: 'object', required: ['command', 'passed'], properties: { command: { type: 'string' }, passed: { type: 'boolean' }, detail: { type: 'string' } } } },
     internal_decisions: { type: 'array', items: { type: 'string' } },
     blocker: { type: ['object', 'null'], required: ['missing', 'section'], properties: { missing: { type: 'string' }, section: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } } },
     not_checked: NOT_CHECKED,
+    concerns: { type: 'array', items: { type: 'string' } },
+    missing_context: { type: ['object', 'null'], required: ['what', 'section'], properties: { what: { type: 'string' }, section: { type: 'string' } } },
   },
 }
 const AUDIT_SCHEMA = {
@@ -177,7 +179,7 @@ const unchangedClaims = (report, out, id) => {
     ? report.files.filter(f => !seen.some(s => f === s || f.endsWith('/' + s)))
     : []
 }
-const run = { result: 'REVIEW', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, test_audit: null, docs: null, fix_cycles: 0, pending: [], not_checked: [] }
+const run = { result: 'REVIEW', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, test_audit: null, docs: null, fix_cycles: 0, pending: [], not_checked: [], gate_denials: {} }
 // Every report says what it did not check; the run keeps them per call, fix calls and revisions included.
 const report = async (prompt, opts) => {
   const r = await safe(agent(prompt, opts), opts.label)
@@ -187,6 +189,27 @@ const report = async (prompt, opts) => {
 // A needs-validation item goes to pending with its declared keys only: a severity an agent adds must never block.
 const needsItem = (source, i) => ({ type: 'needs validation', source, wp: i.wp, file: i.file, ...(Number.isInteger(i.line) ? { line: i.line } : {}), kind: i.kind, claim: i.claim, fact: i.fact, how_to_check: i.how_to_check })
 let needsReview = []  // the last review's needs-validation items
+const concernPending = []  // DONE_WITH_CONCERNS doubts, kept across cycles and handed to every review
+const contextGiven = new Set()  // packages already re-dispatched once with the whole document
+// A pending item for a DONE_WITH_CONCERNS doubt: no severity, so it never blocks; the reviewer weighs it.
+const concernItem = (wp, text) => ({ type: 'concern', source: wp, wp, problem: text })
+// The close-stage marks of a wave. DONE and DONE_WITH_CONCERNS are done; no report is error; anything else
+// (NEEDS_CONTEXT after its re-dispatch, BLOCKED, or a status outside the schema) is a blocker.
+const DONE_STATUSES = new Set(['DONE', 'DONE_WITH_CONCERNS'])
+const waveStates = (wpIds, reports) => wpIds.map((wp, i) => `${wp}=${!reports[i] ? 'error' : DONE_STATUSES.has(reports[i].status) ? 'done' : 'blocker'}`)
+// The stop gate's denials in a close-stage output ("GATE: WP-01=1 WP-02=0"), per package; {} if absent.
+const gateLine = out => {
+  const m = String(out || '').match(/^GATE: (.*)$/m)
+  const found = {}
+  if (m) for (const [, wp, n] of m[1].matchAll(/(WP-\d+)=(\d+)/g)) found[wp] = parseInt(n, 10)
+  return found
+}
+// What a NEEDS_CONTEXT report asked for, as text, or null when the report is malformed (then it is a blocker).
+const missingContext = rep => {
+  const mc = rep.missing_context
+  if (!mc || typeof mc !== 'object' || typeof mc.what !== 'string') return null
+  return mc.what + (typeof mc.section === 'string' && mc.section ? ` (section ${mc.section})` : '')
+}
 const stop = (stage, detail, extra) => ({ ...run, result: 'REVIEW', failed_stage: stage, detail, ...(extra || {}) })
 
 // Fix attempts are counted per work package: a package that used up its attempts is left pending, the others go on.
@@ -281,9 +304,33 @@ async function launchWave(wave, wpIds, defectsByWp) {
     }
     return report(prompt + RULES, { agentType: plan.agents[wp] || 'implementer', label: defectsByWp ? `${wp} (fix)` : wp, schema: REPORT_SCHEMA })
   }))
-  wpIds.forEach((wp, i) => { run.work_packages[wp] = reports[i] })
-  const states = wpIds.map((wp, i) => `${wp}=${!reports[i] ? 'error' : reports[i].status === 'DONE' ? 'done' : 'blocker'}`)
-  return { reports, closeCmd: `close-stage ${wave} ${states.join(' ')}${defectsByWp ? ' --fix' : ''}` }
+  const withContext = await withWholeDocument(wpIds, reports, !!defectsByWp)
+  wpIds.forEach((wp, i) => {
+    const rep = withContext[i]
+    run.work_packages[wp] = rep
+    if (rep && rep.status === 'DONE_WITH_CONCERNS') for (const c of rep.concerns || []) if (typeof c === 'string') concernPending.push(concernItem(wp, c))
+  })
+  return { reports: withContext, closeCmd: `close-stage ${wave} ${waveStates(wpIds, withContext).join(' ')}${defectsByWp ? ' --fix' : ''}` }
+}
+
+// NEEDS_CONTEXT in an implement wave: one more call, with the whole document, the first time only. The second report
+// replaces the first. In a fix wave the agent already had the code and the defects: it stays as it is.
+async function withWholeDocument(wpIds, reports, fixing) {
+  const again = []
+  wpIds.forEach((wp, i) => {
+    const rep = reports[i]
+    if (!rep || rep.status !== 'NEEDS_CONTEXT' || fixing || contextGiven.has(wp)) return
+    const missing = missingContext(rep)
+    if (missing === null) return
+    contextGiven.add(wp)
+    const prompt = `Implement ${wp}. Your first attempt returned NEEDS_CONTEXT: ${missing}. This time your brief is architecture.md, whole: read it and implement. If the document does not settle it, return BLOCKED with the section that should.`
+    again.push({ i, run: () => report(prompt + RULES, { agentType: plan.agents[wp] || 'implementer', label: `${wp} (context)`, schema: REPORT_SCHEMA }) })
+  })
+  if (!again.length) return reports
+  const second = await parallel(again.map(a => a.run))
+  const out = [...reports]
+  again.forEach((a, k) => { out[a.i] = second[k] })
+  return out
 }
 
 // Runs a list of waves in order. Each close-stage travels in the same gatekeeper call as the open-stage of the next
@@ -308,6 +355,7 @@ async function runWaves(waves, byWave, defectsByWp, opened) {
     if (!close) return { stopped: stop(fixing ? `fix wave ${wave}` : `wave ${wave}`, LOST) }
     const good = ok(close)
     run.stages.push({ stage: fixing ? `wave ${wave} (fix)` : `wave ${wave}`, ok: good, check: close && close.output })
+    for (const [wp, n] of Object.entries(gateLine(close.output))) if (n) run.gate_denials[wp] = (run.gate_denials[wp] || 0) + n
     if (!good) {
       return { stopped: stop(fixing ? `fix wave ${wave}` : `wave ${wave}`, fixing
         ? 'the fix ended with blockers or writes outside ownership'
@@ -418,7 +466,7 @@ while (true) {
     const defects = verificationDefects(run.verification)
     if (!defects.length) return stop('verification', 'a verification phase fails and no work package owns the failure (see verification)')
     const eligible = splitByLimit(defects)
-    run.pending = [...qaPending, ...limitPending]
+    run.pending = [...qaPending, ...limitPending, ...concernPending]
     if (!eligible.length) return run
     const fixed = await fixCycle(eligible, false)
     if (fixed.stopped) return fixed.stopped
@@ -427,7 +475,10 @@ while (true) {
   }
 
   phase('Review')
-  const review = await report('Review the integrated code according to architecture.md.' + RULES, { agentType: 'reviewer', label: 'reviewer', schema: REVIEW_SCHEMA })
+  const concerns = concernPending.length
+    ? `\nThe implementers finished with these concerns about their own code, as JSON:\n${JSON.stringify(concernPending.map(c => ({ wp: c.wp, problem: c.problem })))}\nCheck each one: confirm it as a finding with its severity, or leave it out if the code is right.`
+    : ''
+  const review = await report('Review the integrated code according to architecture.md.' + concerns + RULES, { agentType: 'reviewer', label: 'reviewer', schema: REVIEW_SCHEMA })
   if (!review) return stop('review', 'the reviewer returned no report')
   const graves = review.findings.filter(f => BLOCKING.has(f.severity))
   const verdicts = await parallel(graves.map(f => () =>
@@ -460,7 +511,7 @@ while (true) {
 
   const eligible = implDefects.length ? splitByLimit(implDefects) : []
   qaPending = baseline
-  run.pending = [...qaPending, ...limitPending]
+  run.pending = [...qaPending, ...limitPending, ...concernPending]
   if (eligible.length === 0) {
     run.result = implDefects.length || qa.status === 'BLOCKER' || run.pending.some(p => BLOCKING.has(p.severity)) ? 'REVIEW' : 'OK'
     const docs = run.result === 'OK' && plan.docs

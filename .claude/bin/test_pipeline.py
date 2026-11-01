@@ -72,6 +72,7 @@ def world(decl):
         return {"steps": steps}
 
     reports = decl.get("reports") or {}
+    calls = {}
 
     def override(report, key):
         extra = reports.get(key)
@@ -86,8 +87,12 @@ def world(decl):
             return pick(decl["audit"], state["audits"]) if decl.get("audit") else {"status": "PASS", "findings": []}
         if agent_type == "implementer":
             wp = label.split(" ")[0]
-            base = {"status": "DONE", "wp": wp, "files": [], "checks": [], "internal_decisions": [], "blocker": None}
+            base = {"status": "DONE", "wp": wp, "files": [], "checks": [], "internal_decisions": [], "blocker": None,
+                    "not_checked": [], "concerns": [], "missing_context": None}
             extra = (reports.get("implementer") or {}).get(wp)
+            if isinstance(extra, list):  # one override per call of that package: the first, then the last
+                calls[wp] = calls.get(wp, 0) + 1
+                extra = pick(extra, calls[wp])
             return {**base, **extra} if extra else base
         if agent_type == "reviewer":
             state["reviews"] += 1
@@ -116,7 +121,8 @@ def summarize(result, state):
             "fix_cycles": result["fix_cycles"],
             "pending": sorted(p.get("type") for p in result.get("pending", [])), "gates": state["gates"],
             "gate_calls": state["gate_calls"], "agents": sorted(agents), "prompts": prompts,
-            "not_checked": sorted(f"{e['agent']}:{e['label']}" for e in result.get("not_checked", []))}
+            "not_checked": sorted(f"{e['agent']}:{e['label']}" for e in result.get("not_checked", [])),
+            "gate_denials": result.get("gate_denials", {})}
 
 
 def run_scenario(decl):
@@ -141,7 +147,7 @@ class ConformanceTests(unittest.TestCase):
         for decl in CONFORMANCE["scenarios"]:
             with self.subTest(scenario=decl["name"]):
                 mine, theirs = run_scenario(decl), self.workflow[decl["name"]]
-                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents", "not_checked"):
+                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents", "not_checked", "gate_denials"):
                     self.assertEqual(mine[key], theirs[key], key)
                 self.assertEqual(mine["prompts"], theirs["prompts"], "the agents must receive the same prompts")
 
@@ -163,6 +169,18 @@ class EngineTests(unittest.TestCase):
         self.assertEqual((needs["result"], needs["pending"]), ("OK", ["needs validation", "needs validation"]))
         collected = run_scenario(by_name["not_checked is collected from every report"])
         self.assertEqual(collected["not_checked"], ["implementer:WP-02", "reviewer:reviewer"])
+        self.assertEqual(run_scenario(by_name["gate denials are summed from close-stage"])["gate_denials"], {"WP-01": 1})
+        concerns = run_scenario(by_name["concerns go to pending and to the reviewer"])
+        self.assertEqual((concerns["result"], concerns["pending"]), ("OK", ["concern"]))
+        self.assertIn("may spin", concerns["prompts"]["reviewer:reviewer#1"])
+        once = run_scenario(by_name["needs context is re-dispatched once with the whole document"])
+        self.assertEqual((once["result"], once["agents"].count("implementer:WP-02 (context)")), ("OK", 1))
+        twice = run_scenario(by_name["needs context twice is a blocker"])
+        self.assertEqual((twice["result"], twice["failed_stage"], twice["agents"].count("implementer:WP-02 (context)")),
+                         ("REVIEW", "wave 1", 1))
+        in_fix = run_scenario(by_name["needs context in a fix wave is a blocker"])
+        self.assertEqual((in_fix["result"], in_fix["failed_stage"]), ("REVIEW", "fix wave 1"))
+        self.assertFalse([a for a in in_fix["agents"] if "(context)" in a])
 
     def test_halted_is_not_swallowed_like_an_agent_error(self):
         def agent(prompt, agent_type, label, ident):

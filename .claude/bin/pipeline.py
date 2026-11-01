@@ -57,6 +57,38 @@ class Halted(BaseException):
     """Someone ran `agentic.py stop`: not an error of an agent, so it is not swallowed with them."""
 
 
+CONCERNS_PROMPT = ("\nThe implementers finished with these concerns about their own code, as JSON:\n{items}\n"
+                   "Check each one: confirm it as a finding with its severity, or leave it out if the code is right.")
+
+
+def wave_states(wp_ids, reports):
+    """The close-stage marks of a wave. DONE and DONE_WITH_CONCERNS are done; no report is error; anything else
+    (NEEDS_CONTEXT after its re-dispatch, BLOCKED, or a status outside the schema) is a blocker."""
+    done = ("DONE", "DONE_WITH_CONCERNS")
+    return [f"{wp}={'error' if not rep else 'done' if rep.get('status') in done else 'blocker'}"
+            for wp, rep in zip(wp_ids, reports)]
+
+
+def gate_line(output):
+    """The stop gate's denials in a close-stage output ("GATE: WP-01=1 WP-02=0"), per package; {} if absent."""
+    import re
+    m = re.search(r"^GATE: (.*)$", str(output or ""), re.M)
+    return {k: int(v) for k, v in re.findall(r"(WP-\d+)=(\d+)", m.group(1))} if m else {}
+
+
+def concern_item(wp, text):
+    """A pending item for a DONE_WITH_CONCERNS doubt: no severity, so it never blocks; the reviewer weighs it."""
+    return {"type": "concern", "source": wp, "wp": wp, "problem": text}
+
+
+def missing_context(report):
+    """What a NEEDS_CONTEXT report asked for, as text, or None when the report is malformed (then it is a blocker)."""
+    mc = report.get("missing_context")
+    if not isinstance(mc, dict) or not isinstance(mc.get("what"), str):
+        return None
+    return mc["what"] + (f" (section {mc['section']})" if isinstance(mc.get("section"), str) and mc["section"] else "")
+
+
 def pending_key(d):
     """One pending item per package, source, file and problem: the same defect is listed once, not once per cycle."""
     return (d.get("wp"), d.get("source"), d.get("file"), d.get("problem") or d.get("repro"))
@@ -78,9 +110,11 @@ class Pipeline:
         self.fix_count, self.fix_history, self.limit_pending = {}, {}, []
         self.qa_pending = []  # the last QA's design and no-WP items: they stay listed whatever comes after
         self.needs_review = []  # the last review's needs-validation items
+        self.concern_pending = []  # DONE_WITH_CONCERNS doubts, kept across cycles and handed to every review
+        self.context_given = set()  # packages already re-dispatched once with the whole document
         self.run = {"result": "REVIEW", "stages": [], "baseline": None, "work_packages": {}, "verification": None,
                     "review": None, "qa": None, "test_audit": None, "docs": None, "fix_cycles": 0, "pending": [],
-                    "not_checked": []}
+                    "not_checked": [], "gate_denials": {}}
 
     # ---------- utilities ----------
     def stop(self, stage, detail, **extra):
@@ -280,11 +314,31 @@ class Pipeline:
                 return self.call(plan["agents"].get(wp) or "implementer", f"{wp} (fix)" if defects_by_wp else wp, prompt, wp)
             return go
         reports = self.parallel([thunk(wp) for wp in wp_ids])
+        reports = self.with_context(wp_ids, reports, bool(defects_by_wp))
         for wp, rep in zip(wp_ids, reports):
             self.run["work_packages"][wp] = rep
-        states = [f"{wp}={'error' if not rep else 'done' if rep.get('status') == 'DONE' else 'blocker'}"
-                  for wp, rep in zip(wp_ids, reports)]
-        return f"close-stage {wave} {' '.join(states)}{' --fix' if defects_by_wp else ''}"
+            if rep and rep.get("status") == "DONE_WITH_CONCERNS":
+                self.concern_pending.extend(concern_item(wp, c) for c in rep.get("concerns") or [] if isinstance(c, str))
+        return f"close-stage {wave} {' '.join(wave_states(wp_ids, reports))}{' --fix' if defects_by_wp else ''}"
+
+    def with_context(self, wp_ids, reports, fixing):
+        """NEEDS_CONTEXT in an implement wave: one more call, with the whole document, the first time only. The second
+        report replaces the first. In a fix wave the agent already had the code and the defects: it stays as it is."""
+        plan = self.plan
+
+        def again(wp, rep):
+            missing = missing_context(rep)
+            if fixing or wp in self.context_given or missing is None:
+                return None
+            self.context_given.add(wp)
+            prompt = render(self.prompts["implement_full"], wp=wp, missing=missing, rules=self.rules)
+            return lambda: self.call(plan["agents"].get(wp) or "implementer", f"{wp} (context)", prompt, wp)
+        thunks = {wp: again(wp, rep) for wp, rep in zip(wp_ids, reports) if rep and rep.get("status") == "NEEDS_CONTEXT"}
+        pending = [(wp, th) for wp, th in thunks.items() if th]
+        if not pending:
+            return reports
+        second = dict(zip([wp for wp, _ in pending], self.parallel([th for _, th in pending])))
+        return [second.get(wp, rep) if wp in second else rep for wp, rep in zip(wp_ids, reports)]
 
     def run_waves(self, waves, by_wave, defects_by_wp, opened):
         fixing = bool(defects_by_wp)
@@ -305,6 +359,9 @@ class Pipeline:
             good = self.ok(close)
             self.run["stages"].append({"stage": f"wave {wave} (fix)" if fixing else f"wave {wave}", "ok": good,
                                        "check": close and close["output"]})
+            for wp, n in gate_line(close["output"]).items():
+                if n:
+                    self.run["gate_denials"][wp] = self.run["gate_denials"].get(wp, 0) + n
             if not good:
                 return {"stopped": self.stop(f"fix wave {wave}" if fixing else f"wave {wave}",
                                              "the fix ended with blockers or writes outside ownership" if fixing
@@ -345,7 +402,7 @@ class Pipeline:
                 if not defects:
                     return self.stop("verification", "a verification phase fails and no work package owns the failure (see verification)")
                 eligible = self.split_by_limit(defects)
-                run["pending"] = self.qa_pending + list(self.limit_pending)
+                run["pending"] = self.qa_pending + list(self.limit_pending) + list(self.concern_pending)
                 if not eligible:
                     return run
                 fixed = self.fix_cycle(eligible, False)
@@ -355,7 +412,9 @@ class Pipeline:
                 continue
 
             self.phase("Review")
-            review = self.call("reviewer", "reviewer", render(self.prompts["reviewer"], rules=self.rules), "REVIEW")
+            concerns = ("" if not self.concern_pending else render(
+                CONCERNS_PROMPT, items=compact([{"wp": c["wp"], "problem": c["problem"]} for c in self.concern_pending])))
+            review = self.call("reviewer", "reviewer", render(self.prompts["reviewer"], concerns=concerns, rules=self.rules), "REVIEW")
             if not review:
                 return self.stop("review", "the reviewer returned no report")
             graves = [f for f in review["findings"] if f["severity"] in self.blocking]
@@ -394,7 +453,7 @@ class Pipeline:
 
             eligible = self.split_by_limit(impl) if impl else []
             self.qa_pending = baseline
-            run["pending"] = self.qa_pending + list(self.limit_pending)
+            run["pending"] = self.qa_pending + list(self.limit_pending) + list(self.concern_pending)
             if not eligible:
                 run["result"] = ("REVIEW" if impl or qa["status"] == "BLOCKER"
                                  or any(p.get("severity") in self.blocking for p in run["pending"]) else "OK")
