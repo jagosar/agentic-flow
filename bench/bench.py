@@ -29,6 +29,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / ".claude" / "bin"))
 import compat  # noqa: E402
 
+sys.path.insert(0, str(HERE))
+import mutate  # noqa: E402
+
 SCHEMA = 1
 AUTH_MODES = ("subscription", "inherit")
 DEFAULT_REPEAT = 3
@@ -56,8 +59,10 @@ OWN_OUTPUT = (":(exclude)bench/results", ":(exclude)bench/RESULTS.md")  # writte
 RESULTS_TITLE = "# Bench results"
 RESULTS_INTRO = ("Each row is one fixture in one bench run of one flow version; numbers are medians over the runs "
                  "(Oracle also shows min–max). A `?` means no run had that value.")
-TABLE_HEADER = ["Version", "Commit", "Date", "Fixture", "Runs", "OK", "Oracle", "Fix cycles", "Cost $",
+TABLE_HEADER = ["Version", "Commit", "Date", "Fixture", "Runs", "OK", "Oracle", "Mutation", "Fix cycles", "Cost $",
                 "Output tokens", "Minutes"]
+RE_MANIFEST = re.compile(r"```json\s+wp-manifest\s*\n(.*?)\n```", re.S)
+DEFAULT_QA_FILES = ["qa/"]
 RE_RAN = re.compile(r"^Ran (\d+) tests?\b", re.MULTILINE)
 RE_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.MULTILINE)
 RE_OK = re.compile(r"^OK \(([^)]*)\)", re.MULTILINE)
@@ -300,8 +305,93 @@ def _run_oracle(fixture: Path, project: Path) -> dict:
         shutil.copytree(fixture / "oracle", target)
     except OSError:
         return {"passed": 0, "total": 0}
-    passed, total = oracle_counts(project, target)
+    try:
+        passed, total = oracle_counts(project, target)
+    finally:
+        remove_tree(target)  # the agents' suites must never see it
     return {"passed": passed, "total": total}
+
+
+# ---------------------------------------------------------------- mutation
+
+def manifest_of(project: Path) -> dict:
+    """The json wp-manifest block of project/architecture.md; {} if absent or invalid."""
+    try:
+        match = RE_MANIFEST.search((project / "architecture.md").read_text(encoding="utf-8"))
+        manifest = json.loads(match.group(1)) if match else {}
+    except (OSError, ValueError):
+        return {}
+    return manifest if isinstance(manifest, dict) else {}
+
+
+def _paths(value) -> list[str]:
+    items = value if isinstance(value, list) else []
+    return [i.replace("\\", "/").strip("/") for i in items if isinstance(i, str) and i.strip("/")]
+
+
+def _is_under(rel: str, prefixes: list[str]) -> bool:
+    return any(rel == p or rel.startswith(p + "/") for p in prefixes)
+
+
+def production_files(project: Path, manifest: dict) -> list[str]:
+    """Existing .py files under the work packages' paths, minus tests, acceptance and qa files; sorted, relative."""
+    acceptance = manifest.get("acceptance") if isinstance(manifest.get("acceptance"), dict) else {}
+    qa = manifest.get("qa") if isinstance(manifest.get("qa"), dict) else {}
+    skipped = _paths(acceptance.get("files")) + _paths(qa.get("files", DEFAULT_QA_FILES))
+    packages = manifest.get("work_packages") if isinstance(manifest.get("work_packages"), list) else []
+    found = set()
+    root = project.resolve()
+    for package in packages:
+        for entry in _paths(package.get("files") if isinstance(package, dict) else None):
+            path = project / entry
+            if not _inside(path, root):  # a manifest entry never reaches outside the project (symlinks included)
+                continue
+            for file in ([path] if path.is_file() else sorted(path.rglob("*.py")) if path.is_dir() else []):
+                if not _inside(file, root):
+                    continue
+                rel = file.resolve().relative_to(root).as_posix()
+                if (file.suffix == ".py" and rel.split("/")[0] != "tests" and not file.name.startswith("test_")
+                        and not _is_under(rel, skipped)):
+                    found.add(rel)
+    return sorted(found)
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root)
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def project_commands(manifest: dict) -> list[list[str]]:
+    """verify.tests and acceptance.command, shlex-split, in that order. Raises mutate.MutationError on a command that
+    cannot be split (the manifest is a file the agents can edit): the caller skips the mutation, not the run."""
+    commands = []
+    for key, field in (("verify", "tests"), ("acceptance", "command")):
+        section = manifest.get(key)
+        text = section.get(field) if isinstance(section, dict) else None
+        if isinstance(text, str) and text.strip():
+            try:
+                commands.append(shlex.split(text))
+            except ValueError as e:
+                raise mutate.MutationError(f"{key}.{field} cannot be split: {e}") from e
+    return commands
+
+
+def _mutation(fixture: Path, project: Path, env: dict) -> dict | None:
+    """Mutation block of the produced code (agents' suites and the oracle's ceiling); None if there is nothing to
+    mutate or the instrument failed: a run is never lost to it."""
+    manifest = manifest_of(project)
+    oracle = fixture / "oracle"
+    try:
+        suites = {"agents": project_commands(manifest),
+                  "oracle": [[sys.executable, "-m", "unittest", "discover", "-s", str(oracle), "-t", str(oracle)]]}
+        return mutate.score(project, production_files(project, manifest), suites,
+                            env={**env, "PYTHONPATH": str(project)})
+    except mutate.MutationError as e:
+        print(f"mutation skipped: {e}", file=sys.stderr)
+        return None
 
 
 # ---------------------------------------------------------------- instruments
@@ -358,12 +448,15 @@ def _run_once(fixture: Path, index: int, source: Path, auth: str, timeout_s: flo
         _keep_session(project, keep, fixture, index)
         verdict = result.get("result") if result else None
         outcome = "timeout" if state == "timeout" else (verdict if verdict in ("OK", "REVIEW") else "error")
-        return _record(fixture, index, outcome, result, seconds, _run_oracle(fixture, project))
+        oracle = _run_oracle(fixture, project)
+        mutation = _mutation(fixture, project, env) if outcome in ("OK", "REVIEW") and state != "timeout" else None
+        return _record(fixture, index, outcome, result, seconds, oracle, mutation)
     finally:
         remove_tree(project)
 
 
-def _record(fixture: Path, index: int, outcome: str, result: dict | None, seconds: float, oracle: dict) -> dict:
+def _record(fixture: Path, index: int, outcome: str, result: dict | None, seconds: float, oracle: dict,
+            mutation: dict | None = None) -> dict:
     usage, agents = _usage(result)
     data = _as_dict(result)
     stage = data.get("failed_stage")
@@ -371,7 +464,8 @@ def _record(fixture: Path, index: int, outcome: str, result: dict | None, second
             "failed_stage": stage if isinstance(stage, str) else None,
             "fix_cycles": _number_or(data.get("fix_cycles"), None),
             "test_audit_rounds": _number_or(_as_dict(data.get("test_audit")).get("rounds"), None),
-            "agents": agents, "seconds": round(max(seconds, 0.001), 1), "oracle": oracle, "usage": usage}
+            "agents": agents, "seconds": round(max(seconds, 0.001), 1), "oracle": oracle, "usage": usage,
+            "mutation": mutation}
 
 
 # ---------------------------------------------------------------- results file
@@ -411,6 +505,11 @@ def _non_null(values) -> list:
     return [v for v in values if v is not None]
 
 
+def _mutation_rates(runs: list[dict], key: str) -> list[float]:
+    blocks = [r.get("mutation") for r in runs]
+    return [b[key] / b["total"] for b in blocks if b and b.get(key) is not None and b.get("total")]
+
+
 def _summarize(runs: list[dict]) -> dict:
     rates = [_oracle_rate(r) for r in runs]
     rate_min = _rounded([min(rates)]) if rates else None
@@ -418,6 +517,8 @@ def _summarize(runs: list[dict]) -> dict:
     minutes = [r["seconds"] / 60 for r in runs]
     return {"runs": len(runs), "ok": sum(1 for r in runs if r["result"] == "OK"),
             "oracle_rate_median": _rounded(rates), "oracle_rate_min": rate_min, "oracle_rate_max": rate_max,
+            "mutation_median": _rounded(_mutation_rates(runs, "killed")),
+            "mutation_oracle_median": _rounded(_mutation_rates(runs, "oracle_killed")),
             "fix_cycles_median": _rounded(_non_null(r["fix_cycles"] for r in runs)),
             "cost_usd_median": _rounded(_non_null(r["usage"]["cost_usd"] for r in runs)),
             "output_median": _rounded(_non_null(r["usage"]["output"] for r in runs)),
@@ -494,8 +595,12 @@ def _rows(doc: dict) -> list[list[str]]:
             f"{_number(s['oracle_rate_median'], 2)} ({_number(s.get('oracle_rate_min'), 2)}"
             f"–{_number(s.get('oracle_rate_max'), 2)})")
         minutes = s.get("minutes_median")
+        halves = (s.get("mutation_median"), s.get("mutation_oracle_median"))
+        mutation = UNKNOWN if halves == (None, None) else " / ".join(
+            _number(h, 2) if h is not None else UNKNOWN for h in halves)
         rows.append([str(doc["flow_version"]), commit, str(doc["started"])[:10], name, _number(s.get("runs")),
-                     f"{s.get('ok', 0)}/{s.get('runs', 0)}", oracle, _number(s.get("fix_cycles_median")),
+                     f"{s.get('ok', 0)}/{s.get('runs', 0)}", oracle, mutation,
+                     _number(s.get("fix_cycles_median")),
                      _number(s.get("cost_usd_median"), 2), _number(s.get("output_median")),
                      _number(minutes, 1)])
     return rows
@@ -568,8 +673,10 @@ def _print_runs(path: Path) -> None:
     doc = json.loads(path.read_text(encoding="utf-8"))
     for r in doc["runs"]:
         o = r["oracle"]
+        m = r.get("mutation")
+        extra = f" mutation {_number(m['killed'])}/{m['total']}" if m else ""
         print(f"{r['fixture']} #{r['index']} {r['result']} oracle {o['passed']}/{o['total']} "
-              f"{r['seconds'] / 60:.1f} min")
+              f"{r['seconds'] / 60:.1f} min{extra}")
     print(path)
 
 
