@@ -62,16 +62,22 @@ async function simulate(scenario = {}, args = {}) {
         return scenario.audit ? scenario.audit(auditRound) : { status: 'PASS', findings: [] }
       case 'implementer': {
         const wp = opts.label.split(' ')[0]
-        return { status: 'DONE', wp, files: [], checks: [], internal_decisions: [], blocker: null }
+        const base = { status: 'DONE', wp, files: [], checks: [], internal_decisions: [], blocker: null }
+        const extra = scenario.reports && scenario.reports.implementer && scenario.reports.implementer[wp]
+        return extra ? { ...base, ...extra } : base
       }
-      case 'reviewer':
+      case 'reviewer': {
         reviewRound += 1
-        return scenario.review ? scenario.review(reviewRound) : { status: 'PASS', findings: [] }
+        const r = scenario.review ? scenario.review(reviewRound) : { status: 'PASS', findings: [] }
+        return scenario.reports && scenario.reports.reviewer ? { ...r, ...scenario.reports.reviewer } : r
+      }
       case 'verifier':
         return scenario.verifier || { is_real: true, confidence: 0.9, reasoning: 'it holds' }
-      case 'qa':
+      case 'qa': {
         qaRound += 1
-        return scenario.qa ? scenario.qa(qaRound) : { status: 'PASS', plan: ['contracts'], defects: [], gaps: [] }
+        const q = scenario.qa ? scenario.qa(qaRound) : { status: 'PASS', plan: ['contracts'], defects: [], gaps: [] }
+        return scenario.reports && scenario.reports.qa ? { ...q, ...scenario.reports.qa } : q
+      }
       case 'doc-updater':
         return scenario.docs || { status: 'DONE', files: ['README.md', 'CHANGELOG.md'], changes: ['usage of the new command'], unverified: [], blocker: null }
       default:
@@ -461,6 +467,7 @@ function fromDecl(d) {
     qa: d.qa ? round => pickRound(d.qa, round) : undefined,
     verifier: d.verifier,
     docs: d.docs,
+    reports: d.reports,
   }
 }
 const summarize = ({ result, calls, gates, gateCalls }) => {
@@ -476,6 +483,7 @@ const summarize = ({ result, calls, gates, gateCalls }) => {
   return {
     result: result.result, failed_stage: result.failed_stage ?? null, detail: result.detail ?? null, fix_cycles: result.fix_cycles,
     pending: (result.pending || []).map(p => p.type).sort(), gates, gate_calls: gateCalls, agents: agents.sort(), prompts,
+    not_checked: (result.not_checked || []).map(e => `${e.agent}:${e.label}`).sort(),
   }
 }
 if (process.argv.includes('--dump')) {
@@ -516,6 +524,9 @@ test('every conformance scenario ends as described in its name', async () => {
   assert.deepEqual(once.pending, ['fix limit reached'], 'listed once, not once per cycle')
   assert.deepEqual((await run1('a design defect survives a later verification failure')).pending, ['design', 'fix limit reached'])
   assert.ok((await run1('a documentation check that cannot run is reported')).pending.includes('documentation'))
+  const needs = await run1('needs validation goes to pending and does not block')
+  assert.deepEqual([needs.result, needs.pending], ['OK', ['needs validation', 'needs validation']])
+  assert.deepEqual((await run1('not_checked is collected from every report')).not_checked, ['implementer:WP-02', 'reviewer:reviewer'])
   const odd = await run1('a finding on an unknown package named like a built-in goes to no WP')
   assert.deepEqual([odd.result, odd.pending], ['REVIEW', ['no WP']])
   const asText = await run1('start_wave given as text works like a number')

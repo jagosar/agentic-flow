@@ -31,18 +31,30 @@ const GATE_SCHEMA = {
   properties: { exit_code: { type: 'integer' }, output: { type: 'string' } },
 }
 const SEVERITY = { type: 'string', enum: ['critical', 'high', 'medium', 'low'] }
+// What the agent did not check, skipped, or sees as a risk; [] when nothing.
+const NOT_CHECKED = { type: 'array', items: { type: 'string' } }
+// A claim the code alone cannot settle: no severity, never blocks, the person checks the fact.
+const NEEDS_VALIDATION = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['wp', 'file', 'kind', 'claim', 'fact', 'how_to_check'],
+    properties: { wp: { type: 'string' }, file: { type: 'string' }, line: { type: 'integer' }, kind: { type: 'string', enum: ['external', 'unchanged_code'] }, claim: { type: 'string' }, fact: { type: 'string' }, how_to_check: { type: 'string' } },
+  },
+}
 const AT_SCHEMA = {
   type: 'object',
-  required: ['status', 'coverage', 'blocker'],
+  required: ['status', 'coverage', 'blocker', 'not_checked'],
   properties: {
     status: { type: 'string', enum: ['DONE', 'BLOCKER'] },
     coverage: { type: 'array', items: { type: 'object', required: ['ac', 'tests'], properties: { ac: { type: 'string' }, tests: { type: 'array', items: { type: 'string' } } } } },
     blocker: { type: ['string', 'null'] },
+    not_checked: NOT_CHECKED,
   },
 }
 const REPORT_SCHEMA = {
   type: 'object',
-  required: ['status', 'wp', 'files', 'checks', 'internal_decisions', 'blocker'],
+  required: ['status', 'wp', 'files', 'checks', 'internal_decisions', 'blocker', 'not_checked'],
   properties: {
     status: { type: 'string', enum: ['DONE', 'BLOCKER'] },
     wp: { type: 'string', pattern: '^WP-[0-9]+$' },
@@ -50,11 +62,12 @@ const REPORT_SCHEMA = {
     checks: { type: 'array', items: { type: 'object', required: ['command', 'passed'], properties: { command: { type: 'string' }, passed: { type: 'boolean' }, detail: { type: 'string' } } } },
     internal_decisions: { type: 'array', items: { type: 'string' } },
     blocker: { type: ['object', 'null'], required: ['missing', 'section'], properties: { missing: { type: 'string' }, section: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } } },
+    not_checked: NOT_CHECKED,
   },
 }
-const FINDINGS_SCHEMA = {
+const AUDIT_SCHEMA = {
   type: 'object',
-  required: ['status', 'findings'],
+  required: ['status', 'findings', 'not_checked'],
   properties: {
     status: { type: 'string', enum: ['PASS', 'FAIL'] },
     findings: {
@@ -65,6 +78,25 @@ const FINDINGS_SCHEMA = {
         properties: { severity: SEVERITY, wp: { type: 'string' }, file: { type: 'string' }, line: { type: 'integer' }, problem: { type: 'string' }, evidence: { type: 'string' } },
       },
     },
+    not_checked: NOT_CHECKED,
+  },
+}
+// A finding has four parts: problem, evidence (the concrete case), fix and if_skipped.
+const REVIEW_SCHEMA = {
+  type: 'object',
+  required: ['status', 'findings', 'needs_validation', 'not_checked'],
+  properties: {
+    status: { type: 'string', enum: ['PASS', 'FAIL'] },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['severity', 'wp', 'file', 'problem', 'evidence', 'fix', 'if_skipped'],
+        properties: { severity: SEVERITY, wp: { type: 'string' }, file: { type: 'string' }, line: { type: 'integer' }, problem: { type: 'string' }, evidence: { type: 'string' }, fix: { type: 'string' }, if_skipped: { type: 'string' } },
+      },
+    },
+    needs_validation: NEEDS_VALIDATION,
+    not_checked: NOT_CHECKED,
   },
 }
 const VERDICT_SCHEMA = {
@@ -74,7 +106,7 @@ const VERDICT_SCHEMA = {
 }
 const QA_SCHEMA = {
   type: 'object',
-  required: ['status', 'plan', 'defects', 'gaps'],
+  required: ['status', 'plan', 'defects', 'gaps', 'needs_validation'],
   properties: {
     status: { type: 'string', enum: ['PASS', 'FAIL', 'BLOCKER'] },
     plan: { type: 'array', items: { type: 'string' } },
@@ -82,11 +114,12 @@ const QA_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['id', 'severity', 'wp', 'kind', 'section', 'repro'],
-        properties: { id: { type: 'string' }, severity: SEVERITY, wp: { type: 'string' }, kind: { type: 'string', enum: ['implementation', 'design'] }, section: { type: 'string' }, repro: { type: 'string' } },
+        required: ['id', 'severity', 'wp', 'kind', 'section', 'repro', 'fix', 'if_skipped'],
+        properties: { id: { type: 'string' }, severity: SEVERITY, wp: { type: 'string' }, kind: { type: 'string', enum: ['implementation', 'design'] }, section: { type: 'string' }, repro: { type: 'string' }, fix: { type: 'string' }, if_skipped: { type: 'string' } },
       },
     },
     gaps: { type: 'array', items: { type: 'string' } },
+    needs_validation: NEEDS_VALIDATION,
   },
 }
 const DOCS_SCHEMA = {
@@ -144,7 +177,16 @@ const unchangedClaims = (report, out, id) => {
     ? report.files.filter(f => !seen.some(s => f === s || f.endsWith('/' + s)))
     : []
 }
-const run = { result: 'REVIEW', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, test_audit: null, docs: null, fix_cycles: 0, pending: [] }
+const run = { result: 'REVIEW', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, test_audit: null, docs: null, fix_cycles: 0, pending: [], not_checked: [] }
+// Every report says what it did not check; the run keeps them per call, fix calls and revisions included.
+const report = async (prompt, opts) => {
+  const r = await safe(agent(prompt, opts), opts.label)
+  if (r && Array.isArray(r.not_checked) && r.not_checked.length) run.not_checked.push({ agent: opts.agentType, label: opts.label, items: r.not_checked })
+  return r
+}
+// A needs-validation item goes to pending with its declared keys only: a severity an agent adds must never block.
+const needsItem = (source, i) => ({ type: 'needs validation', source, wp: i.wp, file: i.file, ...(Number.isInteger(i.line) ? { line: i.line } : {}), kind: i.kind, claim: i.claim, fact: i.fact, how_to_check: i.how_to_check })
+let needsReview = []  // the last review's needs-validation items
 const stop = (stage, detail, extra) => ({ ...run, result: 'REVIEW', failed_stage: stage, detail, ...(extra || {}) })
 
 // Fix attempts are counted per work package: a package that used up its attempts is left pending, the others go on.
@@ -197,7 +239,7 @@ async function documentStage(steps) {
     run.pending.push({ type: 'documentation', severity: 'medium', problem: 'the documentation stage could not be opened' })
     return
   }
-  const doc = await safe(agent('Update the documentation according to architecture.md and the integrated code.' + RULES, { agentType: 'doc-updater', label: 'doc-updater', schema: DOCS_SCHEMA }), 'doc-updater')
+  const doc = await report('Update the documentation according to architecture.md and the integrated code.' + RULES, { agentType: 'doc-updater', label: 'doc-updater', schema: DOCS_SCHEMA })
   const fin = await seq([`close-stage docs DOCS=${doc && doc.status === 'DONE' ? 'done' : 'blocker'}`, 'docs-check'], 'close-stage docs')
   const close = step(fin, 0)
   const check = step(fin, 1)
@@ -237,7 +279,7 @@ async function launchWave(wave, wpIds, defectsByWp) {
           'If you try something different, say in internal_decisions how it differs and why it should work.'
       }
     }
-    return safe(agent(prompt + RULES, { agentType: plan.agents[wp] || 'implementer', label: defectsByWp ? `${wp} (fix)` : wp, schema: REPORT_SCHEMA }), wp)
+    return report(prompt + RULES, { agentType: plan.agents[wp] || 'implementer', label: defectsByWp ? `${wp} (fix)` : wp, schema: REPORT_SCHEMA })
   }))
   wpIds.forEach((wp, i) => { run.work_packages[wp] = reports[i] })
   const states = wpIds.map((wp, i) => `${wp}=${!reports[i] ? 'error' : reports[i].status === 'DONE' ? 'done' : 'blocker'}`)
@@ -329,7 +371,7 @@ if (startWave === null && plan.acceptance) {
     if (!ok(open)) return stop('wave 0', 'the acceptance stage could not be opened', { gate: open })
     let prompt = `Write the acceptance tests. Your brief is ${brief('AT')}: the parts of architecture.md they need.`
     for (let round = 0; ; round += 1) {
-      const at = await safe(agent(prompt + RULES, { agentType: 'test-author', label: round ? 'test-author (revision)' : 'test-author', schema: AT_SCHEMA }), 'test-author')
+      const at = await report(prompt + RULES, { agentType: 'test-author', label: round ? 'test-author (revision)' : 'test-author', schema: AT_SCHEMA })
       const state = at && at.status === 'DONE' ? 'done' : 'blocker'
       const close = step(await seq([`close-stage acceptance AT=${state} --expect red`], 'close-stage acceptance'), 0)
       run.stages.push({ stage: round ? 'wave 0 (revision)' : 'wave 0', ok: ok(close), test_author: at, check: close && close.output })
@@ -340,8 +382,8 @@ if (startWave === null && plan.acceptance) {
       }
       if (!at || at.status !== 'DONE') return stop('wave 0', 'the test-author returned no usable report', { test_author: at })
       // Red is not enough: a test can fail only because the code does not exist yet and still pass an empty stub.
-      const audit = await safe(agent(`Audit the acceptance tests against the brief they were written from, ${brief('AT')}. The test-author reports this coverage, as JSON:\n${JSON.stringify(at.coverage)}` + RULES,
-        { agentType: 'test-auditor', label: round ? 'test-auditor (revision)' : 'test-auditor', schema: FINDINGS_SCHEMA }), 'test-auditor')
+      const audit = await report(`Audit the acceptance tests against the brief they were written from, ${brief('AT')}. The test-author reports this coverage, as JSON:\n${JSON.stringify(at.coverage)}` + RULES,
+        { agentType: 'test-auditor', label: round ? 'test-auditor (revision)' : 'test-auditor', schema: AUDIT_SCHEMA })
       if (!audit) return stop('wave 0', 'the test-auditor returned no report')
       const weak = audit.findings.filter(f => BLOCKING.has(f.severity))
       run.test_audit = { rounds: round + 1, weak, advisory: audit.findings.filter(f => !BLOCKING.has(f.severity)) }
@@ -385,22 +427,23 @@ while (true) {
   }
 
   phase('Review')
-  const review = await safe(agent('Review the integrated code according to architecture.md.' + RULES, { agentType: 'reviewer', label: 'reviewer', schema: FINDINGS_SCHEMA }), 'reviewer')
+  const review = await report('Review the integrated code according to architecture.md.' + RULES, { agentType: 'reviewer', label: 'reviewer', schema: REVIEW_SCHEMA })
   if (!review) return stop('review', 'the reviewer returned no report')
   const graves = review.findings.filter(f => BLOCKING.has(f.severity))
   const verdicts = await parallel(graves.map(f => () =>
-    safe(agent(`Try to refute this finding from the reviewer, as JSON:\n${JSON.stringify(f)}`, { agentType: 'verifier', label: `verify ${f.file}`, schema: VERDICT_SCHEMA }), 'verifier')))
+    report(`Try to refute this finding from the reviewer, as JSON:\n${JSON.stringify(f)}`, { agentType: 'verifier', label: `verify ${f.file}`, schema: VERDICT_SCHEMA })))
   // A finding is only dismissed if the verifier refutes it with confidence. Uncertainty never downgrades a blocker.
   const confirmed = graves.filter((f, i) => !(verdicts[i] && verdicts[i].is_real === false && verdicts[i].confidence >= REFUTE_CONFIDENCE))
   const refuted = graves.filter(f => !confirmed.includes(f))
   const advisory = review.findings.filter(f => !BLOCKING.has(f.severity))
   run.review = { confirmed, refuted, advisory, opened: ok(post[1]) }
+  needsReview = (review.needs_validation || []).map(i => needsItem('reviewer', i))
   // The reviewer is read-only: if closing its stage finds changes, someone wrote where nobody may.
   const afterReview = await seq([`close-stage review REVIEW=${confirmed.length ? 'fail' : 'pass'}`, 'open-stage qa'], 'close-stage review')
   if (!ok(step(afterReview, 0))) return stop('review', 'files changed during the review stage (the reviewer must not write)')
 
   phase('QA')
-  const qa = await safe(agent('Run the system\'s QA validation according to architecture.md.' + RULES, { agentType: 'qa', label: 'qa', schema: QA_SCHEMA }), 'qa')
+  const qa = await report('Run the system\'s QA validation according to architecture.md.' + RULES, { agentType: 'qa', label: 'qa', schema: QA_SCHEMA })
   if (!qa) return stop('qa', 'QA returned no report')
   run.qa = qa
 
@@ -411,7 +454,8 @@ while (true) {
   const designDefects = qa.defects.filter(d => d.kind === 'design')
   const unassigned = [...confirmed, ...qa.defects.filter(d => d.kind === 'implementation' && BLOCKING.has(d.severity))]
     .filter(d => !isWp(d.wp))
-  const baseline = [...designDefects.map(d => ({ type: 'design', ...d })), ...unassigned.map(d => ({ type: 'no WP', ...d }))]
+  const baseline = [...designDefects.map(d => ({ type: 'design', ...d })), ...unassigned.map(d => ({ type: 'no WP', ...d })),
+    ...needsReview, ...(qa.needs_validation || []).map(i => needsItem('qa', i))]
   const closeQa = `close-stage qa QA=${qa.status === 'PASS' ? 'pass' : 'fail'}`
 
   const eligible = implDefects.length ? splitByLimit(implDefects) : []

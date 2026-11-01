@@ -732,6 +732,63 @@
    "args": {
     "start_wave": "2"
    }
+  },
+  {
+   "name": "needs validation goes to pending and does not block",
+   "review": [
+    {
+     "status": "PASS",
+     "findings": [],
+     "needs_validation": [
+      {
+       "wp": "WP-01",
+       "file": "src/a.py",
+       "kind": "external",
+       "claim": "c",
+       "fact": "f",
+       "how_to_check": "h"
+      }
+     ],
+     "not_checked": []
+    }
+   ],
+   "qa": [
+    {
+     "status": "PASS",
+     "plan": [
+      "contracts"
+     ],
+     "defects": [],
+     "gaps": [],
+     "needs_validation": [
+      {
+       "wp": "WP-02",
+       "file": "src/b/x.py",
+       "kind": "unchanged_code",
+       "claim": "c",
+       "fact": "f",
+       "how_to_check": "h"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "not_checked is collected from every report",
+   "reports": {
+    "implementer": {
+     "WP-02": {
+      "not_checked": [
+       "x"
+      ]
+     }
+    },
+    "reviewer": {
+     "not_checked": [
+      "x"
+     ]
+    }
+   }
   }
  ]
 }
