@@ -7,6 +7,8 @@
 
 The bench runs the real pipeline (`agentic.py run-pipeline`, one `claude -p` per agent) on small fixture repos, three times each. For every run it records the result, the fix cycles, the tokens, the cost and the time. As an independent judge, it also counts how many of the fixture's hidden oracle tests the produced code passes. The oracle is never copied into the project before the pipeline ends.
 
+It also scores the tests the agents wrote. When a run ends OK or REVIEW, the bench injects small bugs (mutants) one at a time into the produced Python code, with five operators: flipped comparison, `+` and `-`, `and` and `or`, dropped `not`, and an integer constant plus one. It takes an even, deterministic sample of at most 40 mutants and runs the project's own tests (`verify.tests` and the acceptance command of its plan) against each. A mutant counts as killed when a test fails or the run exceeds the timeout. The share killed measures the agents' tests. The same mutants also run against the fixture's oracle, which gives a ceiling to compare with. Each suite first runs once on the unmutated code; if it is already red there, its score is `?`. Only production files listed in the plan's work packages are mutated, never tests, acceptance or `qa/` files. The mutation time is not part of the run's minutes.
+
 Every agent session is isolated from the person running the bench: no user settings (`--setting-sources project,local`), no `CLAUDE.md` of the user or of a parent directory, no auto memory (`CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`). Two people measure the same flow. A fixture that relies on a `CLAUDE.md` of its own would not see it either.
 
 It does **not** measure:
@@ -23,6 +25,7 @@ It does **not** measure:
 | `inventory` | trap | Stock keeping in two waves | Edge cases that tend to need a fix cycle |
 | `vault` | trap | A file vault in one wave: storage paths, download tokens and a sqlite catalogue | Judgement about untrusted input: the plan states functional behaviour only and says once that users are not trusted, while the oracle attacks with adversarial input (tests named `test_adv_*`) |
 | `tally` | trap | An expense-sharing library in three waves: money and dates, a ledger, settlement | A real `depends_on` chain and edge cases on money, dates and settlement (tests named `test_edge_*`) |
+| `roster` | trap | Shift scheduling in two waves: intervals and shift text, then a schedule and rest rules | Two traps: edge cases and contract errors stated in the contracts but absent from the acceptance criteria (tests named `test_edge_*`), and one decision that sits only in section 10 of the plan, which an implementer's brief does not include (tests named `test_ctx_*`) |
 
 The oracle has no weights: the results count passed over total, and the per-test names in the oracle output say why a run lost points.
 
@@ -40,7 +43,7 @@ Useful options: `--fixture NAME` (repeatable), `--repeat N`, `--timeout-min M`, 
 python3 bench/bench.py run --fixture tempconv --repeat 1
 ```
 
-It prints one line per run and the path of the results file, then regenerates `bench/RESULTS.md`.
+It prints one line per run (with ` mutation killed/total` when the run has a mutation score) and the path of the results file, then regenerates `bench/RESULTS.md`.
 
 Before the first run it checks every fixture's instruments and stops, spending nothing, if one is broken. The same check on its own, with no `claude` involved:
 
@@ -60,7 +63,7 @@ A fixture is sound when its oracle has tests, passes none of them on the bare re
 
 ## Read `RESULTS.md`
 
-One row per results file and fixture, newest first. Columns: Version, Commit (`-dirty` if the source had uncommitted changes), Date, Fixture, Runs, OK (`ok/runs`), Oracle (median and range of the share of oracle tests passed), Fix cycles, Cost $, Output tokens and Minutes (medians). A `?` means no run had that value. Compare rows of the same fixture across versions, and treat a small difference as noise.
+One row per results file and fixture, newest first. Columns: Version, Commit (`-dirty` if the source had uncommitted changes), Date, Fixture, Runs, OK (`ok/runs`), Oracle (median and range of the share of oracle tests passed), Mutation (`agents / oracle`: the median share of mutants killed by the agents' tests, then by the oracle, two decimals, for example `0.72 / 0.90`), Fix cycles, Cost $, Output tokens and Minutes (medians). A `?` means no run had that value. Compare rows of the same fixture across versions, and treat a small difference as noise.
 
 ## Add a fixture
 
@@ -74,7 +77,7 @@ reference/good/   a correct implementation, copied over repo/ by selftest: the o
 reference/bad/    a plausible wrong one (right on the happy path, wrong on the edge cases): the oracle must catch it
 ```
 
-Name the oracle's tests so a reference can be judged by what it fails: `vault` uses `test_adv_*` for adversarial tests and `tally` uses `test_edge_*` for edge cases, and their acceptance tests (`bench/acceptance/test_acceptance_fixtures.py`) check that the bad reference fails only those. Import the module under test inside each test, so each test fails on the bare repo.
+Name the oracle's tests so a reference can be judged by what it fails: `vault` uses `test_adv_*` for adversarial tests and `tally` and `roster` use `test_edge_*` for edge cases (`roster` also uses `test_ctx_*` for its context trap), and their acceptance tests (`bench/acceptance/test_acceptance_fixtures.py`) check that the bad reference fails only those. Import the module under test inside each test, so each test fails on the bare repo.
 
 Write the code and the plan in English, with commands in the plan using `python3`, and no dependencies. Check it with `selftest --fixture <name>`, then try it with `--fixture <name> --repeat 1`.
 

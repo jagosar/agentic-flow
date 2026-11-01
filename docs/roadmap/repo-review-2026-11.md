@@ -27,7 +27,7 @@ Without this, every prompt or agent change is decided by reasoning.
 |---|---|---|---|
 | 1.1 | **Isolate the bench.** Every `claude -p` the bench starts loads the user's `~/.claude/CLAUDE.md`, memory and user settings, so it measures the flow plus one person's preferences. Ponytail found that leaked context skewed its results. | ponytail | Low |
 | 1.2 | **Self-test the instruments before any spend.** Each oracle ships a good reference that must pass and a bad one that must fail. | ponytail | Low |
-| 1.3 | **Mutation score.** Inject small bugs (flipped comparison, dropped `if`, off-by-one) into the produced code and run the project's own tests: measures test quality, which the oracle does not. | ponytail | Medium |
+| 1.3 | **Mutation score.** Inject small bugs (flipped comparison, dropped `if`, off-by-one) into the produced code and run the project's own tests: measures test quality, which the oracle does not. Shipped: `bench/mutate.py`, a `Mutation` column in `bench/RESULTS.md` and the `roster` fixture. | ponytail | Medium |
 | 1.4 | **A/B in one run.** Two flow versions interleaved fixture by fixture; geometric mean of per-fixture ratios, bootstrap confidence interval, sign test. | ponytail | Medium |
 | 1.5 | **Implicit-safety fixtures.** The requirement is left implicit, the hidden check is adversarial: path traversal, SQL injection, tampered token. | ponytail | Low |
 
