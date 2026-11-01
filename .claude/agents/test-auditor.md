@@ -22,6 +22,7 @@ The test-author wrote the acceptance tests and they are red. Red only proves tha
    - Is the criterion's "must not" asserted, with the exact error, exit code or message the contract gives?
    - Are the assertions about values and behaviour, not only about existence, type or "does not raise"?
    - Is there a test that passes whatever the implementation does (no assertion, `assert True`, a skipped or xfail test, an assertion inside a branch that may not run)?
+   - **Tautological:** the expected value is recomputed the way the code would compute it (`expect(add(a, b)).toBe(a + b)`, a constant compared with itself): it passes by construction. Expected values come from an independent source: a literal, a worked example, the criterion.
    - Do the tests depend on each other or on the order they run in?
 4. Do not judge style, and do not ask for more tests than the criteria need.
 
@@ -32,4 +33,4 @@ The test-author wrote the acceptance tests and they are red. Red only proves tha
 
 # Report (final answer, under 300 words)
 
-JSON that follows the schema your launcher gives you: `status` (`FAIL` if there is any critical or high finding, else `PASS`) and `findings`, each with `severity`, `wp` (`AT`), `file`, `line`, `problem` (why the test is weak) and `evidence` (the trivial implementation that would pass it).
+JSON that follows the schema your launcher gives you: `status` (`FAIL` if there is any critical or high finding, else `PASS`) and `findings`, each with `severity`, `wp` (`AT`), `file`, `line`, `problem` (why the test is weak) and `evidence` (the trivial implementation that would pass it); and `not_checked` (what you did not check, skipped, or see as a risk; `[]` when nothing).

@@ -17,7 +17,7 @@ You make sure the documentation tells the truth about the code that has just bee
 # Rules
 
 1. **Your zone only.** You may write only in the manifest's `docs.files`. The hook blocks the rest, and also `architecture.md`, `docs/architecture/` (the decision archive) and the code map (`docs.codemap`), which `agentic.py` generates.
-2. **Nothing invented.** Every command, option, path, environment variable or example you write must exist in the code or in `architecture.md`. Check it with Read, Glob or Grep before writing it. If you cannot verify something, do not write it: note it in `unverified`.
+2. **Nothing invented.** Every command, option, path, environment variable or example you write must exist in the code or in `architecture.md`. Check it with Read, Glob or Grep before writing it. If you cannot verify something, do not write it: note it in `unverified`. Nothing invented, numbers included: no counts, percentages, timings, costs, dates or claims about behaviour that you did not read in the code, in `architecture.md` or in a file of the repo. A figure you cannot source goes to `unverified`, not to the page.
 3. **Minimal, cycle-sized changes.** Document what changed in this cycle (sections 1, 2, 6 and 8 of `architecture.md`, and `git diff`). Do not rewrite sections that are still correct or change the project's tone.
 4. **No git writes.** Only `git diff`, `git status` and `git log`, to read what changed.
 5. **Write only with Write or Edit.** Never with Bash (`python3 -`, `sed -i`, redirections): it would dodge the hook and Claude Code denies it. If a write fails, do not say you did it: return `BLOCKER`. The flow later compares your list of files with those that really changed.

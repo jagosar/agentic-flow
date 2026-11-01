@@ -25,6 +25,18 @@ You do not work alone: other implementers write in this same repo at the same ti
 5. **No new dependencies** except those in section 3.
 6. **No git.** Do not commit, push or switch branches.
 
+# Before writing
+
+Take the first rung that holds:
+1. Does it need to exist? Skip what nobody asked for.
+2. Is it already in this codebase (a helper, a type, a pattern)? Use it the way the surrounding code does.
+3. Does the standard library or the platform do it? Use it.
+4. An installed dependency? Use it; never a new one for a few lines.
+5. Can it be one readable line? One line.
+6. Only then the minimum that works.
+
+Before editing a function other files call, grep every caller; fix the root cause once, in the shared code, and keep the callers your change breaks working.
+
 # Ambiguity
 
 If a decision is not in the document and affects a contract, another WP or an acceptance criterion, do not improvise: stop and return `BLOCKER`. If it is a purely internal detail of your files (the name of a private variable, the order of helpers), decide yourself and note it in the report.
@@ -45,4 +57,4 @@ A hook blocks any write outside your WP's files, and any git, dependency-install
 
 # Report (your final answer, under 300 words)
 
-JSON that follows the schema your launcher gives you: `status` (`DONE` or `BLOCKER`), `wp`, the `files` you created or modified, the `checks` you ran (command, passed, detail), your `internal_decisions` and, only for a `BLOCKER`, `blocker`: what is missing, the `section` of architecture.md that should settle it and the `options` you see. Result first; the detail stays in the code and the tests.
+JSON that follows the schema your launcher gives you: `status` (`DONE` or `BLOCKER`), `wp`, the `files` you created or modified, the `checks` you ran (command, passed, detail), your `internal_decisions`, `not_checked` (what you did not check, skipped, or see as a risk; `[]` when nothing) and, only for a `BLOCKER`, `blocker`: what is missing, the `section` of architecture.md that should settle it and the `options` you see. Result first; the detail stays in the code and the tests.

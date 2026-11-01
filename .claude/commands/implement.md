@@ -59,7 +59,9 @@ Then present it like this:
 - **Documentation (`docs`, if there was any):** files the doc-updater updated, whether the code map changed, and the result of `docs-check`.
 - **Pending (`pending`):** each item with its type.
   - **Design:** goes to `/architect`.
+  - **Needs validation** (items of type `needs validation`): each item's claim, the fact to check and how; the person checks it, it never blocks.
   - **Fix limit reached (per WP), or no WP:** the user decides.
+- **Not checked (`not_checked`):** per agent, what it did not check or skipped, plus QA's `gaps` and the doc-updater's `unverified`.
 
 If `result` is `OK`, propose the commit messages (one per logical block, in the format of section 7) and **wait for the user's approval**. Do not commit or push without it.
 
