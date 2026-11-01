@@ -93,7 +93,6 @@ Without this, every prompt or agent change is decided by reasoning.
 - A multi-session decision map (wayfinder). (mattpocock)
 - A reuse metric (functions reused vs created). (ponytail)
 - Screenshot freshness for the docs. (diagram-design)
-
 - Candidates from awesome-claude-code (a list of 263 resources; only its table was read, not the projects), to review one by one as the first ten were: `agnix` and `Ctxlint` (linters of CLAUDE.md, skills, hooks and MCP config, a complement to `test_definitions.py`), `Agent Collab Skills` (acceptance gate, adversarial debate, output reconciler), `presence` (calibrated-confidence gate and outcome telemetry), `cc-thinking-skills` (publishes a replication-gated evaluation: relevant to the bench) and `Upkeep` (drift between docs, spec and assets with evidence: overlaps `docs-check`).
 - Not worth a place: claude-mem (cross-session memory conflicts with `architecture.md` as the single source of truth and with the bench's isolation) and awesome-scalability (a reading list on distributed systems, no code).
 
