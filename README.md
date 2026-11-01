@@ -74,6 +74,7 @@ Models are set by alias (`opus`, `sonnet`, and `haiku` for the gatekeeper only),
 | Risk | Protection |
 |---|---|
 | An agent writes files that are not its own | A `PreToolUse` hook checks every write against the manifest. Reviewers write nothing |
+| A change breaks code the diff does not touch | The reviewer receives the callers of every changed public symbol, outside the diff, and must check each one |
 | An implementer passes by weakening the test | The tests are written by another agent, before the code, and are locked. Red first, green after |
 | Relaxing a linter or skipping a test | Editing existing quality config is blocked; so are unconditional `skip`, `xfail` and `only` |
 | Secrets in code | Writes containing credential patterns are blocked |
@@ -106,7 +107,7 @@ Tested end to end with real agents:
 - **The new pipeline pieces:** a full `/architect` and `/implement` run with the native workflow used the test-auditor, the Haiku gatekeeper and batched gatekeeper calls (`seq`). The `run-pipeline` fallback engine also ran end to end with the real `claude -p --json-schema` output.
 - **The plugin and the fallback mode:** `/agentic-flow:init` installed the flow in a TypeScript repo in a real session. The earlier fallback mode (one `agentic.py run-*` command per stage) also ran end to end.
 
-The flow tests itself with 311 Python tests and 39 workflow scenarios with simulated agents, plus 59 tests of the measurement bench and 62 QA tests. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
+The flow tests itself with 324 Python tests and 39 workflow scenarios with simulated agents, plus 59 tests of the measurement bench and 62 QA tests. CI pins every action by SHA, runs with minimal permissions, installs npm packages without install scripts, and validates the plugin strictly.
 
 Not confirmed with real agents: the stop gate inside the native workflow (measured only with `claude -p`, the fallback engine's shape), the briefs (each implementer and the test-author read a slice of `architecture.md`), the single JSON-schema runner behind the one-off `run-*` commands, the token telemetry (`usage.jsonl`) and fix attempts that receive the previous attempt's diff. They are covered by simulated agents and by a fake `claude`.
 

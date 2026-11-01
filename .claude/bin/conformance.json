@@ -904,6 +904,45 @@
           "output": "RESULT: REVIEW"
         }
       ]
+    },
+    {
+      "name": "callers reach the reviewer",
+      "gate_fail": [
+        {
+          "prefix": "callers",
+          "exit_code": 0,
+          "output": {
+            "changed": [
+              "src/a.py"
+            ],
+            "symbols": {
+              "src/a.py": [
+                "split"
+              ]
+            },
+            "callers": [
+              {
+                "symbol": "split",
+                "defined_in": "src/a.py",
+                "file": "src/b/x.py",
+                "line": 7,
+                "text": "split(1, 2)"
+              }
+            ],
+            "truncated": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "callers that are not JSON are ignored",
+      "gate_fail": [
+        {
+          "prefix": "callers",
+          "exit_code": 0,
+          "output": "not json"
+        }
+      ]
     }
   ]
 }

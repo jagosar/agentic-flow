@@ -46,7 +46,7 @@ Without this, every prompt or agent change is decided by reasoning.
 
 | # | Improvement | From | Cost |
 |---|---|---|---|
-| 3.1 | **Read beyond the diff.** The reviewer gets the callers of every changed signature (from `graphify affected` when installed, else by grepping). `reviewer.md` says "no problems in code that was not touched"; a change that breaks an untouched caller must be reported. | ponytail, graphify | Medium |
+| 3.1 | **Read beyond the diff.** The reviewer gets the callers of every changed signature (from `graphify affected` when installed, else by grepping). `reviewer.md` says "no problems in code that was not touched"; a change that breaks an untouched caller must be reported. Shipped in 2.2.0 (plain grep; no `graphify`): see `docs/architecture/0005-reviewer-callers.md`. | ponytail, graphify | Medium |
 | 3.2 | **Stricter findings:** a concrete case for each; four parts (what it is, problem, fix, if skipped); severity anchors ("fully defeats a control or only weakens it"; "if you cannot state the damage, it is lower than it feels"); a third verdict `needs_validation` for findings blocked by an external fact, with no severity; a "cannot verify from diff" category resolved by the orchestrator. | ponytail, cloudflare, superpowers | Low |
 | 3.3 | **Two axes, Standards and Spec,** reviewed in parallel and never reranked against each other. | mattpocock | Medium |
 | 3.4 | **One scale for every check:** Floor (never ships), Reflex (a default the model falls into; waivable with a reason on the record), Finish (never blocks). Waivers take the narrowest scope and a `"<who decided: evidence>"` reason; every WARN needs a one-line defence. | hallmark, impeccable, taste | Low-medium |
@@ -96,7 +96,7 @@ Without this, every prompt or agent change is decided by reasoning.
 
 ## Versioning
 
-The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version. The first package (3.2, 4.1, 4.2, 4.3, 6.5, 6.6) is 2.0.0; see `docs/architecture/0002-prompt-package-2-0.md`. The stop gate and the four statuses (2.1, 2.2) are 2.1.0: the implementer schema and `settings.json` change, no plan or command does; see `docs/architecture/0003-stop-gate-statuses.md`.
+The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version. The first package (3.2, 4.1, 4.2, 4.3, 6.5, 6.6) is 2.0.0; see `docs/architecture/0002-prompt-package-2-0.md`. The stop gate and the four statuses (2.1, 2.2) are 2.1.0: the implementer schema and `settings.json` change, no plan or command does; see `docs/architecture/0003-stop-gate-statuses.md`. The reviewer's callers (3.1) are 2.2.0: the reviewer prompt changes; see `docs/architecture/0005-reviewer-callers.md`.
 
 ## Found while using the flow
 

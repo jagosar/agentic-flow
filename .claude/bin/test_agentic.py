@@ -869,6 +869,78 @@ class StopGateTests(Base):
             self.assertEqual(agentic.status_to_state(status), state, status)
 
 
+class CallersTests(Base):
+    """`callers`: the public symbols of the changed files and the lines outside the diff that use them."""
+
+    def commit(self):
+        subprocess.run(["git", "add", "-A"], cwd=self.repo.dir, check=True, capture_output=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"], cwd=self.repo.dir,
+                       check=True, capture_output=True)
+
+    def callers(self, *args):
+        r = self.repo.run("callers", *args)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads([ln for ln in r.stdout.strip().splitlines() if ln.startswith("{")][-1])
+
+    def test_a_changed_file_without_public_symbols_lists_nothing(self):
+        self.repo.write("src/a.py", "x = 1\n")
+        self.commit()
+        self.repo.write("src/a.py", "x = 2\n")
+        out = self.callers()
+        self.assertEqual((out["changed"], out["symbols"], out["callers"]), (["src/a.py"], {}, []))
+
+    def test_a_symbol_used_only_in_the_diff_has_no_callers_and_two_symbols_on_one_line_count_twice(self):
+        self.repo.write("src/a.py", "def f():\n    pass\n\n\ndef g():\n    return f()\n\n\ndef f():\n    pass\n")
+        self.repo.write("src/b.py", "y = g(f())\n")
+        self.commit()
+        self.repo.write("src/a.py", "def f():\n    return 1\n\n\ndef g():\n    return f()\n\n\ndef f():\n    pass\n")
+        out = self.callers()
+        self.assertEqual(out["symbols"], {"src/a.py": ["f", "g"]}, "a symbol defined twice is listed once")
+        self.assertEqual([(c["symbol"], c["file"], c["line"]) for c in out["callers"]],
+                         [("f", "src/b.py", 1), ("g", "src/b.py", 1)])
+
+    def test_deleted_files_state_and_js_dollar_identifiers(self):
+        self.repo.write("src/gone.py", "def gone():\n    pass\n")
+        self.repo.write("web/a.js", "export function $go() {}\n")
+        self.repo.write("web/b.js", "$go();\nconst x$go = 1;\n")
+        self.repo.write(".claude/state/note.py", "$go()\n")
+        self.commit()
+        (self.repo.dir / "src/gone.py").unlink()
+        self.repo.write("web/a.js", "export function $go() { return 1 }\n")
+        out = self.callers()
+        self.assertEqual(out["changed"], ["web/a.js"])
+        self.assertEqual([(c["file"], c["line"]) for c in out["callers"]], [("web/b.js", 1)])
+
+    def test_caps_per_symbol_and_in_total_set_truncated(self):
+        names = [f"s{i}" for i in range(9)]
+        self.repo.write("src/a.py", "".join(f"def {n}():\n    pass\n\n\n" for n in names))
+        self.repo.write("src/b.py", "".join(f"{n}()\n" for n in names for _ in range(11)))
+        self.commit()
+        self.repo.write("src/a.py", "".join(f"def {n}():\n    return 1\n\n\n" for n in names))
+        out = self.callers()
+        self.assertEqual(len(out["callers"]), 80)
+        self.assertTrue(out["truncated"])
+        self.assertEqual([c["symbol"] for c in out["callers"]][:10], ["s0"] * 10)
+
+    def test_without_git_or_without_a_commit_it_still_answers(self):
+        self.repo.write("src/a.py", "def f():\n    pass\n")
+        self.repo.write("src/b.py", "f()\n")
+        out = self.callers()  # the test repo has git init but no commit: HEAD does not exist
+        self.assertEqual(out["changed"], ["src/a.py", "src/b.py"])
+        self.assertEqual(out["callers"], [], "both files are in the diff")
+        shutil.rmtree(self.repo.dir / ".git")
+        out = self.callers()
+        self.assertEqual((out["changed"], out["callers"]), ([], []))
+
+    def test_callers_runs_inside_seq(self):
+        self.repo.write("src/a.py", "def f():\n    pass\n")
+        r = self.repo.run("seq", "callers")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        steps = json.loads(r.stdout)["steps"]
+        self.assertEqual(len(steps), 1)
+        self.assertIn("f", json.loads(steps[0]["output"].strip().splitlines()[-1])["symbols"]["src/a.py"])
+
+
 class LivingDocsTests(Base):
     """Living documentation: the DOCS zone, the deterministic code map and docs-check."""
     manifest = dict(MANIFEST, docs={"files": ["README.md", "CHANGELOG.md", "docs/"]})

@@ -125,8 +125,8 @@ sequenceDiagram
         AG-->>W: reports (status, files, checks)
         W->>G: close-stage N + open-stage N+1 (ownership + ledger)
     end
-    W->>G: verify + open-stage review (phases against the baseline + acceptance, alone)
-    W->>AG: reviewer
+    W->>G: verify + open-stage review + callers (phases against the baseline + acceptance, alone; then the callers of the changed symbols)
+    W->>AG: reviewer (with the callers outside the diff)
     AG-->>W: findings
     par one verifier per serious finding
         W->>AG: try to refute it
@@ -245,7 +245,7 @@ Tracked files are always compared, even in a folder named like an artefact (`cov
 | test-auditor | latest Sonnet | nothing | nothing (reads only) | write |
 | test-author (`AT`) | latest Sonnet | `acceptance.files` (default `acceptance/`) | `allow_bash` + the acceptance command | write production code |
 | implementer (`WP-NN`) | latest Sonnet | its package's `files` | `allow_bash` + the acceptance command | touch other files, `acceptance/`, git, dependencies; report `DONE` with its acceptance tests red (the stop gate refuses it, twice at most) |
-| reviewer (`REVIEW`) | latest Sonnet | nothing | `git diff/status/log` + `allow_bash` | write |
+| reviewer (`REVIEW`) | latest Sonnet | nothing | `git diff/status/log` + `allow_bash`; reads the callers its prompt lists | write |
 | qa (`QA`) | latest Sonnet | `qa.files` (default `qa/`) | `allow_bash` | write production code |
 | doc-updater (`DOCS`) | latest Sonnet | `docs.files` (default `README.md`, `CHANGELOG.md`, `docs/`) | `git diff/status/log` | write code, tests, the codemap, `docs/architecture/` |
 
@@ -341,6 +341,7 @@ acceptance/  qa/            acceptance and QA tests
 - **Wave 0:** the test-author turns the criteria into tests before any code exists.
 - **`acs`:** the criteria a work package answers for, in the manifest. With them (and with the file paths a failure mentions), `verify` names the packages behind a failure (`suspects`), which go to a fix cycle instead of stopping the run.
 - **Test audit:** after wave 0, the test-auditor looks for tests that would pass against an empty or trivial implementation. A critical or high finding sends the test-author back once; if the tests are still weak, the run stops.
+- **Callers:** before the review, `agentic.py callers` lists, for every public symbol defined in a changed file (the code map's regexes), the lines of tracked code outside the diff that use it as a whole word, tests included (at most 10 per symbol, 80 in total, with a `truncated` flag). The list travels in the reviewer's prompt: a caller the change breaks is a finding on the package that owns the change, even though the caller's file was not touched. The step rides the `verify + open-stage review` gatekeeper call and never fails.
 - **Finding:** what the reviewer and QA report, in four parts: the problem, the concrete case (`evidence` or `repro`), the smallest `fix` and what happens `if_skipped`. Both judges share severity anchors; no concrete case, no finding.
 - **Needs validation:** a claim the code alone cannot settle, from the reviewer or QA: a deployment or provider setting the repo does not contain (`external`), or code the diff does not touch (`unchanged_code`). It names the missing fact and how to check it, carries no severity, goes to the result's `pending` list and never blocks: you check the fact.
 - **`not_checked`:** what each agent did not check, skipped, or sees as a risk, in its report; the result lists them per agent call and `/implement` shows them.

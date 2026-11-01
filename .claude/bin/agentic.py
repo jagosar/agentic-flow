@@ -35,6 +35,7 @@ Subcommands:
   stack               Detects the repo's languages and compares them with the manifest's "stack". JSON.
   rules-sync          Installs in .claude/rules/agentic/ the common rules and those of each language of the project.
   codemap [PATH]      Generates the code map (files and public symbols) without going through the model.
+  callers             JSON: the public symbols of the changed files and their callers outside the diff (for the reviewer).
   docs-check          Checks links, anchors and paths cited in the documentation. JSON.
   install [DIR] [--force] [--dry-run] [--allow-dirty]
                       Installs or upgrades the flow in another repo (used by the plugin). Replaces only intact files,
@@ -988,6 +989,116 @@ def codemap(manifest, target=None):
     print(json.dumps({"path": rel_out, "files": total, "folders": len(rows), "changed": changed}, ensure_ascii=False))
 
 
+# ---------- callers: what the reviewer must read beyond the diff ----------
+
+CALLERS_PER_SYMBOL = 10
+CALLERS_MAX = 80
+CALLER_TEXT_MAX = 160
+CALLER_RE_TEMPLATE = r"(?<![\w$])%s(?![\w$])"  # the symbol as a whole word; $ for JS identifiers
+EMPTY_CALLERS = {"changed": [], "symbols": {}, "callers": [], "truncated": False}
+
+
+def _git_paths(args):
+    """The NUL-separated paths a git command prints, or None when git or the revision is not there."""
+    try:
+        out = subprocess.run(["git", *args, "-z"], cwd=ROOT, capture_output=True, check=True).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    return [p for p in out.decode("utf-8", errors="replace").split("\0") if p]
+
+
+def changed_code_files():
+    """Code files modified since HEAD or untracked, filtered like source_files(): sorted, relative, existing."""
+    modified = _git_paths(["diff", "--name-only", "--relative", "HEAD"]) or []
+    untracked = _git_paths(["ls-files", "--others", "--exclude-standard"]) or []
+    found = set()
+    for rel in modified + untracked:
+        rel = rel.replace("\\", "/")
+        if set(rel.split("/")[:-1]) & SKIP_DIRS or rel.startswith(".claude/state/") or symbol_re(rel) is None:
+            continue
+        if (ROOT / rel).is_file():
+            found.add(rel)
+    return sorted(found)
+
+
+def file_symbols(rel):
+    """The public symbols of one file, as the code map sees them, in order and without repeats."""
+    rx = symbol_re(rel)
+    if rx is None:
+        return []
+    try:
+        text = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    seen = []
+    for line in text.split("\n"):
+        m = rx.match(line.rstrip("\r"))
+        if m and m.group(1) not in seen:
+            seen.append(m.group(1))
+    return seen
+
+
+def find_callers(changed, symbols):
+    """The lines of tracked code files outside `changed` that use a symbol as a whole word. symbols: {file: [name]}.
+    Symbol-major (symbols in file order), then file order, then line order; capped per symbol and in total.
+    Returns (callers, truncated)."""
+    names = []
+    defined_in = {}
+    for rel in sorted(symbols):
+        for name in symbols[rel]:
+            if name not in defined_in:
+                defined_in[name] = rel
+                names.append(name)
+    if not names:
+        return [], False
+    changed_set = set(changed)
+    whole = re.compile(CALLER_RE_TEMPLATE % ("(?:" + "|".join(re.escape(n) for n in names) + ")"))
+    per_name = {n: re.compile(CALLER_RE_TEMPLATE % re.escape(n)) for n in names}
+    hits = {n: [] for n in names}
+    for rel in source_files():
+        if rel in changed_set or symbol_re(rel) is None or rel.startswith(".claude/state/"):
+            continue
+        try:
+            text = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not any(n in text for n in names):
+            continue
+        for number, line in enumerate(text.split("\n"), 1):
+            line = line.rstrip("\r")
+            if not whole.search(line):
+                continue
+            for n in names:
+                if per_name[n].search(line):
+                    hits[n].append({"symbol": n, "defined_in": defined_in[n], "file": rel, "line": number,
+                                    "text": line.strip()[:CALLER_TEXT_MAX]})
+    truncated = False
+    out = []
+    for n in names:
+        if len(hits[n]) > CALLERS_PER_SYMBOL:
+            truncated = True
+        out.extend(hits[n][:CALLERS_PER_SYMBOL])
+    if len(out) > CALLERS_MAX:
+        truncated = True
+        out = out[:CALLERS_MAX]
+    return out, truncated
+
+
+def callers():
+    """One JSON line for the engines: the changed code files, their public symbols and the callers outside the diff.
+    Exits 0 whatever happens: an instrument never stops the review."""
+    try:
+        changed = changed_code_files()
+        symbols = {rel: syms for rel in changed for syms in [file_symbols(rel)] if syms}
+        found, truncated = find_callers(changed, symbols)
+        print(json.dumps({"changed": changed, "symbols": symbols, "callers": found, "truncated": truncated},
+                         ensure_ascii=False))
+    except Exception as e:  # noqa: BLE001 - the step must not stop the review
+        print(f"[agentic] callers skipped: {type(e).__name__}: {e}", file=sys.stderr)
+        print(json.dumps(dict(EMPTY_CALLERS, error=f"{type(e).__name__}: {e}"), ensure_ascii=False))
+    sys.exit(0)
+
+
 def heading_anchors(text):
     """The anchors GitHub gives the headings: a repeated heading gets -1, -2..."""
     anchors, seen = set(), {}
@@ -1276,7 +1387,7 @@ def acceptance(manifest, expect):
 
 SEQ_OUTPUT_CAP = 12_000
 SEQ_COMMANDS = {"pipeline-plan", "briefs", "baseline", "open-stage", "close-stage", "verify", "codemap", "docs-check",
-                "acceptance"}
+                "acceptance", "callers"}
 
 
 def cap_output(out):
@@ -2177,6 +2288,8 @@ def main():
                           "undeclared": sorted(set(detected) - set(declared)) if declared else []}, ensure_ascii=False))
     elif cmd == "rules-sync":
         rules_sync()
+    elif cmd == "callers":
+        callers()
     elif cmd == "codemap":
         try:
             manifest = load_manifest()

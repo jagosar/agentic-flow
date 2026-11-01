@@ -48,13 +48,24 @@ def threaded(thunks):
 
 
 # verify and baseline run the whole suite: each goes in a gatekeeper call of its own, so it fits in one Bash timeout.
-WAVE_TAIL = ["verify", "open-stage review"]
+WAVE_TAIL = ["verify", "open-stage review", "callers"]
 LOST = ("the gatekeeper returned no usable result (a timeout or garbled output); the command may have run anyway: "
         "check `agentic.py status` before resuming")
 
 
 class Halted(BaseException):
     """Someone ran `agentic.py stop`: not an error of an agent, so it is not swallowed with them."""
+
+
+CALLERS_PROMPT = ("\nCallers, outside the diff, of the public symbols this change defines or modifies (the reviewer must read them), as JSON:\n{items}\nA change that breaks one of them is a finding on the package that owns the changed symbol, even though the caller's file was not touched.{truncated}")
+CALLERS_TRUNCATED = " The list is truncated."
+
+
+def callers_of(step):
+    """(callers, truncated) a `callers` step reported; ([], False) when the step is missing, failed or is not its JSON."""
+    found = lines_json(step["output"]) if step else None
+    items = found.get("callers") if isinstance(found, dict) else None
+    return (items, bool(found.get("truncated"))) if isinstance(items, list) and items else ([], False)
 
 
 CONCERNS_PROMPT = ("\nThe implementers finished with these concerns about their own code, as JSON:\n{items}\n"
@@ -414,7 +425,12 @@ class Pipeline:
             self.phase("Review")
             concerns = ("" if not self.concern_pending else render(
                 CONCERNS_PROMPT, items=compact([{"wp": c["wp"], "problem": c["problem"]} for c in self.concern_pending])))
-            review = self.call("reviewer", "reviewer", render(self.prompts["reviewer"], concerns=concerns, rules=self.rules), "REVIEW")
+            found, truncated = callers_of(post[2] if len(post) > 2 else None)
+            callers = ("" if not found else render(CALLERS_PROMPT, items=compact(found),
+                                                   truncated=CALLERS_TRUNCATED if truncated else ""))
+            # callers goes last: a caller line that reads "{rules}" must not be expanded by render.
+            review = self.call("reviewer", "reviewer",
+                               render(self.prompts["reviewer"], concerns=concerns, rules=self.rules, callers=callers), "REVIEW")
             if not review:
                 return self.stop("review", "the reviewer returned no report")
             graves = [f for f in review["findings"] if f["severity"] in self.blocking]
@@ -428,7 +444,7 @@ class Pipeline:
             refuted = [f for f in graves if f not in confirmed]
             advisory = [f for f in review["findings"] if f["severity"] not in self.blocking]
             run["review"] = {"confirmed": confirmed, "refuted": refuted, "advisory": advisory,
-                             "opened": self.ok(post[1] if len(post) > 1 else None)}
+                             "opened": self.ok(post[1] if len(post) > 1 else None), "callers": len(found)}
             self.needs_review = [self.needs_item("reviewer", i) for i in review.get("needs_validation") or []]
             after = self.seq([f"close-stage review REVIEW={'fail' if confirmed else 'pass'}", "open-stage qa"], "close-stage review")
             if not self.ok(self.step(after, 0)):

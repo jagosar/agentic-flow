@@ -136,6 +136,12 @@ class AgentDefinitionTests(unittest.TestCase):
                 with self.subTest(agent=name, phrase=phrase):
                     self.assertIn(phrase, body)
 
+    def test_reviewer_reads_the_callers_outside_the_diff(self):
+        body = (AGENTS_DIR / "reviewer.md").read_text(encoding="utf-8")
+        for phrase in ("the callers your prompt lists", "Read each one and check that the change keeps it working",
+                       "a caller your prompt lists that the change breaks"):
+            self.assertIn(phrase, body)
+
     def test_findings_have_four_parts(self):
         self.assertIn("No concrete case, no finding", (AGENTS_DIR / "reviewer.md").read_text(encoding="utf-8"))
         for name in ("reviewer", "qa"):

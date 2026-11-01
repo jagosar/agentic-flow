@@ -15,7 +15,7 @@
     "test_author": "Write the acceptance tests. Your brief is {brief}: the parts of architecture.md they need.{rules}",
     "test_author_revision": "Revise the acceptance tests (your brief is {brief}). An independent auditor found these weak points, as JSON:\n{weak}\nStrengthen them: the tests of each criterion must fail against an empty or trivial implementation (a stub that returns nothing, None or a constant) and must cover the criterion's \"must not\". Keep them red for the right reason.{rules}",
     "test_auditor": "Audit the acceptance tests against the brief they were written from, {brief}. The test-author reports this coverage, as JSON:\n{coverage}{rules}",
-    "reviewer": "Review the integrated code according to architecture.md.{concerns}{rules}",
+    "reviewer": "Review the integrated code according to architecture.md.{callers}{concerns}{rules}",
     "verifier": "Try to refute this finding from the reviewer, as JSON:\n{finding}",
     "qa": "Run the system's QA validation according to architecture.md.{rules}",
     "doc_updater": "Update the documentation according to architecture.md and the integrated code.{rules}",

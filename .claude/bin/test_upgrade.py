@@ -90,6 +90,12 @@ class NotesTests(unittest.TestCase):
         self.assertEqual(upgrade.notes_between("2.0.0", "2.0.0"), [])
         self.assertEqual(len(upgrade.NOTES["2.0.0"]), 7, "the 2.0.0 notes are frozen")
 
+    def test_the_2_2_notes_name_the_callers(self):
+        notes = " ".join(upgrade.notes_between("2.1.0", "2.2.0"))
+        for word in ("callers", "reviewer", "install", "whole word"):
+            self.assertIn(word, notes)
+        self.assertEqual(len(upgrade.NOTES["2.1.0"]), 4, "the 2.1.0 notes are frozen")
+
 
 class GuardTests(unittest.TestCase):
     def setUp(self):

@@ -30,7 +30,7 @@
 | Launcher | `.claude/commands/implement.md` | latest Sonnet | Validates, launches the workflow, reports and holds the commit gate | Interpret the design or resolve blockers |
 | Test-author | `.claude/agents/test-author.md` | latest Sonnet | Writes the acceptance tests from the criteria, before the code | Implement |
 | Implementer | `.claude/agents/implementer.md` | latest Sonnet | Builds one work package with its unit tests | Touch other packages' files or the acceptance tests |
-| Reviewer | `.claude/agents/reviewer.md` | latest Sonnet | Reviews quality and security, reporting only what it can prove | Write anything |
+| Reviewer | `.claude/agents/reviewer.md` | latest Sonnet | Reviews quality and security, reporting only what it can prove; reads the callers of every changed symbol outside the diff | Write anything |
 | Test-auditor | `.claude/agents/test-auditor.md` | latest Sonnet | Checks the acceptance tests would fail against an empty or trivial implementation | Write anything |
 | Verifier | `.claude/agents/verifier.md` | latest Sonnet | Tries to refute each serious finding | Write anything |
 | QA | `.claude/agents/qa.md` | latest Sonnet | Exploratory tests in `qa/`, beyond the criteria | Fix production code |
@@ -295,7 +295,7 @@ python3 -m unittest discover -s bench -p "test_*.py"
 python3 -m unittest discover -s bench/acceptance
 ```
 
-311 Python tests, 39 workflow scenarios with simulated agents, 59 tests of the measurement bench and 62 QA tests, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+324 Python tests, 39 workflow scenarios with simulated agents, 59 tests of the measurement bench and 62 QA tests, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 
