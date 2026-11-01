@@ -57,6 +57,8 @@ jobs:
           python -m unittest discover -s .claude/bin -p "test_*.py" -v 2>&1 | tee "$RUNNER_TEMP/unittest.txt"
           python -m unittest discover -s bench -p "test_*.py" -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
           python -m unittest discover -s bench/acceptance -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
+          python -m unittest discover -s acceptance -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
+          python -m unittest discover -s qa -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
       # The failures as one annotation, readable on the pull request and through the API without the full log.
       - name: Failures as an annotation
         if: failure()

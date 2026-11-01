@@ -13,11 +13,11 @@ ENV = ["terminal", "desktop", "vscode", "jetbrains", "web-ios"]
 TASK = ["onboarding", "plugin", "gitlab", "ci-github-actions", "bench"]
 ALL = [ROOT / "README.md", HOW / "README.md"] + [HOW / (n + ".md") for n in ENV + TASK]
 MARKETING = re.compile(r"\b(powerful|seamless\w*|blazing|effortless\w*|robust|cutting-edge)\b", re.I)
-SCRIPT = (ROOT / ".claude" / "bin" / "agentic.py").read_text()
+SCRIPT = (ROOT / ".claude" / "bin" / "agentic.py").read_text(encoding="utf-8")
 
 
 def read(p):
-    return Path(p).read_text()
+    return Path(p).read_text(encoding="utf-8")
 
 
 def outside_fences(text):
