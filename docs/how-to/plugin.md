@@ -1,6 +1,6 @@
 # Guide: install and update the flow with the plugin
 
-> Reviewed on 2026-10-19 with Claude Code 2.1.302. What every environment shares is in the [guides overview](README.md).
+> Reviewed on 2026-10-19 with Claude Code 2.1.302. What every environment shares is in the [guides hub](README.md).
 
 The `agentic-flow` plugin brings the flow to an existing repo and keeps it up to date. For a new project, the template is still the fastest route (`gh repo create --template`).
 
@@ -72,7 +72,7 @@ claude plugin update agentic-flow@agentic-flow
 
 Restart the session and run `/agentic-flow:init` again (or, without the plugin, `python3 <a clone of agentic-flow>/.claude/bin/agentic.py install <repo>`). Use `--dry-run` first to see what it would do.
 
-Each of the flow's files ends in one of these states:
+`init` refreshes the agents, commands, workflow, `agentic.py`, the rules library and the settings entries. Each of the flow's files ends in one of these states:
 
 | State | What happens |
 |---|---|
@@ -87,10 +87,11 @@ How it knows a file is intact: the flow ships the fingerprint of every version i
 What else it does:
 - **Template leftovers.** The flow's own tests, CI workflow and plugin files that the template copied are updated only if they are already there and intact. If part of the flow's test suite is there, the rest of it is added, so your CI keeps passing.
 - **Guards.** It writes nothing if a flow file has uncommitted changes (commit or stash them, or use `--allow-dirty`) or a run is in progress (let it finish, or run `python3 .claude/bin/agentic.py stop`). It exits with code 3 and says why. So any upgrade can be undone with git.
-- **Version and notes.** The first line shows the jump (`agentic-flow 1.0.0 -> 1.1.0`), and `upgrade notes:` lists what changed that may affect you (removed commands, for example).
+- **Version and notes.** The first line shows the jump between the installed flow and the new one, and `upgrade notes:` lists, release by release, what changed and may affect you (a removed command, a prompt to merge, a changed hook). Read them before you commit.
+- **The hook.** For a repo whose hook entry is older, it appends `StructuredOutput` to the matcher and sets the longer timeout the stop gate needs, keeping the rest of your entry.
 - **Your plan.** If the repo has an `architecture.md`, it validates it with the new version and tells you, without failing the upgrade.
 
-Line endings do not count: a flow file checked out with CRLF (Windows with `core.autocrlf=true`) is recognised as intact and updated. Before 1.1.1 such files looked edited and were kept.
+Line endings do not count: a flow file checked out with CRLF (Windows with `core.autocrlf=true`) is recognised as intact and updated. A flow from before Windows support looked edited in that case and kept such files.
 
 ## Try it without installing
 

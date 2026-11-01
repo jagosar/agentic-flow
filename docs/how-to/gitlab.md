@@ -1,6 +1,6 @@
 # Guide: repos hosted on GitLab
 
-> Reviewed on 2026-10-27 with agentic-flow 1.1.0. The installer only needs a local git repo, so it behaves exactly as in [onboarding.md](onboarding.md), whose outputs are real. What is specific to GitLab (the CI job and merge requests) has **not** been run on GitLab yet.
+> Reviewed on 2026-10-27. The installer only needs a local git repo, so it behaves exactly as in [onboarding.md](onboarding.md), whose outputs are real. What is specific to GitLab (the CI job and merge requests) has **not** been run on GitLab yet.
 
 The flow lives in your repo (`.claude/`), so where the repo is hosted does not matter to it. Two things change on GitLab:
 - **There is no "Use this template" across hosts.** Start from your own project and install the flow into it.
