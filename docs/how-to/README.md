@@ -1,8 +1,8 @@
 # Guides: building with agentic-flow
 
 > Reviewed on 2026-10-19 with Claude Code 2.1.302 and the official documentation at [code.claude.com/docs](https://code.claude.com/docs/en/overview).
-> Read this page first: it covers what every environment shares. Then follow the guide for yours.
-> For the diagrams (sequence, lifecycle, the hook's decision, permissions), see [How it works](../how-it-works.md).
+> Read this page first: it covers what every environment shares, then follow the guide for yours.
+> For what each piece does and why, see [What's inside](../../README.md#whats-inside) in the README. For the diagrams (sequence, lifecycle, the hook's decision, permissions), see [How it works](../how-it-works.md).
 
 ## Pick your environment
 
@@ -17,41 +17,7 @@
 | Onboarding | [onboarding.md](onboarding.md) | Bringing a repo into the flow, or an older flow up to date, with two real examples | **Tested** on copies of both example repos |
 | GitLab | [gitlab.md](gitlab.md) | The same, for repos hosted on GitLab, and the flow's tests in GitLab CI | Install and upgrade as in onboarding; the GitLab CI job and merge requests, not yet |
 | Plugin | [plugin.md](plugin.md) | Installing or updating the flow in an existing repo | **Tested** in a real session with `--plugin-dir`; from the marketplace, not yet |
-| Measurement bench | [Measurement bench](bench.md) | Comparing flow versions with real runs | Not run with a real `claude` yet |
-
-## The flow in one minute
-
-![The flow, end to end](../assets/flow.gif)
-
-| Piece | File | Model | Does | May not |
-|---|---|---|---|---|
-| Architect | `.claude/commands/architect.md` | latest Opus | Classifies, researches, interviews and writes `architecture.md` | Write code or tests |
-| Plan reviewer | `.claude/agents/plan-reviewer.md` | latest Opus | Critiques `architecture.md` in a clean context before you approve it | Write anything |
-| Launcher | `.claude/commands/implement.md` | latest Sonnet | Validates, launches the workflow, reports and holds the commit gate | Interpret the design or resolve blockers |
-| Test-author | `.claude/agents/test-author.md` | latest Sonnet | Writes the acceptance tests from the criteria, before the code | Implement |
-| Implementer | `.claude/agents/implementer.md` | latest Sonnet | Builds one work package with its unit tests | Touch other packages' files or the acceptance tests |
-| Reviewer | `.claude/agents/reviewer.md` | latest Sonnet | Reviews quality and security, reporting only what it can prove; reads the callers of every changed symbol outside the diff | Write anything |
-| Test-auditor | `.claude/agents/test-auditor.md` | latest Sonnet | Checks the acceptance tests would fail against an empty or trivial implementation | Write anything |
-| Verifier | `.claude/agents/verifier.md` | latest Sonnet | Tries to refute each serious finding | Write anything |
-| QA | `.claude/agents/qa.md` | latest Sonnet | Exploratory tests in `qa/`, beyond the criteria | Fix production code |
-| Doc-updater | `.claude/agents/doc-updater.md` | latest Sonnet | Updates README, CHANGELOG and guides once the code is accepted | Leave its `docs` zone, touch the code map or the decision archive |
-
-### Why this order
-
-- **Tests first, written by someone else.** The agent that writes the code does not write the exam. The test-author writes the acceptance tests before the code exists, checks that they fail, and the hook stops anyone else from touching them. An implementer cannot pass by weakening a test.
-- **The plan gets reviewed too.** Whoever writes a plan tends to believe it. A second Opus that never saw the conversation reads it the way the implementers will.
-- **Ceremony scaled to the change.** A trivial change skips the flow. A fix starts with a test that reproduces the bug. A refactor requires the suite to be green before and after.
-- **People decide what is right; the machine measures.** You have two gates: the design and the commit. Fix loops have a limit.
-
-Models are set by alias and cannot be changed: `validate` fails if any piece declares another one (the gatekeeper uses `haiku`, everything else `sonnet` or `opus`). Each alias points to the newest model your Claude Code knows, so keep Claude Code up to date.
-
-### Two ways to run
-
-- **Native workflow (default).** `/implement` launches the `agentic-implement` workflow (`.claude/workflows/`), a Claude Code script that runs the whole pipeline deterministically in the background: agents in parallel, schema-validated reports and adversarial review. Follow it with `/workflows`. On Pro, enable **Dynamic workflows** in `/config`; the template already sets `"enableWorkflows": true`.
-- **Fallback mode.** Without workflows, `/implement` runs `agentic.py run-pipeline`: the same pipeline, with the same schemas, prompts and limits, starting one `claude -p` process per agent. It needs the `claude` CLI on the `PATH`. It is also the engine for CI.
-
-`/implement` picks automatically. To force the fallback: `/implement fallback`. Both are diagrammed in [How it works § 6](../how-it-works.md#6-native-workflow-and-fallback-mode).
-
+| Measurement bench | [Measurement bench](bench.md) | Comparing flow versions with real runs | **Tested** with a real `claude` on five fixtures, three sessions each; the results are in `bench/RESULTS.md` |
 
 ## Requirements
 
@@ -68,33 +34,17 @@ Models are set by alias and cannot be changed: `validate` fails if any piece dec
 Check your setup:
 
 ```bash
-git --version && python3 --version
-```
-
-```bash
-claude --version
-```
-
-```bash
-claude doctor
-```
-
-```bash
-claude auth status
-```
-
-```bash
-python3 --version
+git --version && python3 --version && claude --version && claude doctor && claude auth status
 ```
 
 You should see a Claude Code version, `claude doctor` without errors, `"authMethod": "claude.ai"` with your `subscriptionType`, and Python 3.9 or later.
 
 ### Windows
 
-Since 1.1.1 the flow's own code runs on native Windows, and its whole test suite passes on Windows, macOS and Linux in CI. Nobody has run a full `/implement` on Windows yet: if you are the first, tell us what happened.
+Native Windows runs the flow's own code, and its test suite runs on Windows, macOS and Linux in CI. Nobody has run a full `/implement` on Windows yet: if you are the first, tell us what happened.
 
 1. **Git for Windows.** Claude Code runs hooks and its Bash tool in Git Bash when Git for Windows is installed. Without it, the flow's guardrail hook never runs, so do not use the flow there.
-2. **A `python3` command.** The hook and the agents still call `python3` (the next release removes this requirement). The python.org installer only creates `python` and `py`; the Microsoft Store Python creates `python3`. Check it in Git Bash: `python3 --version` must print 3.9 or later. If it prints `Python was not found` instead, that is Windows' Store shortcut: install Python from the Store, or turn the shortcut off in **Settings → Apps → Advanced app settings → App execution aliases** and use WSL.
+2. **A `python3` command.** The hook and the agents still call `python3`. The python.org installer only creates `python` and `py`; the Microsoft Store Python creates `python3`. Check it in Git Bash: `python3 --version` must print 3.9 or later. If it prints `Python was not found` instead, that is Windows' Store shortcut: install Python from the Store, or turn the shortcut off in **Settings → Apps → Advanced app settings → App execution aliases** and use WSL.
 3. **Or WSL 2.** Inside WSL everything works as on Linux.
 
 Line endings are not a problem: an upgrade recognises a flow file checked out with CRLF (`core.autocrlf=true`) as intact.
@@ -150,10 +100,22 @@ In a project without a design yet, the expected answer is `.../architecture.md d
    ```
 
 4. **Build:** `/implement`. It records the baseline, then runs wave 0 (acceptance tests), the waves, the phased verification (which separates regressions from pre-existing failures), review, QA, fixes and the documentation.
-5. **Read the report.** Defects of implementation are fixed automatically, at most twice per package; design defects come back to you, to take to `/architect`. Two more things come back to you without blocking: *needs validation* items (a fact the code cannot settle, with how to check it) and each agent's `not_checked` list.
+5. **Read the report.** `/implement` presents, in this order: the status, the test audit, each package with its status and checks, the verification, the review (confirmed and refuted findings), QA, the fixes, the documentation and what is pending.
+   - Implementation defects are fixed automatically, at most twice per package. Design defects come back to you, to take to `/architect`.
+   - Each package ends in `DONE`, `DONE_WITH_CONCERNS` (it works, with doubts the reviewer already weighed), `NEEDS_CONTEXT` or `BLOCKED`. The last two stop that package until you settle the cause.
+   - *Needs validation* items are facts the code cannot settle, with how to check them. They never block.
+   - Each agent's `not_checked` list says what it skipped or could not verify.
+   - `gate_denials` counts, per package, how many times the stop gate refused a report because its acceptance tests failed. Denials followed by a green report are a good sign; two denials deserve a look at that package's tests.
 6. **Commit and push.** Do it yourself or ask the main session. The flow's agents cannot: the hook blocks them.
 
 If a stage stops (a blocked package, a broken acceptance test), fix the cause and resume from that wave with `/implement <wave>`.
+
+### Two ways to run
+
+- **Native workflow (default).** `/implement` launches the `agentic-implement` workflow (`.claude/workflows/`), a Claude Code script that runs the whole pipeline deterministically in the background: agents in parallel, schema-validated reports and adversarial review. Follow it with `/workflows`. On Pro, enable **Dynamic workflows** in `/config`; the template already sets `"enableWorkflows": true`.
+- **Fallback mode.** Without workflows, `/implement` runs `agentic.py run-pipeline`: the same pipeline, with the same schemas, prompts and limits, starting one `claude -p` process per agent. It needs the `claude` CLI on the `PATH`. It is also the engine for CI.
+
+`/implement` picks automatically. To force the fallback: `/implement fallback`. Both are diagrammed in [How it works § 6](../how-it-works.md#6-native-workflow-and-fallback-mode).
 
 ## Good practice
 
@@ -186,7 +148,6 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 
 - **"Is it stuck?"** When an agent of the run is waiting for your permission or an answer, `agentic.py status` lists it first, under **Waiting for you**: which package it is, what it asks for and since when. Approve or answer the prompt in Claude Code and the line goes away.
 - **"Stop."** With the native workflow, from `/workflows`: select the run and press `x`; `p` pauses and resumes, and a stopped run can be relaunched, reusing what already finished. In the fallback mode, `agentic.py stop` kills the processes and the stage ends in `REVISAR` with `STOPPED`.
-- **Short reports.** Implementers and QA answer in under 300 words, result first. The full result of each workflow run is saved in `.claude/state/runs/workflow-result.json`.
 
 ## Configuration
 
@@ -216,6 +177,7 @@ python3 .claude/bin/agentic.py verify                  # phases against the base
 python3 .claude/bin/agentic.py stack                   # detected languages against the manifest's stack
 python3 .claude/bin/agentic.py rules-sync              # installs the stack's rules in .claude/rules/agentic/
 python3 .claude/bin/agentic.py codemap                 # deterministic code map in docs/CODEMAP.md
+python3 .claude/bin/agentic.py callers                 # who calls the symbols a change touched (what the reviewer reads)
 python3 .claude/bin/agentic.py docs-check              # links, anchors and paths in the documentation
 python3 .claude/bin/agentic.py install ../other-repo   # installs or updates the flow in another repo
 python3 .claude/bin/agentic.py briefs                  # writes each agent's slice of architecture.md in .claude/state/briefs/
@@ -244,8 +206,6 @@ python3 .claude/bin/agentic.py check-wave 1            # ownership check
 
 ## Troubleshooting
 
-The messages below are quoted as the flow prints them (the first words are enough to find them).
-
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | `does not support this model; version X or newer is required` | An old CLI for a new model | `claude update`. With npm: `npm install -g @anthropic-ai/claude-code@latest` (with nvm, use nvm's npm) |
@@ -269,34 +229,23 @@ The messages below are quoted as the flow prints them (the first words are enoug
 | A package returns `NEEDS_CONTEXT` twice | The brief and then the whole `architecture.md` did not settle a decision it needs | Add the decision to the plan with `/architect`, then resume |
 | Every wave has a single package | The architect chose real layers | Ask for "contracts first" |
 | `python3: command not found` or `Python was not found` (Windows) | There is no `python3` command, or it is the Store shortcut | See [Windows](#windows), or work inside WSL |
-| `No module named 'fcntl'` (Windows) | A flow older than 1.1.1 | Upgrade the flow (`/agentic-flow:init` or `agentic.py install`) |
+| `No module named 'fcntl'` (Windows) | A flow from before Windows support | Upgrade the flow (`/agentic-flow:init` or `agentic.py install`) |
 | `/implement` uses the fallback mode on Pro | Workflows are not enabled | Enable them in `/config` (Dynamic workflows) or with `"enableWorkflows": true` |
 | The workflow stops to ask permission for a command | Rules missing in `settings.local.json` | Run `agentic.py sync-permissions`, or choose "always allow" the first time |
 
 `validate` explains what is wrong and how to fix it:
-
 <p align="center"><img src="../assets/screens/validate.png" width="760" alt="Real output of agentic.py validate: two packages owning the same file, and a stack with no rules, listing the languages available."></p>
 
 ## Testing the flow itself
 
 ```bash
 python3 -m unittest discover -s .claude/bin -p "test_*.py"
-```
-
-```bash
 node .claude/bin/test_workflow.mjs
-```
-
-```bash
 python3 -m unittest discover -s bench -p "test_*.py"
-```
-
-```bash
 python3 -m unittest discover -s bench/acceptance
 ```
 
-324 Python tests, 39 workflow scenarios with simulated agents, 59 tests of the measurement bench and 62 QA tests, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
-
+The suites cover the guardrails and the commands, and the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. CI runs them on Linux, macOS and Windows. Change a prompt and break one of those rules, and a test fails.
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 
 ## Official references

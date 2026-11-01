@@ -1,6 +1,6 @@
 # Onboarding: bring a repo into the flow, or bring it up to date
 
-> Reviewed on 2026-10-27 with agentic-flow 1.1.0. Both examples are real repos: every output below comes from running the installer on a copy of them. Nothing was pushed to either repo.
+> Both examples are real repos: every output below comes from running the installer on a copy of them on 2026-10-27, with the flow version its first line shows. Nothing was pushed to either repo. A newer installer prints more; see the notes after each block.
 
 Two situations, one command:
 
@@ -31,7 +31,7 @@ python3 ~/agentic-flow/.claude/bin/agentic.py install ~/islet --dry-run   # what
 python3 ~/agentic-flow/.claude/bin/agentic.py install ~/islet
 ```
 
-The real output on islet:
+The real output on islet (run on 2026-10-27; the first line shows the flow version):
 
 ```
 agentic-flow unknown -> 1.1.0 -> ~/islet
@@ -45,6 +45,7 @@ RESULT: OK
 
 - **28 new files** under `.claude/`: the agents, `/architect` and `/implement`, the workflow, `agentic.py` and the rules library.
 - **`settings.json`** is created with the flow's permissions and guardrail hook. If you already had one, it is merged: nothing of yours is removed.
+- **A newer installer** also appends `StructuredOutput` to the hook's matcher and sets a longer hook timeout, so its `settings.json:` line lists the hook change for a repo that had an older hook. No output of that run is quoted here, because none was made.
 - **Rules:** the installer detected TypeScript (from `package.json` and `tsconfig.json`) and installed its rules next to the common ones.
 
 ### 3. Review and commit
@@ -108,7 +109,7 @@ python3 ~/agentic-flow/.claude/bin/agentic.py install . --dry-run
 python3 ~/agentic-flow/.claude/bin/agentic.py install .
 ```
 
-Or update the plugin (`claude plugin update agentic-flow@agentic-flow`), restart the session and run `/agentic-flow:init`. The real output:
+Or update the plugin (`claude plugin update agentic-flow@agentic-flow`), restart the session and run `/agentic-flow:init`. The real output (run on 2026-10-27, flow version in the first line):
 
 ```
 agentic-flow unknown -> 1.1.0 -> ~/finanzas-familiares
@@ -127,18 +128,18 @@ RESULT: OK
 ```
 
 What happened:
-- **`unknown -> 1.1.0`:** there was no install record. The installer still recognised every flow file as intact, because each matched a version the flow once published, so it **updated 16** without `--force` and **kept none**.
+- **`unknown ->` the version:** there was no install record. The installer still recognised every flow file as intact, because each matched a version the flow once published, so it **updated 16** without `--force` and **kept none**.
 - **10 new files:** the pieces added since that version (`brief.py`, `pipeline.py`, `upgrade.py`, the test-auditor, the spec) and the parts of the flow's test suite the repo lacked, so its CI keeps passing.
 - **Untouched:** the project's own command, `settings.json` (it already had everything), `architecture.md` and `docs/architecture/`.
-- **`validate: OK`:** the current plan still validates with the new version.
+- **`validate: OK`:** the current plan still validates with the new flow.
 
 If you had edited a flow file, it would be listed under `modified by you (left alone)`, with the new version in `.claude/state/upgrade/`. Compare them with `diff -ru .claude/state/upgrade/.claude .claude` and merge by hand.
 
 ### 3. Read the notes, run the tests, commit
 
 - **Notes.** The upgrade notes are what may affect you: here, no scripts called the removed commands. Older plans keep working; new ones get the briefs.
-- **Tests.** `python3 -m unittest discover -s .claude/bin -p "test_*.py"` runs the flow's own suite: 170 tests on this repo.
-- **Commit:** `git add -A && git commit -m "Update agentic-flow to 1.1.0"`, then open a pull request.
+- **Tests.** `python3 -m unittest discover -s .claude/bin -p "test_*.py"` runs the flow's own suite on this repo.
+- **Commit:** `git add -A && git commit -m "Update agentic-flow"`, then open a pull request.
 
 ## When something goes wrong
 
@@ -146,8 +147,8 @@ If you had edited a flow file, it would be listed under `modified by you (left a
 |---|---|
 | `install: nothing was written` (exit 3) | A flow file has uncommitted changes, or a run is in progress. Commit or stash (or `--allow-dirty`), or `python3 .claude/bin/agentic.py stop` |
 | `not a git repository` | The flow needs git: `git init` and commit first |
-| Files under `modified by you` that you never touched | A formatter changed them (line endings no longer count since 1.1.1). Compare with `.claude/state/upgrade/` and use `--force` if nothing is yours |
+| Files under `modified by you` that you never touched | A formatter changed them (line endings do not count in a current flow). Compare with `.claude/state/upgrade/` and use `--force` if nothing is yours |
 | `validate: FAILED: …` after upgrading | The current plan predates a rule of the new version. Ask `/architect` to revise it |
-| The flow's tests fail on your own commands or agents | Fixed in 1.1.0: the flow's tests accept a project's extra commands and agents |
+| The flow's tests fail on your own commands or agents | An old flow: update it, and the flow's tests accept a project's extra commands and agents |
 
 More on updates: [plugin.md › Update](plugin.md#update).

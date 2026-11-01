@@ -1,7 +1,7 @@
 # Guide: the measurement bench
 
 **Goal:** know whether a change to the flow's agents or prompts makes real runs better or worse.
-**Status:** not run with a real `claude` yet. Its own tests use a simulated one.
+**Status:** tested with a real `claude` on the five fixtures, three sessions each, on every flow version measured so far; the results are in [bench/RESULTS.md](../../bench/RESULTS.md). Its own tests use a simulated `claude`.
 
 ## What it measures
 
@@ -59,7 +59,7 @@ A fixture is sound when its oracle has tests, passes none of them on the bare re
 2. Open the `agentic-bench` workflow in the Actions tab and choose **Run workflow**, with the number of repeats.
 3. Download the `bench-results` artifact when it ends.
 
-**Cost warning:** this bills the API. A rough guess is a few dollars per run, so two fixtures with three repeats may cost 10-30 $. The workflow is manual on purpose: it never runs on its own, on pull requests or on a schedule. The flow's CI only runs the bench's own tests, with a simulated `claude`.
+**Cost warning:** this bills the API. Each run bills real agent sessions, so start with one fixture and one repeat; the Cost column of `bench/RESULTS.md` shows what past runs cost. The workflow is manual on purpose: it never runs on its own, on pull requests or on a schedule. The flow's CI only runs the bench's own tests, with a simulated `claude`.
 
 ## Read `RESULTS.md`
 

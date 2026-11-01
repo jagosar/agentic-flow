@@ -22,7 +22,7 @@ The token is tied to **your** subscription: every run counts against your usage 
 
 ## The workflow
 
-Create `.github/workflows/agentic-qa.yml`:
+Create the file `agentic-qa.yml` in `.github/workflows/`:
 
 ```yaml
 name: agentic-qa

@@ -44,20 +44,24 @@ Type `/`: `/architect` and `/implement` should appear.
 - Keep talking to the session while it runs; the app tells you when it finishes.
 - For the raw logs, open the integrated terminal (**Ctrl+\`**) and run `python3 .claude/bin/agentic.py status`.
 
-You get a report like the one in the [terminal guide](terminal.md#3-build): each package's status, the verification phases, review and QA, the fix cycles, the documentation and the proposed commits, waiting for your approval.
+You get the same report as in the [terminal guide](terminal.md#3-build):
+
+- The report lists each package with one of four statuses: `DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT` or `BLOCKED`.
+- It also lists the stop gate denials (`gate_denials`), the review and QA results, and the pending items: design questions, needs validation, concerns and fix limits. Each package can also report what it did not check (`not_checked`).
+- Nothing is committed until you approve the proposed commits. The steps are in [the working cycle](README.md#the-working-cycle).
 
 ## 4. Review and deliver
 
 - Click the `+N -M` indicator to open the **diff view**. You can comment on specific lines and Claude will address them.
 - The QA report is in the `/implement` summary and, in full, in `.claude/state/runs/workflow-result.json`.
 - For the commit, the push and the pull request, ask the session or use the app's buttons. The flow's agents cannot commit or push; the main session only does it when you ask.
+- If a package ends `BLOCKED`, or `NEEDS_CONTEXT` a second time, the stage stops. Fix the cause (usually a gap in `architecture.md`, revisited with `/architect`) and resume from that wave with `/implement <wave>`, for example `/implement 2`.
 
-## Tips
+Tips:
 
 - **Several features at once:** open one session per feature from the sidebar, each in its own worktree.
 - **From your phone:** turn on **Remote Control** to answer the architect's interview from your phone; the work keeps running on your machine.
 - **Long jobs:** choose **Cloud** when creating the session so it keeps going if you close the app. See [web-ios.md](web-ios.md).
-- **Check progress without waiting:** ask "how is it going?" and the launcher answers from the ledger.
 
 ## Troubleshooting
 
@@ -66,6 +70,8 @@ You get a report like the one in the [terminal guide](terminal.md#3-build): each
 | `/implement` uses the fallback mode | Enable **Dynamic workflows** in `/config` and launch again |
 | The app asks permission for `agentic.py` every time | Open `claude` once in the folder from a terminal and accept the trust prompt |
 | `/architect` and the rest do not appear | Check that `.claude/commands/` is in the folder you selected |
+
+For anything else, see the [common table](README.md#troubleshooting).
 
 ## References
 
