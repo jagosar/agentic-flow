@@ -12,6 +12,8 @@ on:
     paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml", "bench/**", ".github/workflows/agentic-bench.yml"]
   pull_request:
     paths: [".claude/**", ".claude-plugin/**", "plugin/**", "docs/**", "*.md", ".github/workflows/agentic-flow-ci.yml", "bench/**", ".github/workflows/agentic-bench.yml"]
+  # The full matrix on demand, for a pull request that touches platform code (Actions tab, "Run workflow").
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,12 +30,11 @@ jobs:
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 45 || 15 }}
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        python: ["3.9", "3.12", "3.14"]
-        include:
-          - {os: windows-latest, python: "3.12"}
-          - {os: macos-latest, python: "3.12"}
+      # A pull request runs the oldest and the newest Python on Linux. The full matrix (Python 3.9, 3.12 and 3.14 on
+      # Linux, plus Windows and macOS) runs when the change reaches main and on demand. On a private repository, a
+      # Windows minute counts double and a macOS minute ten times: the full matrix on every push of every pull request
+      # used about 1,860 billed minutes of the 2,000 included in one day.
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"os":["ubuntu-latest"],"python":["3.9","3.14"]}' || '{"os":["ubuntu-latest"],"python":["3.9","3.12","3.14"],"include":[{"os":"windows-latest","python":"3.12"},{"os":"macos-latest","python":"3.12"}]}') }}
     defaults:
       run:
         shell: bash  # Git Bash on Windows, as Claude Code uses there
