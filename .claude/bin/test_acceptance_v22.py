@@ -102,7 +102,7 @@ class CallersTests(unittest.TestCase):
         capped.write("src/a.py", "def f():\n    return 1\n\n\ndef g():\n    pass\n")
         out = callers_of(capped)
         self.assertEqual(sum(1 for c in out["callers"] if c["symbol"] == "f"), 10)
-        self.assertEqual(sum(1 for c in out["callers"] if c["symbol"] == "g"), 70)
+        self.assertEqual(sum(1 for c in out["callers"] if c["symbol"] == "g"), 10)
         self.assertIs(out["truncated"], True)
 
         bare = Path(tempfile.mkdtemp(prefix="agentic-norepo-"))

@@ -121,7 +121,7 @@ The JS builds the same text with `JSON.stringify`; the Python uses `compact`. `r
 - AC-002 · New files count as changed, caps truncate, and no repo is no failure
   - Scenario: the same repo with an untracked `src/new.py` defining `class Thing:` used once in `src/ledger.py`; a second repo where a committed `src/a.py` defines `def f():` and `def g():`, a tracked `src/b.py` calls `f()` on 12 lines, and a tracked `src/c.py` calls `g()` on 75 lines, then `src/a.py` is modified; a third directory with files but no git repo (run with `GIT_CEILING_DIRECTORIES` set to its parent, so a repo above the temp dir cannot be found).
   - Action: the `callers` command in each.
-  - Expected: first: `src/new.py` in `changed`, `Thing` in `symbols`, its caller listed; second: exactly 10 callers for `f`, 70 for `g` (the total cap of 80), `truncated == true`; third: exit 0 with `changed == []`, `callers == []`.
+  - Expected: first: `src/new.py` in `changed`, `Thing` in `symbols`, its caller listed; second: exactly 10 callers for `f` and 10 for `g` (the per-symbol cap; the total cap of 80 is exercised by a unit test with nine symbols of ten callers each), `truncated == true`; third: exit 0 with `changed == []`, `callers == []`.
   - Must not: exit non-zero in any of the three; list `.claude/state/` files.
   - Check: `test_acceptance_v22.py::CallersTests::test_ac_002_new_files_caps_and_no_repo`
   - WP: WP-01
