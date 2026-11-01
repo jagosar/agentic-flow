@@ -113,7 +113,7 @@ To fix defects by hand, read what the reviewer and QA found:
 python3 -c "import json; [print(r, json.load(open(f'.claude/state/runs/{r}.json'))['result'][:2000]) for r in ('REVIEW', 'QA')]"
 ```
 
-Relaunch the affected package in fix mode, then verify again:
+Relaunch the affected package in fix mode, then verify again. `--fix` reads the newest review and QA, whether they came from `/implement`, `run-pipeline` or `run-review`; add `--all` for medium and low defects:
 
 ```bash
 python3 .claude/bin/agentic.py run-wave 1 WP-01 --fix
