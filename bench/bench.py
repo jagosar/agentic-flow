@@ -1,8 +1,10 @@
 """A measurement bench for the flow: runs the real pipeline on fixture repos and records what it cost and how good it was.
 
 `run` copies each fixture into a temp project, installs the flow, runs `agentic.py run-pipeline`, reads its result file
-and counts how many of the fixture's hidden oracle tests the produced code passes. `report` turns the results files into
-bench/RESULTS.md. Callers: a person at the command line and the manual bench workflow; the bench's tests use the
+and counts how many of the fixture's hidden oracle tests the produced code passes. `selftest` proves each fixture's
+instruments before any spend (the oracle is red on the bare repo, green on reference/good, red on reference/bad); `run`
+does it too. `report` turns the results files into bench/RESULTS.md. Every agent session runs without the user's
+settings, CLAUDE.md files or auto memory, so two people measure the same flow. Callers: a person at the command line and the manual bench workflow; the bench's tests use the
 simulated `claude` of .claude/bin/testutil.py.
 """
 from __future__ import annotations
@@ -11,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import stat
@@ -41,6 +44,12 @@ REMOVE_ATTEMPTS = 3  # a process that just ended can hold a handle for a moment 
 REMOVE_PAUSE_S = 1
 ROUND_DIGITS = 3
 UNKNOWN = "?"
+# The bench measures the flow, not one person's setup: no user settings, no CLAUDE.md (the user's or a parent
+# directory's), no auto memory. The flags go through AGENTIC_CLAUDE, which every flow version reads.
+ISOLATION_FLAGS = ["--setting-sources", "project,local"]
+ISOLATION_ENV = {"CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+REFERENCE_DIRS = ("good", "bad")  # reference/good passes the whole oracle, reference/bad fails part of it
+FIXTURE_PARTS = ("fixture.json", "repo", "oracle", "reference/good", "reference/bad")
 GIT_IDENTITY = ["-c", "user.name=bench", "-c", "user.email=bench@localhost", "-c", "commit.gpgsign=false"]
 USAGE_KEYS = ("input", "cache_read", "output", "turns")
 OWN_OUTPUT = (":(exclude)bench/results", ":(exclude)bench/RESULTS.md")  # written by every run: never "dirty"
@@ -174,8 +183,12 @@ def remove_tree(path: Path) -> None:
 # ---------------------------------------------------------------- one run
 
 def _child_env(base: dict, project: Path) -> dict:
+    """The environment of every child: the project as CLAUDE_PROJECT_DIR, no AGENTIC_WP, and the agents isolated
+    from the user's context."""
     env = {k: v for k, v in base.items() if k != "AGENTIC_WP"}
     env["CLAUDE_PROJECT_DIR"] = str(project)
+    env.update(ISOLATION_ENV)
+    env["AGENTIC_CLAUDE"] = shlex.join(shlex.split(base.get("AGENTIC_CLAUDE") or "claude") + ISOLATION_FLAGS)
     return env
 
 
@@ -291,6 +304,36 @@ def _run_oracle(fixture: Path, project: Path) -> dict:
     return {"passed": passed, "total": total}
 
 
+# ---------------------------------------------------------------- instruments
+
+def _oracle_on(fixture: Path, overlay: str | None) -> tuple[int, int]:
+    """The oracle's (passed, total) over the fixture's repo, with reference/<overlay> copied on top when given."""
+    project = Path(tempfile.mkdtemp(prefix="bench-selftest-"))
+    try:
+        shutil.copytree(fixture / "repo", project, dirs_exist_ok=True)
+        if overlay:
+            shutil.copytree(fixture / "reference" / overlay, project, dirs_exist_ok=True)
+        counts = _run_oracle(fixture, project)
+    finally:
+        remove_tree(project)
+    return counts["passed"], counts["total"]
+
+
+def selftest(fixture: Path) -> list[str]:
+    """Problems with the fixture's instruments, [] when they are sound: the oracle has tests, passes none on the bare
+    repo, all of them on reference/good and not all of them on reference/bad."""
+    fixture = Path(fixture)
+    problems = []
+    for name, overlay, sound in (("bare", None, lambda p, n: p == 0), ("good", "good", lambda p, n: p == n),
+                                 ("bad", "bad", lambda p, n: p < n)):
+        passed, total = _oracle_on(fixture, overlay)
+        if total == 0:
+            return [f"{fixture.name}: the oracle ran no tests"]
+        if not sound(passed, total):
+            problems.append(f"{fixture.name}: {name} repo passes {passed}/{total} oracle tests")
+    return problems
+
+
 def _run_once(fixture: Path, index: int, source: Path, auth: str, timeout_s: float, base_env: dict) -> dict:
     project = Path(tempfile.mkdtemp(prefix="bench-run-"))
     started = time.monotonic()
@@ -389,7 +432,7 @@ def _validate(fixtures: list[Path], source: Path, repeat: int, auth: str, timeou
     if not (source / ".claude" / "bin" / "agentic.py").is_file():
         raise BenchError(f"{source} has no .claude/bin/agentic.py")
     for fixture in fixtures:
-        missing = [p for p in ("fixture.json", "repo", "oracle") if not (fixture / p).exists()]
+        missing = [p for p in FIXTURE_PARTS if not (fixture / p).exists()]
         if missing:
             raise BenchError(f"fixture {fixture.name} lacks {', '.join(missing)}")
 
@@ -397,10 +440,14 @@ def _validate(fixtures: list[Path], source: Path, repeat: int, auth: str, timeou
 def run(fixtures: list[Path], source: Path, repeat: int, out_dir: Path, auth: str = "subscription",
         timeout_s: float = 3600, env: dict | None = None) -> Path:
     """Runs each fixture `repeat` times and writes one results file in out_dir (rewritten after each run);
-    returns its path. A run that fails or times out is recorded, never raised."""
+    returns its path. A run that fails or times out is recorded, never raised. Raises BenchError, before any
+    spend, for bad input or a fixture whose instruments fail selftest."""
     fixtures = [Path(f) for f in fixtures]
     source, out_dir = Path(source), Path(out_dir)
     _validate(fixtures, source, repeat, auth, timeout_s)
+    problems = [problem for fixture in fixtures for problem in selftest(fixture)]
+    if problems:
+        raise BenchError("instruments broken, nothing run: " + "; ".join(problems))
     base_env = dict(env if env is not None else os.environ)
     started = datetime.now().replace(microsecond=0)
     commit = _git_output(["rev-parse", "--short", "HEAD"], source)
@@ -495,6 +542,9 @@ def _build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--source", type=Path, default=HERE.parent)
     report_p = sub.add_parser("report", help="regenerate RESULTS.md")
     report_p.add_argument("--out", type=Path, default=HERE / "results")
+    self_p = sub.add_parser("selftest", help="check every fixture's oracle and references, no claude involved")
+    self_p.add_argument("--fixture", action="append", default=[])
+    self_p.add_argument("--source", type=Path, default=HERE.parent)
     return parser
 
 
@@ -514,18 +564,37 @@ def _print_runs(path: Path) -> None:
     print(path)
 
 
+def _fixtures(names: list[str]) -> list[Path]:
+    if names:
+        return [_resolve_fixture(n) for n in names]
+    root = HERE / "fixtures"
+    return sorted(p for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
+
+
+def _selftest_all(fixtures: list[Path]) -> int:
+    """One line per fixture; 1 if any instrument is broken."""
+    if not fixtures:
+        raise BenchError("no fixtures to check")
+    broken = 0
+    for fixture in fixtures:
+        missing = [p for p in FIXTURE_PARTS if not (fixture / p).exists()]
+        problems = [f"{fixture.name} lacks {', '.join(missing)}"] if missing else selftest(fixture)
+        print(f"{fixture.name}: {'ok' if not problems else 'BROKEN: ' + '; '.join(problems)}")
+        broken += bool(problems)
+    return 1 if broken else 0
+
+
 def main(argv: list[str]) -> int:
-    """`run` and `report` subcommands; BenchError or a bad argument: one message on stderr, returns 1."""
+    """`run`, `report` and `selftest` subcommands; BenchError or a bad argument: one message on stderr, returns 1.
+    `selftest` returns 1 when an instrument is broken."""
     try:
         args = _build_parser().parse_args(argv)
         if args.command == "report":
             report(args.out, args.out.parent / "RESULTS.md")
             return 0
-        if args.fixture:
-            fixtures = [_resolve_fixture(n) for n in args.fixture]
-        else:
-            root = HERE / "fixtures"
-            fixtures = sorted(p for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
+        fixtures = _fixtures(args.fixture)
+        if args.command == "selftest":
+            return _selftest_all(fixtures)
         path = run(fixtures, args.source, args.repeat, args.out, args.auth, args.timeout_min * 60)
         _print_runs(path)
         report(args.out, args.out.parent / "RESULTS.md")

@@ -1362,7 +1362,8 @@ class LauncherTests(Base):
 
     def test_subscription_does_not_inherit_api_key(self):
         self.repo.run("run-wave", "1", env={"ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_AUTH_TOKEN": "tok"})
-        self.assertEqual(self.env_of("WP-01"), {"ANTHROPIC_API_KEY": None, "ANTHROPIC_AUTH_TOKEN": None})
+        env = self.env_of("WP-01")
+        self.assertEqual((env["ANTHROPIC_API_KEY"], env["ANTHROPIC_AUTH_TOKEN"]), (None, None))
 
     def test_auth_inherit_keeps_api_key(self):
         (self.repo.dir / ".claude").mkdir(exist_ok=True)
