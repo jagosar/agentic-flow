@@ -17,7 +17,7 @@
 | Onboarding | [onboarding.md](onboarding.md) | Bringing a repo into the flow, or an older flow up to date, with two real examples | **Tested** on copies of both example repos |
 | GitLab | [gitlab.md](gitlab.md) | The same, for repos hosted on GitLab, and the flow's tests in GitLab CI | Install and upgrade as in onboarding; the GitLab CI job and merge requests, not yet |
 | Plugin | [plugin.md](plugin.md) | Installing or updating the flow in an existing repo | **Tested** in a real session with `--plugin-dir`; from the marketplace, not yet |
-| Measurement bench | [Measurement bench](bench.md) | Comparing flow versions with real runs | **Run** with a real `claude` on five fixtures; the results are in [bench/RESULTS.md](../../bench/RESULTS.md) |
+| Measurement bench | [Measurement bench](bench.md) | Comparing flow versions with real runs | **Tested** with a real `claude` on five fixtures, three sessions each; the results are in `bench/RESULTS.md` |
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # Guide: the measurement bench
 
 **Goal:** know whether a change to the flow's agents or prompts makes real runs better or worse.
-**Status:** run with a real `claude` on the five fixtures, three sessions each, for every flow version since 1.1.4; the results are in [bench/RESULTS.md](../../bench/RESULTS.md). Its own tests use a simulated `claude`.
+**Status:** tested with a real `claude` on the five fixtures, three sessions each, on every flow version measured so far; the results are in [bench/RESULTS.md](../../bench/RESULTS.md). Its own tests use a simulated `claude`.
 
 ## What it measures
 
