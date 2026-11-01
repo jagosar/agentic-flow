@@ -192,7 +192,7 @@ python3 .claude/bin/agentic.py run-acceptance          # wave 0: the test-author
 python3 .claude/bin/agentic.py acceptance --expect red # they must fail before the code
 python3 .claude/bin/agentic.py run-wave 1              # wave 1 in parallel
 python3 .claude/bin/agentic.py run-wave 1 WP-02        # a single package
-python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # fix its defects from review or QA
+python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # fix its defects from the newest review or QA (--all: medium and low too)
 python3 .claude/bin/agentic.py acceptance --expect green  # they must pass afterwards
 python3 .claude/bin/agentic.py run-review              # code reviewer (read-only)
 python3 .claude/bin/agentic.py run-qa                  # QA agent

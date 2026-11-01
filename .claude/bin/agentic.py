@@ -5,9 +5,10 @@ Subcommands:
   validate            Validates the manifest in architecture.md.
   snapshot L          Saves the state of the files before stage L (a wave number, or "qa").
   check-wave L        Checks that stage L only touched files its owners may write.
-  run-wave N [WP...] [--fix]
+  run-wave N [WP...] [--fix [--all]]
                       Launches one `claude -p --agent implementer` per WP of wave N in parallel (or only
-                      the WPs given). With --fix, asks them to fix their defects from the last review or QA report.
+                      the WPs given). With --fix, asks them to fix their defects from the newest review or QA report
+                      (the run record, run-pipeline's files or the one-off reports); --all adds medium and low ones.
   pipeline-plan       JSON with waves, WPs, acceptance, type, verify phases and the fix limit (workflow).
   open-stage L        Snapshot of stage L (a wave, acceptance, review, qa, docs) and its owners, as JSON.
   close-stage L ID=estado... [--expect red|green] [--fix]
@@ -809,17 +810,85 @@ def render_prompt(manifest, name, ident=None, **values):
     return pipeline_module().render(load_spec()["prompts"][name], wp=ident, brief=brief, rules=rules_hint(manifest), **values)
 
 
-def fix_defects(spec, wp_id):
-    """The blocking defects review and QA attribute to a WP, tagged with who found them."""
+REPORT_FILE_RE = re.compile(r"^(REVIEW|QA)-(\d+)\.json$")
+REPORT_KEYS = {"REVIEW": "findings", "QA": "defects"}
+# Ties in modification time: the one-off report, then run-pipeline's per-agent file, then the run record.
+SOURCE_RANK = {"one-off": 2, "per-agent": 1, "record": 0}
+
+
+def _report_items(report, kind, shared):
+    """The items of a review or QA report. In run-pipeline's per-agent files (shared: the test-auditor and the
+    verifier also write REVIEW-<n>) only a report with the reviewer's or QA's shape counts: their schemas require
+    needs_validation, the others' do not. REVIEW.json and QA.json are only written by run-review and run-qa."""
+    if not isinstance(report, dict) or (shared and "needs_validation" not in report):
+        return None
+    items = report.get(REPORT_KEYS[kind])
+    return items if isinstance(items, list) else None
+
+
+def _record_items(record, kind, include_all):
+    """The items of the run record for one kind, or None when that part is missing (a run that stopped early)."""
+    part = record.get("review" if kind == "REVIEW" else "qa") if isinstance(record, dict) else None
+    if not isinstance(part, dict):
+        return None
+    if kind == "QA":
+        items = part.get("defects")
+        return items if isinstance(items, list) else None
+    # The verifier's refuted findings are in "refuted" and are never read.
+    items = list(part.get("confirmed") or [])
+    return items + list(part.get("advisory") or []) if include_all else items
+
+
+def latest_reports(include_all=False):
+    """{"REVIEW": (items, origin), "QA": (items, origin)}: for each kind, the newest source by modification time among
+    the run record (workflow-result.json), run-pipeline's per-agent files (REVIEW-<n>.json, QA-<n>.json) and the
+    one-off reports (REVIEW.json, QA.json). A kind with no source is absent; an unreadable file is skipped."""
+    runs = STATE / "runs"
+    candidates = {"REVIEW": [], "QA": []}
+
+    def stamp(path):
+        try:
+            return path.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    record_path = runs / "workflow-result.json"
+    if record_path.is_file() and stamp(record_path) is not None:
+        try:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            record = None
+        for kind in candidates:
+            items = _record_items(record, kind, include_all)
+            if items is not None:
+                candidates[kind].append((stamp(record_path), SOURCE_RANK["record"], items, record_path.name))
+    for path in sorted(runs.glob("*.json")) if runs.is_dir() else []:
+        m = REPORT_FILE_RE.match(path.name)
+        kind = m.group(1) if m else path.stem if path.stem in candidates else None
+        if kind is None:
+            continue
+        items = _report_items(structured_report(path, {}), kind, shared=bool(m))
+        when = stamp(path)
+        if items is not None and when is not None:
+            candidates[kind].append((when, SOURCE_RANK["per-agent" if m else "one-off"], items, path.name))
+    return {kind: (best[2], best[3]) for kind, found in candidates.items() if found
+            for best in [max(found, key=lambda c: (c[0], c[1]))]}
+
+
+def fix_defects(spec, wp_id, include_all=False, reports=None):
+    """The implementation defects review and QA attribute to a WP, tagged with who found them. Blocking severities
+    only, unless include_all."""
     blocking, found = spec["constants"]["blocking"], []
-    for name, key, tag in (("REVIEW", "findings", "reviewer"), ("QA", "defects", "qa")):
-        report = structured_report(STATE / "runs" / f"{name}.json", {}) or {}
-        found += [{"source": tag, **d} for d in report.get(key, [])
-                  if d.get("wp") == wp_id and d.get("severity") in blocking and d.get("kind", "implementation") == "implementation"]
+    reports = latest_reports(include_all) if reports is None else reports
+    for kind, tag in (("REVIEW", "reviewer"), ("QA", "qa")):
+        items = reports.get(kind, ([], None))[0]
+        found += [{"source": tag, **d} for d in items
+                  if isinstance(d, dict) and d.get("wp") == wp_id and (include_all or d.get("severity") in blocking)
+                  and d.get("kind", "implementation") == "implementation"]
     return found
 
 
-def run_wave(manifest, wave, only=None, fix=False):
+def run_wave(manifest, wave, only=None, fix=False, include_all=False):
     cfg, spec = load_config(), load_spec()
     wave_wps = sorted(stage_owners(manifest, wave), key=lambda w: w["id"])
     if only:
@@ -829,12 +898,15 @@ def run_wave(manifest, wave, only=None, fix=False):
         wave_wps = [wp for wp in wave_wps if wp["id"] in only]
     if not wave_wps:
         die(f"There are no WPs in wave {wave}.")
-    if fix and not any((STATE / "runs" / f"{r}.json").exists() for r in ("QA", "REVIEW")):
-        die("--fix needs a review or QA report (.claude/state/runs/REVIEW.json or QA.json). "
-            "Run run-review or run-qa first.")
-    defects = {wp["id"]: fix_defects(spec, wp["id"]) for wp in wave_wps} if fix else {}
+    reports = latest_reports(include_all) if fix else {}
+    if fix and not reports:
+        die("--fix needs a review or QA report: .claude/state/runs/workflow-result.json, REVIEW-<n>.json / QA-<n>.json "
+            "or REVIEW.json / QA.json. Run run-pipeline, run-review or run-qa first.")
+    defects = {wp["id"]: fix_defects(spec, wp["id"], include_all, reports) for wp in wave_wps} if fix else {}
+    origins = ", ".join(sorted({origin for _, origin in reports.values()}))
     for wp_id in [w for w, d in defects.items() if not d]:
-        die(f"{wp_id}: no blocking defect from review or QA is attributed to it.")
+        die(f"{wp_id}: no {'' if include_all else 'blocking '}defect from review or QA is attributed to it. "
+            f"Read from {origins}.")
     if fix:
         cap = int(cfg.get("max_fix_cycles", 2))
         ledger = ledger_read()
@@ -2344,7 +2416,10 @@ def main():
             sys.exit(0 if check_stage(require_valid(), label) else 3)
         else:
             rest = args[1:]
-            run_wave(require_valid(), int(label), only=[a for a in rest if a != "--fix"], fix="--fix" in rest)
+            if "--all" in rest and "--fix" not in rest:
+                die("Uso: run-wave N [WP...] [--fix [--all]]")
+            run_wave(require_valid(), int(label), only=[a for a in rest if a not in ("--fix", "--all")],
+                     fix="--fix" in rest, include_all="--all" in rest)
     else:
         die(__doc__)
 

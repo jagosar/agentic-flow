@@ -179,7 +179,7 @@ const unchangedClaims = (report, out, id) => {
     ? report.files.filter(f => !seen.some(s => f === s || f.endsWith('/' + s)))
     : []
 }
-const run = { result: 'REVIEW', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, test_audit: null, docs: null, fix_cycles: 0, pending: [], not_checked: [], gate_denials: {} }
+const run = { result: 'REVIEW', stages: [], baseline: null, work_packages: {}, verification: null, review: null, qa: null, test_audit: null, docs: null, fix_cycles: 0, pending: [], not_checked: [], gate_denials: {}, verification_failures: [] }
 // Every report says what it did not check; the run keeps them per call, fix calls and revisions included.
 const report = async (prompt, opts) => {
   const r = await safe(agent(prompt, opts), opts.label)
@@ -461,6 +461,12 @@ while (true) {
   if (!v) return stop('verification', LOST)
   run.verification = lastJson(v.output)
   if (!ok(v)) {
+    // Each failed verification stays in the result: the run's last verification overwrites the earlier ones.
+    const V = run.verification && typeof run.verification === 'object' ? run.verification : {}
+    run.verification_failures.push({
+      fix_cycle: run.fix_cycles, blocking: V.blocking || [], suspects: V.suspects || {},
+      failing: (V.phases || []).filter(p => p.status === 'regression' || p.status === 'fails').map(p => ({ name: p.name, status: p.status, tail: p.tail || [] })),
+    })
     // A phase fails: if what it mentions belongs to packages, they get the failure as a defect and go through a fix
     // cycle; if it belongs to nobody (a pre-existing, environmental or cross-cutting failure), a person decides.
     const defects = verificationDefects(run.verification)

@@ -65,6 +65,16 @@ A fixture is sound when its oracle has tests, passes none of them on the bare re
 
 One row per results file and fixture, newest first. Columns: Version, Commit (`-dirty` if the source had uncommitted changes), Date, Fixture, Runs, OK (`ok/runs`), Oracle (median and range of the share of oracle tests passed), Mutation (`agents / oracle`: the median share of mutants killed by the agents' tests, then by the oracle, two decimals, for example `0.72 / 0.90`), Fix cycles, Cost $, Output tokens and Minutes (medians). A `?` means no run had that value. Compare rows of the same fixture across versions, and treat a small difference as noise.
 
+## Compare two versions (A/B)
+
+Two versions measured on different days meet different API speeds and usage limits. `ab` runs both in one go, fixture by fixture and session by session, alternating which goes first:
+
+```bash
+python3 bench/bench.py ab --a agentic-flow--v2.1.0 --b . --fixture tally --repeat 3
+```
+
+Each arm is a flow directory or a git ref of the repo (`--repo` to name another one); a ref is checked out in a temporary worktree that is removed at the end. The result is an `ab-*.json` file next to the other results, with each arm's sessions in its own folder, and an `ab-*.md` with two tables: per fixture, median(B) / median(A) for cost, minutes and output tokens, and B minus A for the mutation score, the oracle and the fix cycles; overall, the geometric mean of the ratios, a bootstrap interval (seeded with `--seed`) and a sign test over the fixtures. Only sessions that ended OK or REVIEW count. With three sessions per arm and five fixtures the sign test cannot go below p = 0.0625: read "no detectable difference" as that, not as "the same". `report` ignores A/B files, so `RESULTS.md` keeps one version per row.
+
 ## Add a fixture
 
 Create `bench/fixtures/<name>/`:

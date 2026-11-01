@@ -47,6 +47,15 @@ NOTES = {
         "The agents run-pipeline starts list StructuredOutput in their tools: without it, claude -p --agent returns "
         "no structured report and every fallback run stopped at wave 0 with NO REPORT.",
     ],
+    "2.3.0": [
+        "run-wave --fix reads the newest review and QA wherever they were saved: the run record "
+        "(.claude/state/runs/workflow-result.json, which the native workflow and run-pipeline both write), "
+        "run-pipeline's REVIEW-<n>.json / QA-<n>.json, or the one-off REVIEW.json / QA.json; it never reads a "
+        "finding the verifier refuted. --fix --all adds medium and low implementation defects; the fix-cycle cap "
+        "is the same.",
+        "The run result gains verification_failures: every failed verification (its blocking phases, suspects and "
+        "failing lines), so a fix cycle that verification triggered keeps its reason. /implement presents them.",
+    ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
         "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "

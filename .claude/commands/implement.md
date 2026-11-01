@@ -64,6 +64,7 @@ Then present it like this:
   - **Fix limit reached (per WP), or no WP:** the user decides.
 - **Not checked (`not_checked`):** per agent, what it did not check or skipped, plus QA's `gaps` and the doc-updater's `unverified`.
 - **Gate denials (`gate_denials`):** per WP, how many times the stop gate refused a finished report because its acceptance tests failed. A package with denials and no later fix cycle is a good sign; one at the cap of two deserves a look at its tests.
+- **Failed verifications (`verification_failures`):** each one's blocking phases and suspects, when a verification sent packages to a fix cycle.
 
 If `result` is `OK`, propose the commit messages (one per logical block, in the format of section 7) and **wait for the user's approval**. Do not commit or push without it.
 
@@ -79,7 +80,7 @@ Launch it with Bash **in the background** (`run_in_background: true`), end the t
 
 In this mode `agentic.py status` also shows the tokens and cost of every agent (`.claude/state/usage.jsonl`). The agents read their briefs (`.claude/state/briefs/`, written by `agentic.py briefs`), not the whole `architecture.md`.
 
-The one-off commands (`run-acceptance`, `run-wave N [WP...] [--fix]`, `run-review`, `run-qa`, `run-docs`, `verify`, `acceptance --expect red|green`) are still there for working by hand, stage by stage.
+The one-off commands (`run-acceptance`, `run-wave N [WP...] [--fix [--all]]`, `run-review`, `run-qa`, `run-docs`, `verify`, `acceptance --expect red|green`) are still there for working by hand, stage by stage.
 
 # Rules
 

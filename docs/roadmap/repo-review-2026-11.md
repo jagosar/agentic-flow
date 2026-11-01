@@ -25,11 +25,11 @@ Without this, every prompt or agent change is decided by reasoning.
 
 | # | Improvement | From | Cost |
 |---|---|---|---|
-| 1.1 | **Isolate the bench.** Every `claude -p` the bench starts loads the user's `~/.claude/CLAUDE.md`, memory and user settings, so it measures the flow plus one person's preferences. Ponytail found that leaked context skewed its results. | ponytail | Low |
-| 1.2 | **Self-test the instruments before any spend.** Each oracle ships a good reference that must pass and a bad one that must fail. | ponytail | Low |
+| 1.1 | **Isolate the bench.** Every `claude -p` the bench starts loads the user's `~/.claude/CLAUDE.md`, memory and user settings, so it measures the flow plus one person's preferences. Ponytail found that leaked context skewed its results. Shipped (bench): every session runs with `--setting-sources project,local` and without CLAUDE.md files or auto memory. | ponytail | Low  |
+| 1.2 | **Self-test the instruments before any spend.** Each oracle ships a good reference that must pass and a bad one that must fail. Shipped (bench): `bench.py selftest`, also before every `run`. | ponytail | Low  |
 | 1.3 | **Mutation score.** Inject small bugs (flipped comparison, dropped `if`, off-by-one) into the produced code and run the project's own tests: measures test quality, which the oracle does not. Shipped: `bench/mutate.py`, a `Mutation` column in `bench/RESULTS.md` and the `roster` fixture. | ponytail | Medium |
-| 1.4 | **A/B in one run.** Two flow versions interleaved fixture by fixture; geometric mean of per-fixture ratios, bootstrap confidence interval, sign test. | ponytail | Medium |
-| 1.5 | **Implicit-safety fixtures.** The requirement is left implicit, the hidden check is adversarial: path traversal, SQL injection, tampered token. | ponytail | Low |
+| 1.4 | **A/B in one run.** Two flow versions interleaved fixture by fixture; geometric mean of per-fixture ratios, bootstrap confidence interval, sign test. Shipped in 2.3.0 (bench only): `bench.py ab`; see `docs/architecture/0007-fix-sources-and-ab.md`. | ponytail | Medium  |
+| 1.5 | **Implicit-safety fixtures.** The requirement is left implicit, the hidden check is adversarial: path traversal, SQL injection, tampered token. Shipped (bench): the `vault` fixture; see `docs/architecture/0001-harder-bench-fixtures.md`. | ponytail | Low  |
 
 ## 2. Fewer fix cycles, cheaper runs
 
@@ -47,7 +47,7 @@ Without this, every prompt or agent change is decided by reasoning.
 | # | Improvement | From | Cost |
 |---|---|---|---|
 | 3.1 | **Read beyond the diff.** The reviewer gets the callers of every changed signature (from `graphify affected` when installed, else by grepping). `reviewer.md` says "no problems in code that was not touched"; a change that breaks an untouched caller must be reported. Shipped in 2.2.0 (plain grep; no `graphify`): see `docs/architecture/0005-reviewer-callers.md`. | ponytail, graphify | Medium |
-| 3.2 | **Stricter findings:** a concrete case for each; four parts (what it is, problem, fix, if skipped); severity anchors ("fully defeats a control or only weakens it"; "if you cannot state the damage, it is lower than it feels"); a third verdict `needs_validation` for findings blocked by an external fact, with no severity; a "cannot verify from diff" category resolved by the orchestrator. | ponytail, cloudflare, superpowers | Low |
+| 3.2 | **Stricter findings:** a concrete case for each; four parts (what it is, problem, fix, if skipped); severity anchors ("fully defeats a control or only weakens it"; "if you cannot state the damage, it is lower than it feels"); a third verdict `needs_validation` for findings blocked by an external fact, with no severity; a "cannot verify from diff" category resolved by the orchestrator. Shipped in 2.0.0. | ponytail, cloudflare, superpowers | Low  |
 | 3.3 | **Two axes, Standards and Spec,** reviewed in parallel and never reranked against each other. | mattpocock | Medium |
 | 3.4 | **One scale for every check:** Floor (never ships), Reflex (a default the model falls into; waivable with a reason on the record), Finish (never blocks). Waivers take the narrowest scope and a `"<who decided: evidence>"` reason; every WARN needs a one-line defence. | hallmark, impeccable, taste | Low-medium |
 | 3.5 | **Provenance:** every fact in section 4b and every reviewer evidence is "read at file:line" or "inferred"; the plan-reviewer challenges the inferred ones first. | graphify | Low |
@@ -56,10 +56,10 @@ Without this, every prompt or agent change is decided by reasoning.
 
 | # | Improvement | From |
 |---|---|---|
-| 4.1 | Reuse ladder before writing: needed? already in the repo? standard library? installed dependency? one line? only then the minimum. "Grep every caller before editing shared code; fix the root cause once." | ponytail |
-| 4.2 | Every report ends with "not checked / skipped / risk". | ponytail |
-| 4.3 | No invented numbers, benchmarks or claims (doc-updater, architect). | taste, hallmark |
-| 4.4 | Print what must be followed into the prompt instead of pointing at a file ("a printed line is followed where an extra read gets skipped"); audit the workflow prompts for pasted history. | impeccable, superpowers |
+| 4.1 | Reuse ladder before writing: needed? already in the repo? standard library? installed dependency? one line? only then the minimum. "Grep every caller before editing shared code; fix the root cause once." Shipped in 2.0.0. | ponytail  |
+| 4.2 | Every report ends with "not checked / skipped / risk". Shipped in 2.0.0 (`not_checked`). | ponytail  |
+| 4.3 | No invented numbers, benchmarks or claims (doc-updater, architect). Shipped in 2.0.0. | taste, hallmark  |
+| 4.4 | Print what must be followed into the prompt instead of pointing at a file ("a printed line is followed where an extra read gets skipped"); audit the workflow prompts for pasted history. Partly: the callers are printed in the reviewer's prompt (2.2.0); the audit of the workflow prompts is open. | impeccable, superpowers  |
 | 4.5 | Move coding standards from the implementer to the reviewer. Only after measuring. | mattpocock, impeccable |
 
 ## 5. New deterministic checks in close-stage
@@ -73,8 +73,8 @@ Without this, every prompt or agent change is decided by reasoning.
 - 6.2 Complexity warnings from `validate`: a WP with too many files or ACs, a wave too wide or with one WP. Thresholds calibrated with the bench. (diagram-design)
 - 6.3 Pre-flight conflict scan before wave 1: one row per pair of WPs sharing an interface, one per WP (its tests vs its code); rulings recorded. (superpowers)
 - 6.4 Fix plans: a command that reproduces the exact symptom, already run, before any hypothesis; then 3-5 falsifiable hypotheses. (mattpocock)
-- 6.5 Expand-contract guidance for wide refactors. (mattpocock)
-- 6.6 Tautological tests as an explicit test-auditor anti-pattern. (mattpocock)
+- 6.5 Expand-contract guidance for wide refactors. (mattpocock) Shipped in 2.0.0.
+- 6.6 Tautological tests as an explicit test-auditor anti-pattern. (mattpocock) Shipped in 2.0.0.
 - 6.7 "Design it twice" for contested section-6 contracts, large size only. (mattpocock)
 
 ## 7. Tools
@@ -93,14 +93,21 @@ Without this, every prompt or agent change is decided by reasoning.
 - A multi-session decision map (wayfinder). (mattpocock)
 - A reuse metric (functions reused vs created). (ponytail)
 - Screenshot freshness for the docs. (diagram-design)
+- Candidates from awesome-claude-code (a list of 263 resources; only its table was read, not the projects), to review one by one as the first ten were: `agnix` and `Ctxlint` (linters of CLAUDE.md, skills, hooks and MCP config, a complement to `test_definitions.py`), `Agent Collab Skills` (acceptance gate, adversarial debate, output reconciler), `presence` (calibrated-confidence gate and outcome telemetry), `cc-thinking-skills` (publishes a replication-gated evaluation: relevant to the bench) and `Upkeep` (drift between docs, spec and assets with evidence: overlaps `docs-check`).
+- Not worth a place: claude-mem (cross-session memory conflicts with `architecture.md` as the single source of truth and with the bench's isolation) and awesome-scalability (a reading list on distributed systems, no code).
 
 ## Versioning
 
-The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version. The first package (3.2, 4.1, 4.2, 4.3, 6.5, 6.6) is 2.0.0; see `docs/architecture/0002-prompt-package-2-0.md`. The stop gate and the four statuses (2.1, 2.2) are 2.1.0: the implementer schema and `settings.json` change, no plan or command does; see `docs/architecture/0003-stop-gate-statuses.md`. The reviewer's callers (3.1) are 2.2.0: the reviewer prompt changes; see `docs/architecture/0005-reviewer-callers.md`.
+The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version. The first package (3.2, 4.1, 4.2, 4.3, 6.5, 6.6) is 2.0.0; see `docs/architecture/0002-prompt-package-2-0.md`. The stop gate and the four statuses (2.1, 2.2) are 2.1.0: the implementer schema and `settings.json` change, no plan or command does; see `docs/architecture/0003-stop-gate-statuses.md`. The reviewer's callers (3.1) are 2.2.0: the reviewer prompt changes; see `docs/architecture/0005-reviewer-callers.md`. The hand fix sources, `--all` and `verification_failures` are 2.3.0, with the bench's A/B (1.4); see `docs/architecture/0007-fix-sources-and-ab.md`.
 
 ## Found while using the flow
 
-- The one-off `run-wave --fix` reads `.claude/state/runs/QA.json` and `REVIEW.json`, but `run-pipeline` saves `QA-N.json` and `REVIEW-N.json`, so a hand fix cycle after a pipeline run stops with "run run-review or run-qa first"; and `--fix` takes blocking defects only, so medium and low ones have no path but the person.
+- The one-off `run-wave --fix` reads `.claude/state/runs/QA.json` and `REVIEW.json`, but `run-pipeline` saves `QA-N.json` and `REVIEW-N.json`, so a hand fix cycle after a pipeline run stops with "run run-review or run-qa first"; and `--fix` takes blocking defects only, so medium and low ones have no path but the person. Fixed in 2.3.0: `run-wave --fix` reads the newest review and QA wherever they were saved, and `--all` adds medium and low.
+- Project hooks did not fire for the Workflow tool's subagents in a cloud session: `claims.json` stayed empty in two `/implement` runs on this repo and no agent saw a hook message, so ownership held only through close-stage's file comparison. Not yet checked in a trusted local session.
+- The test-auditor passed a wrong acceptance test: in the `roster` fixture (2.1.0 bench, session 2) a test expected 1440 minutes where the plan said 960; the implementer returned `BLOCKED` with the exact diagnosis instead of adapting its code.
+- An old test pinned wording: `test_acceptance.py::test_ac_013_docs` requires a README paragraph that a docs rewrite had to keep; hidden constraints like this cost a fix cycle.
+- The bench cannot measure the reviewer's callers (3.1): its fixtures start from almost nothing, so callers fall inside the diff (3 of 15 sessions of the 2.2.0 run had any, none led to a finding). A brownfield fixture, with existing code and tests and a plan that changes a signature used in files no package owns, is needed.
+- Possible hole in the hook for the native workflow's subagents (not verified): claude-mem's source (`src/shared/subagent-predicate.ts`, `should-skip-agent-observation.ts`) says Claude Code sends both an agent id and an agent type on every subagent hook, and that the Workflow tool's fan-out subagents arrive with the type `workflow-subagent`. `guard` in `agentic.py` demands a claim only from the types `implementer`, `qa`, `test-author`, `reviewer`, `doc-updater` and the ones a plan declares; an unclaimed `workflow-subagent` would write without restrictions and only `close-stage`'s file comparison would catch it. To check in a trusted local session: what `agent_type` an `implementer` launched by `agentic-implement` carries. If it is `workflow-subagent`, require a claim from any event with an agent id and that type, before any write.
 - The flow cannot implement itself: `validate` refuses a WP that owns a path under `.claude/` and the hook blocks agents' writes there, both on purpose. Plans that change the flow are executed by hand; a maintainer mode for the flow's own repo is an open idea.
 
 ## Recommended order
@@ -108,4 +115,4 @@ The changes in sections 2-7 ship as 2.0: they change the agents, the report sche
 1. Now: 1.1 and 1.2, then one real bench run of the current version as the baseline.
 2. A cheap prompt package: 3.2, 4.1, 4.2, 4.3, 6.5, 6.6. Measured against that baseline.
 3. Then 2.1 and 2.2, which should cut fix cycles; the bench says whether they do. Shipped in 2.1.0; the measurement goes in `bench/RESULTS.md`.
-4. Each with its own `/architect`: 2.6, 2.3 with 2.4, 1.3 with 1.4.
+4. Each with its own `/architect`: 2.6, 2.3 with 2.4, 1.3 with 1.4. 1.3 and 1.4 shipped; the next measurement is a brownfield fixture for 3.1.

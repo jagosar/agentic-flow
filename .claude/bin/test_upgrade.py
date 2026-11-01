@@ -96,6 +96,12 @@ class NotesTests(unittest.TestCase):
             self.assertIn(word, notes)
         self.assertEqual(len(upgrade.NOTES["2.1.0"]), 4, "the 2.1.0 notes are frozen")
 
+    def test_the_2_3_notes_name_the_fix_sources_and_the_failures(self):
+        notes = " ".join(upgrade.notes_between("2.2.0", "2.3.0"))
+        for word in ("--fix", "--all", "workflow-result.json", "refuted", "verification_failures"):
+            self.assertIn(word, notes)
+        self.assertEqual(len(upgrade.NOTES["2.2.0"]), 2, "the 2.2.0 notes are frozen")
+
 
 class GuardTests(unittest.TestCase):
     def setUp(self):

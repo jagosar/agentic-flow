@@ -125,7 +125,8 @@ def summarize(result, state):
             "gate_calls": state["gate_calls"], "agents": sorted(agents), "prompts": prompts,
             "not_checked": sorted(f"{e['agent']}:{e['label']}" for e in result.get("not_checked", [])),
             "gate_denials": result.get("gate_denials", {}),
-            "review_callers": (result.get("review") or {}).get("callers", 0)}
+            "review_callers": (result.get("review") or {}).get("callers", 0),
+            "verification_failures": len(result.get("verification_failures") or [])}
 
 
 def run_scenario(decl):
@@ -150,7 +151,7 @@ class ConformanceTests(unittest.TestCase):
         for decl in CONFORMANCE["scenarios"]:
             with self.subTest(scenario=decl["name"]):
                 mine, theirs = run_scenario(decl), self.workflow[decl["name"]]
-                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents", "not_checked", "gate_denials", "review_callers"):
+                for key in ("result", "failed_stage", "detail", "fix_cycles", "pending", "gates", "gate_calls", "agents", "not_checked", "gate_denials", "review_callers", "verification_failures"):
                     self.assertEqual(mine[key], theirs[key], key)
                 self.assertEqual(mine["prompts"], theirs["prompts"], "the agents must receive the same prompts")
 
