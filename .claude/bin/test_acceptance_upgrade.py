@@ -255,7 +255,7 @@ class DocsTests(unittest.TestCase):
         for token in (".claude/state/upgrade/", "--allow-dirty", "template"):
             self.assertIn(token, update)
         self.assertIn("flow-history", self.section(guide, "## Publish a version (maintainers)"))
-        self.assertEqual(json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"], "2.0.0")
+        self.assertEqual(json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"], "2.1.0")
 
 
 if __name__ == "__main__":

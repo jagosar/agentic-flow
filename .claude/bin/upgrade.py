@@ -47,6 +47,22 @@ NOTES = {
         "The agents run-pipeline starts list StructuredOutput in their tools: without it, claude -p --agent returns "
         "no structured report and every fallback run stopped at wave 0 with NO REPORT.",
     ],
+    "2.1.0": [
+        "A stop gate: when an implementer submits a report that says DONE (or DONE_WITH_CONCERNS), the hook runs the "
+        "manifest's acceptance command and refuses the report, with the failing lines, if a failure is the package's "
+        "own (its files, or a criterion only it owns). Twice at most per package and stage; then the report goes "
+        "through. It fails open on its own errors. The result's gate_denials counts the refusals per package.",
+        "Four implementer statuses: DONE, DONE_WITH_CONCERNS (done; each concern goes to pending without severity "
+        "and to the reviewer, who may confirm it as a finding), NEEDS_CONTEXT (one more call with the whole "
+        "architecture.md instead of the brief, then a blocker) and BLOCKED (the old BLOCKER). The report schema gains "
+        "concerns and missing_context. A customised implementer.md from 2.0 must be merged: BLOCKER is no longer in "
+        "the schema, and a prompt that still says it will be forced into one of the four values.",
+        "settings.json: the flow's PreToolUse hook now matches StructuredOutput too and has a 900 s timeout, so the "
+        "gate can run the acceptance suite. install appends StructuredOutput to the existing matcher and sets the "
+        "timeout; a project that hand-edited that entry should check it. The fallback engine's per-agent timeout_s "
+        "(agentic.json) must leave room for the suite: with a slow suite, raise it or expect a TIMEOUT status.",
+        "/implement presents the concern items and gate_denials; workflow-result.json carries both.",
+    ],
     "2.0.0": [
         "Review findings and QA defects have four parts: the problem, the concrete case (evidence or repro), the "
         "smallest fix and what happens if skipped. Both judges share severity anchors. No concrete case, no finding.",

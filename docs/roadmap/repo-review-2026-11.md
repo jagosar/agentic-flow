@@ -35,8 +35,8 @@ Without this, every prompt or agent change is decided by reasoning.
 
 | # | Improvement | From | Cost |
 |---|---|---|---|
-| 2.1 | **Stop gate.** When an implementer stops, a `SubagentStop` hook runs its WP's validation; if red, the stop is blocked and the failures go back to the agent. Check first that Claude Code lets a `SubagentStop` hook block. | impeccable | Medium |
-| 2.2 | **Four implementer statuses:** DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, BLOCKED, each with its handling. Never retry the same model unchanged. | superpowers | Low |
+| 2.1 | **Stop gate.** When an implementer submits a finished report, a hook runs the acceptance command; if a failure is the package's own, the report is refused and the failing lines go back to the agent, twice at most. Shipped in 2.1.0 as a `PreToolUse` hook on `StructuredOutput`: measured here, a `Stop` or `SubagentStop` block cannot alter a `--json-schema` answer, which is already delivered when it fires. | impeccable | Medium |
+| 2.2 | **Four implementer statuses:** DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, BLOCKED, each with its handling. Never retry the same model unchanged. Shipped in 2.1.0. | superpowers | Low |
 | 2.3 | **Resume the same implementer** in fix cycles 1-3 (its context is intact), then a fresh one on a more capable model. Optional `model` per WP in the manifest. | superpowers | Medium |
 | 2.4 | **Scoped re-review:** only the open findings and the fix diff; verdict ADDRESSED / NOT ADDRESSED per finding; findings keep a stable fingerprint across cycles; anything new goes to the ledger and never extends the loop. | superpowers, cloudflare | Medium |
 | 2.5 | **Run budget** in USD or agent calls, with review and QA reserved before fix cycles spend; a run that cannot fund them stops as REVIEW with the gap stated. | cloudflare | Medium |
@@ -96,7 +96,7 @@ Without this, every prompt or agent change is decided by reasoning.
 
 ## Versioning
 
-The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version. The first package (3.2, 4.1, 4.2, 4.3, 6.5, 6.6) is 2.0.0; see `docs/architecture/0002-prompt-package-2-0.md`.
+The changes in sections 2-7 ship as 2.0: they change the agents, the report schemas and what a plan must contain, so projects upgrade with `agentic.py install` and read the notes. The bench (section 1) is not installed in projects and does not bump the version. The first package (3.2, 4.1, 4.2, 4.3, 6.5, 6.6) is 2.0.0; see `docs/architecture/0002-prompt-package-2-0.md`. The stop gate and the four statuses (2.1, 2.2) are 2.1.0: the implementer schema and `settings.json` change, no plan or command does; see `docs/architecture/0003-stop-gate-statuses.md`.
 
 ## Found while using the flow
 
@@ -107,5 +107,5 @@ The changes in sections 2-7 ship as 2.0: they change the agents, the report sche
 
 1. Now: 1.1 and 1.2, then one real bench run of the current version as the baseline.
 2. A cheap prompt package: 3.2, 4.1, 4.2, 4.3, 6.5, 6.6. Measured against that baseline.
-3. Then 2.1 and 2.2, which should cut fix cycles; the bench says whether they do.
+3. Then 2.1 and 2.2, which should cut fix cycles; the bench says whether they do. Shipped in 2.1.0; the measurement goes in `bench/RESULTS.md`.
 4. Each with its own `/architect`: 2.6, 2.3 with 2.4, 1.3 with 1.4.
