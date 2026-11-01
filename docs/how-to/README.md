@@ -150,7 +150,7 @@ In a project without a design yet, the expected answer is `.../architecture.md d
    ```
 
 4. **Build:** `/implement`. It records the baseline, then runs wave 0 (acceptance tests), the waves, the phased verification (which separates regressions from pre-existing failures), review, QA, fixes and the documentation.
-5. **Read the report.** Defects of implementation are fixed automatically, at most twice per package; design defects come back to you, to take to `/architect`.
+5. **Read the report.** Defects of implementation are fixed automatically, at most twice per package; design defects come back to you, to take to `/architect`. Two more things come back to you without blocking: *needs validation* items (a fact the code cannot settle, with how to check it) and each agent's `not_checked` list.
 6. **Commit and push.** Do it yourself or ask the main session. The flow's agents cannot: the hook blocks them.
 
 If a stage stops (a blocked package, a broken acceptance test), fix the cause and resume from that wave with `/implement <wave>`.
@@ -293,7 +293,7 @@ python3 -m unittest discover -s bench -p "test_*.py"
 python3 -m unittest discover -s bench/acceptance
 ```
 
-280 Python tests, 39 workflow scenarios with simulated agents and 41 tests of the measurement bench, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
+295 Python tests, 39 workflow scenarios with simulated agents and 41 tests of the measurement bench, run in CI on Linux (Python 3.9, 3.12 and 3.14), macOS and Windows. Besides the guardrails and the commands, they test the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. Change a prompt and break one of those rules, and a test fails.
 
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 
