@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "flow_version": "2.1.0",
+  "flow_commit": "e7ef339",
+  "dirty": false,
+  "started": "2026-11-01T16:56:07",
+  "repeat": 3,
+  "auth": "subscription",
+  "runs": [
+    {
+      "fixture": "roster",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 9,
+      "seconds": 193.1,
+      "oracle": {
+        "passed": 39,
+        "total": 39
+      },
+      "usage": {
+        "input": 140348,
+        "cache_read": 464815,
+        "output": 27809,
+        "turns": 81,
+        "cost_usd": 0.8857915000000001
+      },
+      "mutation": {
+        "total": 40,
+        "killed": 32,
+        "oracle_killed": 34,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "roster/intervals.py",
+            "line": 23,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 30,
+            "operator": "compare",
+            "description": "> -> >="
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 41,
+            "operator": "compare",
+            "description": "<= -> <"
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 43,
+            "operator": "compare",
+            "description": ">= -> >"
+          },
+          {
+            "file": "roster/rules.py",
+            "line": 8,
+            "operator": "const",
+            "description": "1440 -> 1441"
+          },
+          {
+            "file": "roster/rules.py",
+            "line": 19,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "roster/shifts.py",
+            "line": 17,
+            "operator": "arith",
+            "description": "+ -> -"
+          },
+          {
+            "file": "roster/shifts.py",
+            "line": 21,
+            "operator": "compare",
+            "description": "< -> <="
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "roster",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 9,
+      "seconds": 223.0,
+      "oracle": {
+        "passed": 39,
+        "total": 39
+      },
+      "usage": {
+        "input": 88482,
+        "cache_read": 622470,
+        "output": 29395,
+        "turns": 78,
+        "cost_usd": 0.7099369999999999
+      },
+      "mutation": {
+        "total": 40,
+        "killed": 33,
+        "oracle_killed": 34,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "roster/intervals.py",
+            "line": 23,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 30,
+            "operator": "compare",
+            "description": "> -> >="
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 41,
+            "operator": "compare",
+            "description": "<= -> <"
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 43,
+            "operator": "compare",
+            "description": ">= -> >"
+          },
+          {
+            "file": "roster/rules.py",
+            "line": 8,
+            "operator": "const",
+            "description": "1440 -> 1441"
+          },
+          {
+            "file": "roster/rules.py",
+            "line": 19,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "roster/shifts.py",
+            "line": 21,
+            "operator": "compare",
+            "description": "< -> <="
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "roster",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 9,
+      "seconds": 197.0,
+      "oracle": {
+        "passed": 39,
+        "total": 39
+      },
+      "usage": {
+        "input": 88414,
+        "cache_read": 477151,
+        "output": 26678,
+        "turns": 76,
+        "cost_usd": 0.6679830999999999
+      },
+      "mutation": {
+        "total": 39,
+        "killed": 33,
+        "oracle_killed": 33,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "roster/intervals.py",
+            "line": 30,
+            "operator": "compare",
+            "description": "> -> >="
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 41,
+            "operator": "compare",
+            "description": "<= -> <"
+          },
+          {
+            "file": "roster/intervals.py",
+            "line": 43,
+            "operator": "compare",
+            "description": ">= -> >"
+          },
+          {
+            "file": "roster/rules.py",
+            "line": 8,
+            "operator": "const",
+            "description": "1440 -> 1441"
+          },
+          {
+            "file": "roster/shifts.py",
+            "line": 17,
+            "operator": "arith",
+            "description": "+ -> -"
+          },
+          {
+            "file": "roster/shifts.py",
+            "line": 21,
+            "operator": "compare",
+            "description": "< -> <="
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "roster": {
+      "runs": 3,
+      "ok": 3,
+      "oracle_rate_median": 1.0,
+      "oracle_rate_min": 1.0,
+      "oracle_rate_max": 1.0,
+      "mutation_median": 0.825,
+      "mutation_oracle_median": 0.85,
+      "fix_cycles_median": 0,
+      "cost_usd_median": 0.71,
+      "output_median": 27809,
+      "minutes_median": 3.283
+    }
+  }
+}

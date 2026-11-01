@@ -9,6 +9,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 BENCH_PY = Path(__file__).resolve().parent / "bench.py"
@@ -20,10 +21,11 @@ spec.loader.exec_module(bench)
 SKIP_DECORATOR = "@unittest." + "sk" + "ip('s')"
 
 
-def make_run(fixture="fx", result="OK", passed=3, total=4, cycles=0, cost=1.0, output=100, seconds=60.0):
+def make_run(fixture="fx", result="OK", passed=3, total=4, cycles=0, cost=1.0, output=100, seconds=60.0, mutation=None):
     return {"fixture": fixture, "index": 1, "result": result, "failed_stage": None, "fix_cycles": cycles,
             "test_audit_rounds": None, "agents": 1, "seconds": seconds, "oracle": {"passed": passed, "total": total},
-            "usage": {"input": 0, "cache_read": 0, "output": output, "turns": 1, "cost_usd": cost}}
+            "usage": {"input": 0, "cache_read": 0, "output": output, "turns": 1, "cost_usd": cost},
+            "mutation": mutation}
 
 
 class TempCase(unittest.TestCase):
@@ -140,7 +142,7 @@ class ReportTests(TempCase):
 
     def test_row_formats_values(self):
         self.write_doc("a.json", "2026-10-31T10:00:00", dirty=True, runs=[make_run(cost=3.1, output=41000, seconds=810)])
-        self.assertEqual(self.rows(), ["| 1.0.0 | abc1234-dirty | 2026-10-31 | fx | 1 | 1/1 | 0.75 (0.75–0.75) | 0 | 3.10 "
+        self.assertEqual(self.rows(), ["| 1.0.0 | abc1234-dirty | 2026-10-31 | fx | 1 | 1/1 | 0.75 (0.75–0.75) | ? | 0 | 3.10 "
                                        "| 41000 | 13.5 |"])
 
     def test_null_values_print_a_question_mark(self):
@@ -229,3 +231,97 @@ class ResultsFileTests(TempCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def block(total=4, killed=2, oracle_killed=3):
+    return {"total": total, "killed": killed, "oracle_killed": oracle_killed, "timeouts": 0, "survived": []}
+
+
+class MutationInputsTests(TempCase):
+    def project(self, manifest):
+        (self.tmp / "architecture.md").write_text("# plan\n```json wp-manifest\n" + json.dumps(manifest) + "\n```\n",
+                                                  encoding="utf-8")
+        for rel in ("pkg/__init__.py", "pkg/a.py", "pkg/test_a.py", "pkg/sub/b.py", "tests/t.py", "acc/x.py",
+                    "qa/q.py", "top.py", "notes.txt"):
+            (self.tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+            (self.tmp / rel).write_text("x = 1\n", encoding="utf-8")
+        return self.tmp
+
+    def test_production_files_expand_directories_and_drop_tests_acceptance_qa_and_missing(self):
+        manifest = {"work_packages": [{"files": ["pkg/", "tests/t.py", "acc/x.py", "qa/q.py", "gone.py", "notes.txt"]},
+                                      {"files": ["top.py"]}], "acceptance": {"files": ["acc/"]}}
+        files = bench.production_files(self.project(manifest), manifest)
+        self.assertEqual(files, ["pkg/__init__.py", "pkg/a.py", "pkg/sub/b.py", "top.py"])
+
+    def test_manifest_of_is_empty_when_absent_or_invalid(self):
+        self.assertEqual(bench.manifest_of(self.tmp), {})
+        (self.tmp / "architecture.md").write_text("```json wp-manifest\n{bad\n```\n", encoding="utf-8")
+        self.assertEqual(bench.manifest_of(self.tmp), {})
+
+    def test_manifest_of_reads_the_block(self):
+        self.assertEqual(bench.manifest_of(self.project({"id": 1})), {"id": 1})
+
+    def test_project_commands_are_verify_tests_then_acceptance_command(self):
+        manifest = {"verify": {"tests": "python3 -m unittest -q"}, "acceptance": {"command": "python3 'a b.py'"}}
+        self.assertEqual(bench.project_commands(manifest),
+                         [["python3", "-m", "unittest", "-q"], ["python3", "a b.py"]])
+        self.assertEqual(bench.project_commands({}), [])
+
+
+class MutationRunTests(TempCase):
+    def run_mutation(self, **patch):
+        fx = self.tmp / "fx"
+        project = self.tmp / "proj"
+        project.mkdir()
+        with mock.patch.object(bench.mutate, "score", **patch) as score:
+            result = bench._mutation(fx, project, {"A": "1"})
+        return result, score
+
+    def test_returns_the_block_and_passes_both_suites_with_pythonpath(self):
+        result, score = self.run_mutation(return_value=block())
+        self.assertEqual(result, block())
+        suites, env = score.call_args.args[2], score.call_args.kwargs["env"]
+        self.assertEqual(set(suites), {"agents", "oracle"})
+        self.assertIn(str(self.tmp / "fx" / "oracle"), suites["oracle"][0])
+        self.assertEqual((env["A"], env["PYTHONPATH"]), ("1", str(self.tmp / "proj")))
+
+    def test_none_from_score_is_none(self):
+        self.assertIsNone(self.run_mutation(return_value=None)[0])
+
+    def test_a_mutation_error_becomes_none_with_a_line_on_stderr(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            result, _ = self.run_mutation(side_effect=bench.mutate.MutationError("cannot write"))
+        self.assertIsNone(result)
+        self.assertIn("cannot write", err.getvalue())
+
+    def test_run_oracle_removes_its_folder_after_counting(self):
+        fx = SelftestTests.fixture(self, name="fx2")
+        project = self.tmp / "p2"
+        project.mkdir()
+        bench._run_oracle(fx, project)
+        self.assertFalse((project / ".bench_oracle").exists())
+
+
+class MutationSummaryTests(TempCase):
+    def test_medians_use_runs_with_a_number_and_skip_the_rest(self):
+        runs = [make_run(mutation=block(4, 2, 4)), make_run(mutation=block(4, 4, 4)), make_run(),
+                make_run(mutation=block(4, None, 2))]
+        summary = bench._summarize(runs)
+        self.assertEqual(summary["mutation_median"], 0.75)
+        self.assertEqual(summary["mutation_oracle_median"], 1.0)
+
+    def test_runs_without_mutation_give_none(self):
+        summary = bench._summarize([make_run()])
+        self.assertIsNone(summary["mutation_median"])
+        self.assertIsNone(summary["mutation_oracle_median"])
+
+    def test_row_shows_both_halves_with_two_decimals_or_question_marks(self):
+        cases = ((block(4, 0, None), "0.00 / ?"), (block(10, 7, 9), "0.70 / 0.90"), (None, "?"))
+        for mutation, expected in cases:
+            with self.subTest(expected=expected):
+                doc = {"flow_version": "1", "flow_commit": "c", "started": "2026-01-01",
+                       "summary": bench._summaries([make_run(mutation=mutation)])}
+                row = bench._rows(doc)[0]
+                self.assertEqual(row[bench.TABLE_HEADER.index("Mutation")], expected)
+                self.assertEqual(len(row), len(bench.TABLE_HEADER))

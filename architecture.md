@@ -1,319 +1,298 @@
-# Architecture: the stop gate and the four implementer statuses (agentic-flow 2.1)
-Type: feature · Size: large
+# Architecture: the bench measures quality (mutation score and the roster fixture)
+Type: feature · Size: standard
 
 ## 1. Goal
-Two roadmap items (`docs/roadmap/repo-review-2026-11.md`, 2.1 and 2.2) that should cut fix cycles. First, a **stop gate**: when an implementer submits a report that says it is finished, the hook runs the acceptance command before the report is accepted; if a failure is attributed to that package, the report is refused with the failing lines and the agent keeps working, at most twice per package per stage. Second, **four implementer statuses** instead of two: `DONE`, `DONE_WITH_CONCERNS` (done, with doubts the reviewer must weigh), `NEEDS_CONTEXT` (the brief was not enough: one re-dispatch with the whole `architecture.md`, then blocked) and `BLOCKED` (as `BLOCKER` today). Both engines handle the statuses deterministically; the plugin becomes 2.1.0 with upgrade notes. The bench (4 fixtures × 3 sessions) measures the result against the 2.0.0 rows of `bench/RESULTS.md`.
+Three flow versions have scored 100% on the oracle with zero fix cycles and zero gate denials (`bench/RESULTS.md`), so the bench tells cost and time apart but not quality. Two instruments fix that. A **mutation score**: after the pipeline, small bugs are injected one at a time into the code the agents produced and the agents' own tests (unit tests plus acceptance tests) must fail; the share of mutants killed measures the tests the agents wrote, and the same mutants run against the fixture's oracle give a ceiling to compare with. A **fifth fixture, `roster`**, whose plan carries two traps: edge cases and contract errors stated in the contracts but absent from the acceptance criteria (acceptance passes, reviewer, QA and the oracle catch them: fix cycles), and one decision a package needs that sits only in section 10 of the plan, which the brief does not include (`NEEDS_CONTEXT`, or an invented reading the oracle penalises). The bench cannot force the stop gate: it fires only when an implementer reports `DONE` with red acceptance tests.
 
 ## 2. Scope
 ### Included
-- The gate in `agentic.py hook`, on the `StructuredOutput` tool: identity, conditions, attribution, the denial cap, its state file, and the `GATE:` line of `close-stage`.
-- `settings.json`: the hook matcher gains `StructuredOutput` and a `timeout`; `install` upgrades an already-installed matcher.
-- The implementer report schema (statuses, `concerns`, `missing_context`) in `pipeline-spec.json` and in `agentic-implement.js`; the engines' handling of each status; the reviewer prompt carries the concerns; conformance scenarios for both engines.
-- The implementer and `/implement` prompts; definition tests.
-- `plugin.json` 2.1.0, `NOTES["2.1.0"]`, roadmap note; acceptance tests in `.claude/bin/test_acceptance_v21.py`.
+- `bench/mutate.py`: deterministic mutant generation over Python sources with `ast`, five operators, an even deterministic sample capped at 40, and a scorer that runs test commands per mutant.
+- `bench/bench.py`: a `mutation` block per run (agents' kill rate and the oracle ceiling), summary medians, a `Mutation` column in `RESULTS.md`, one more field in the per-run line.
+- The `roster` fixture: `fixture.json`, `repo/` (seed package, version test, `architecture.md` with the two traps), `oracle/` (`test_edge_*` and `test_ctx_*` names), `reference/good`, `reference/bad`.
+- Unit tests of the new module and of the bench changes; acceptance tests in `bench/acceptance/test_acceptance_quality.py`.
 ### Excluded (non-goals)
-- A `SubagentStop` or `Stop` gate: measured in this session, a `Stop` block does not alter a `--json-schema` structured answer, so the gate lives on the tool call that delivers the report (decision D1).
-- Resuming the same implementer in fix cycles, a model per WP, scoped re-review (roadmap 2.3, 2.4): later packages.
-- Statuses of the test-author, QA and doc-updater: they keep `DONE`/`BLOCKER` and `PASS`/`FAIL`.
-- A gate on the `verify.*` commands: only the acceptance command is run, because only it is attributable to a package by `acs`.
-- The release and the bench run: by hand after merging (section 9).
+- Mutating non-Python files (every fixture is Python; a non-`.py` file yields no candidates).
+- A mutation check in `selftest` (decision D5), A/B runs (roadmap 1.4), statistical tests.
+- Changing the flow installed in projects: nothing under `.claude/` changes and the plugin version stays 2.1.0.
+- Running the bench with a real `claude` here: by hand after merging (section 9).
 
 ## 3. Stack
-Python 3.9+ standard library (`agentic.py`, `pipeline.py`, tests with `unittest`; no type annotations in `agentic.py`, which has none); Node 22 for the native workflow and its scenario runner (`typescript` in `stack` for its rules). No new dependency.
-- Build: `python3 -m compileall -q .claude/bin`
-- Lint (the conformance scenarios, both engines must agree): `node .claude/bin/test_workflow.mjs`
-- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"` (about 90 s)
-- Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_v21.py`
+Python 3.9+ standard library only (`ast.unparse` exists from 3.9). Tests with `unittest`. No new dependency.
+- Build: `python3 -m compileall -q bench`
+- Tests: `python3 -m unittest discover -s bench -p "test_*.py"` (does not descend into `bench/acceptance/`, which has no `__init__.py`)
+- Lint slot, used for the existing acceptance suites of the bench and its fixtures, which `_run_once`/`_record`/report changes must keep green: `python3 -m unittest discover -s bench/acceptance -p "test_acceptance_*.py"`
+- Acceptance: `python3 -m unittest discover -s bench/acceptance -p test_acceptance_quality.py`
+- Fixture instruments: `python3 bench/bench.py selftest --fixture roster`
 
 ## 4. Repository structure
 ```
-.claude/bin/agentic.py                      WP-01  the gate in guard(), gate.json, GATE: line, status_to_state, merge_settings
-.claude/settings.json                       WP-01  matcher with StructuredOutput and timeout
-.claude/bin/test_agentic.py                 WP-01  hook, close-stage and install tests
-.claude/bin/test_acceptance_portable.py     WP-01  pins the hook matcher at :256
-.claude/workflows/pipeline-spec.json        WP-02  implementer schema and prompts (implement_full, reviewer {concerns})
-.claude/workflows/agentic-implement.js      WP-02  REPORT_SCHEMA, status handling, GATE: parsing, concerns to pending and reviewer
-.claude/bin/pipeline.py                     WP-02  the same, in Python
-.claude/bin/conformance.json                WP-02  four new scenarios
-.claude/bin/test_pipeline.py                WP-02  summary gains gate_denials; scenario assertions
-.claude/bin/test_workflow.mjs               WP-02  the same, in Node
-.claude/bin/testutil.py                     WP-02  fake claude: FAKE_CONCERNS, FAKE_NEEDS_CONTEXT
-.claude/agents/implementer.md               WP-03  the four statuses and the gate
-.claude/commands/implement.md               WP-03  presents concerns and gate denials
-.claude/bin/test_definitions.py             WP-03
-.claude-plugin/plugin.json                  WP-04  version 2.1.0
-.claude/bin/upgrade.py                      WP-04  NOTES["2.1.0"]
-.claude/bin/test_upgrade.py                 WP-04
-.claude/bin/test_acceptance_upgrade.py      WP-04  pins the plugin version at :258
-.claude/bin/test_acceptance_v2.py           WP-04  pins the plugin version at :177
-docs/roadmap/repo-review-2026-11.md         WP-04  2.1 and 2.2 shipped in 2.1.0; 2.1 corrected (not SubagentStop)
-.claude/bin/test_acceptance_v21.py          AT
-README.md, docs/how-it-works.md, docs/how-to/   docs (doc-updater)
+bench/mutate.py                                   WP-01  mutants and the scorer
+bench/test_mutate.py                              WP-01
+bench/bench.py                                    WP-02  mutation per run, summary, report column
+bench/test_bench.py                               WP-02
+bench/fixtures/roster/fixture.json                WP-03
+bench/fixtures/roster/repo/README.md              WP-03
+bench/fixtures/roster/repo/architecture.md        WP-03  the fixture's plan (two traps)
+bench/fixtures/roster/repo/roster/__init__.py     WP-03
+bench/fixtures/roster/repo/tests/test_version.py  WP-03
+bench/fixtures/roster/oracle/test_oracle.py       WP-03
+bench/fixtures/roster/reference/good/roster/      WP-03  intervals.py shifts.py schedule.py rules.py
+bench/fixtures/roster/reference/bad/roster/       WP-03  the same four files, wrong on the edges and the bait
+bench/acceptance/test_acceptance_quality.py       AT
+qa/                                               QA
+docs/how-to/bench.md, docs/roadmap/repo-review-2026-11.md, README.md   docs (doc-updater)
 ```
 
 ## 4b. Existing code context
 | What an implementer needs to know | Where it is | Pattern or rule |
 |---|---|---|
-| The hook's entry and its fail-closed wrapper | `.claude/bin/agentic.py:1985-1998` (`hook()`), `:1929-1983` (`guard(data)`) | `guard` returns to allow, calls `block(msg)` (`:1812`: prints `[agentic guard] msg` to stderr, exit 2) to deny. Any exception inside a restricted agent blocks |
-| How the hook knows who is acting | `guard` `:1932-1952`: `AGENTIC_WP` env (fallback engine, set at `:745`) or `claims.json` through `data["agent_id"]` (native workflow) | The gate uses `owner_id` after that block, exactly like the write rules; an owner that does not match `^WP-\d+$` is never gated |
-| What a `StructuredOutput` call looks like to the hook | Measured in this session with CLI 2.1.316: `tool_name` is `StructuredOutput`, `tool_input` is the report object itself (`status`, `wp`, `files`…); `agent_type` is present; exit 2 with a stderr reason denies it and the agent re-submits a corrected report (3 turns in the probe) | `tinput.get("status")` is the status. Nothing else of the report is trusted |
-| The `Stop` hook does not work for this | Measured: with `--json-schema`, `{"decision":"block"}` on `Stop` left the structured answer unchanged and the second `Stop` never fired | Decision D1 |
-| Running the acceptance command without a shell | `run_command(cmd, timeout=900, scan=None)` `:1208-1228`: returns `(code, tail)`; with a list in `scan` the last 200 lines are appended to it. `acceptance_check` `:1230-1249` wraps it but also writes a ledger line (`ledger_stage`) and prints | The gate calls `run_command` directly (no ledger line, no stdout) and takes the command from `at_entity(manifest)["command"]` (`:1232`) |
-| Exit codes that mean "could not run" | `acceptance_check` `:1240`: `code in (124, 126, 127)` | The gate lets through in that case: it cannot judge |
-| Attributing failures to packages | `attribute(manifest, lines)` `:1557-1574`: `{wp_id: {"files": [...], "acs": [...]}}` by whole path or `AC-NNN` in the text | The gate denies only on the WP's own failure (section 6): its files mentioned, or an AC that only it owns. A shared AC or another package's failure never stops this one |
-| Which lines to show the agent | `failure_lines(lines)` `:1539-1543` and `normal_failure` `:1534` pick the lines that matter | Show the lines that mention the WP's files or ACs (`attribute`'s `mentioned` logic), then the command's last 3 lines, at most `GATE_MAX_LINES` |
-| State files under `.claude/state/` with a lock | `locked_json(path, fn)` `:1673-1690` (used by `with_claims` `:1693`); constants `STATE`, `CLAIMS`, `LEDGER_JSON` `:72-77` | `GATE = STATE / "gate.json"`; `gate_denials(fn)` is `locked_json(GATE, fn)` |
-| Where a stage starts and ends | `open_stage` `:1459-1469` (snapshot, prints `{"stage","owners"}`), `close_stage` `:1472-1508` (marks `ID=state`, `--fix`, acceptance, `RESULT:` line, exit 3 on REVIEW) | `open_stage` resets the gate counters of its owners; `close_stage` prints one `GATE:` line before `RESULT:` |
-| Ledger states and the status mapping | `LEDGER_STATES` `:78`; `status_to_state(status)` `:1723-1726` (first word of the status) | Extend the mapping; `LEDGER_STATES` does not change |
-| The fallback engine launches one `claude -p` per agent | `:736-776`: `--json-schema` from `spec["schemas"][agent_type]`, `--allowedTools` from `pipeline_tools` `:1320`, `AGENTIC_WP` in the env | No change needed there: the hook sees `AGENTIC_WP` |
-| The pipeline-spec and its hand-mirrored JS twin | `.claude/workflows/pipeline-spec.json` (`schemas.implementer`, `prompts.implement`, `prompts.fix`, `prompts.fix_retry`, `prompts.reviewer`); `.claude/workflows/agentic-implement.js:56-66` (`REPORT_SCHEMA`), `:269-287` (`launchWave`), `:430` (the reviewer prompt, a literal string) | A field added to one must be added to the other identically; `test_workflow.mjs` compares them (`required` order matters: `deepEqual`) |
-| Where the wave states are decided | JS `:285`; Python `pipeline.py:285`: `error` if no report, `done` if `status == 'DONE'`, else `blocker` | Replace with `wave_states` (section 6) |
-| Where pending items are built and what blocks | JS `:258` and `:264` (`run.pending.push({type, severity, problem})`), `:465` (`run.result` is `REVIEW` if a pending item's `severity` is in `BLOCKING`); Python `:455`, `:399` | A concern item has no `severity`, so it never blocks, like the `needs validation` items (`needsItem` JS `:188`, `Pipeline.needs_item` `pipeline.py:119-125`) |
-| The run record both engines return | JS `:180` (`const run = {...}`); Python `Pipeline.__init__` (`self.run`), the same keys | Add `gate_denials: {}` next to `not_checked` |
-| Report helper and `call` | JS `report(prompt, opts)` `:182-186`; Python `Pipeline.call` `pipeline.py:106-116` | A re-dispatch is a second `report`/`call` with label `WP-01 (context)` |
-| Prompt rendering | Python `render(template, **values)` `pipeline.py:31-35`, `{key}` placeholders; `compact(value)` `pipeline.py:26` for JSON in prompts; the JS writes prompt strings inline | New placeholders: `{missing}` in `implement_full`, `{concerns}` in `reviewer` |
-| Fix counters | JS `fixCount` `:193`, incremented in `fixCycle` `:330`; Python `self.fix_count` `pipeline.py:331` | A `(context)` call is not a fix attempt and must not touch them |
-| Conformance: the shared world and the summaries | `test_pipeline.py:28-70` (`world`), `:108-119` (`summarize`), `:144` (the compared keys); `test_workflow.mjs:449-470` (`fromDecl`), `:486` (summary), `:491` (every scenario), `:518-529` (named assertions). Scenarios override reports with `reports.implementer[wp]` (`test_workflow.mjs:66`) and gatekeeper answers with `gate_fail` (`test_pipeline.py:41-43`) | New scenarios use `reports` for statuses and `gate_fail` (exit 0 is allowed there) for a `GATE:` line in a close-stage output. A `reports.implementer[wp]` override that must differ between the first and second call takes a list: first element for the first call, last element afterwards (extend `world` and `fromDecl` the same way) |
-| The simulated `claude` | `.claude/bin/testutil.py:36-95`: env knobs; the "first call only" marker-file pattern at `:78-81` | Add `FAKE_CONCERNS` and `FAKE_NEEDS_CONTEXT=<WP>` |
-| Hook tests | `test_agentic.py:57-58` (`Repo.hook(payload, wp)` returns the exit code), `:69-80` (`write_payload`, `bash_payload`) | Add `report_payload(status, wp, agent_id=None)` next to them; the fake acceptance command is a Python script written into the temp repo, as the acceptance-command tests of that file do |
-| Install tests | `test_agentic.py:933-1012` (`InstallTests`: a project `settings.json` with its own entries, `install` twice, "settings.json: unchanged") | Mirror `test_installs_the_flow_and_keeps_project_configuration` `:970` |
-| Installing settings | `merge_settings(dst, src)` `:1051-1085`: adds the flow's `PreToolUse` entry only if none ends with `hook`; `install` `:1153-1160` writes it | Extend: when the agentic entry exists but its `matcher` lacks `StructuredOutput`, append `\|StructuredOutput` to the project's matcher (never replace it: a project may have trimmed it), set the hook's `timeout` from `src` when absent, and add `"hook PreToolUse (StructuredOutput)"` to `added` |
-| Upgrade notes | `.claude/bin/upgrade.py:50-62` (`NOTES["2.0.0"]`, a list of strings); `test_acceptance_upgrade.py:258` and `test_acceptance_v2.py:177` pin the version | `NOTES["2.1.0"]`, pin `2.1.0` in both |
-| The matcher is pinned by a test | `test_acceptance_portable.py:254-258` asserts the exact matcher `Write|Edit|MultiEdit|NotebookEdit|Bash` | Update it to the new matcher (WP-01) |
-| The hook's messages say "return BLOCKER" | `agentic.py:1906`, `:1915`, `:1978`, `:1981` | They become "return the blocked status your schema allows (BLOCKED for an implementer, BLOCKER for the others)"; the rules themselves do not change |
-| Definition tests of prompts | `.claude/bin/test_definitions.py:179` reads `implement.md`; the 2.0.0 tests near the end pin phrases | One test per rule, asserting the exact phrase |
-| What `/implement` presents | `.claude/commands/implement.md:60-64` (pending, needs validation, not_checked) | Add concerns and gate denials there |
-| Docs the doc-updater touches | `docs/how-it-works.md:187-224` (hook diagram and text), `:226-244` (permission matrix), `:327` (glossary); `docs/how-to/README.md:278` (testing the flow: test counts) | The diagram gains a `StructuredOutput` branch |
+| One run of a fixture: prepare, pipeline, read the result, keep the session, oracle, record | `bench/bench.py:345-363` (`_run_once`), `:366-376` (`_record`: the run dict's keys) | The mutation block is computed in `_run_once` after `_run_oracle` and passed to `_record` as a new argument |
+| How the oracle runs over the project | `:297-305` (`_run_oracle` copies `fixture/oracle` to `project/.bench_oracle`), `:275-294` (`oracle_counts`: `python -m unittest discover -s <oracle> -t <oracle>` with `PYTHONPATH=project`, `cwd=project`) | The oracle ceiling uses the same command with `-s`/`-t` on `fixture/oracle` itself; `_run_oracle` removes `.bench_oracle` after counting so the agents' suites do not see it (the bench's own test fixture `acc.py` exits 1 when that folder exists: `test_acceptance_bench.py:25-28`) |
+| The project's own commands | the plan's manifest inside `project/architecture.md`: `verify.tests` and `acceptance.command` (e.g. `bench/fixtures/tally/repo/architecture.md:269-284`) | Read with the regex of `bench/acceptance/test_acceptance_fixtures.py:34-38` (`manifest_of`); run with `shlex.split`, `cwd=project`, no shell, as `run_command()` in `.claude/bin/agentic.py:1224-1243` does |
+| Which files to mutate | the manifest's `work_packages[*].files` | Production files only: every `.py` under the listed paths (a directory expands with `rglob`), minus any path whose first segment is `tests`, any file named `test_*.py` (tests kept beside the code), and anything under `acceptance.files` or `qa.files` (default `qa/`); a listed file that does not exist is skipped; `__init__.py` files are included like any other |
+| Summary and report | `:412-423` (`_summarize`: medians via `_rounded`/`_non_null`), `:425-427` (`_summaries`), `:59-60` (`TABLE_HEADER`), `:488-502` (`_rows`), `:481-486` (`_number`) | New keys `mutation_median`, `mutation_oracle_median`; the column `Mutation` shows `agents / oracle` with two decimals (`0.72 / 0.90`), `?` when absent |
+| The per-run line printed after a run | `:566-572` (`_print_runs`) | Append ` mutation k/n` when the run has one |
+| Constants and errors | `:28-66` (UPPER_CASE constants, `BenchError`) | New constants live in `mutate.py` (`OPERATORS`, `MUTANTS_MAX`, `MUTANT_TIMEOUT_S`) |
+| Unit tests of the bench | `bench/test_bench.py:1-33` (module loading by path, `make_run`, `TempCase`), `:80-90` (`SelftestTests.fixture`: a fixture built in a temp dir), `:102-110` (`SummaryTests`) | `make_run` gains a `mutation=None` argument; summary tests cover runs with and without it |
+| Acceptance tests of the bench | `bench/acceptance/test_acceptance_bench.py:1-60` (fake `claude`, `make_fixture`, `ACC_PY`, `ORACLE_PY`), `:306-336` (`FixtureReady.prepare`: copy, git, install, validate) | `test_acceptance_quality.py` imports `make_fixture`, `load_bench` and `FixtureReady` from there and `FixtureCase`/`manifest_of` from `test_acceptance_fixtures.py` |
+| Acceptance tests of a fixture | `bench/acceptance/test_acceptance_fixtures.py:95-141` (sound, bad reference fails only `test_adv_`/`test_edge_`, plan valid, waves), `:143-171` (an end-to-end bench run with the fake `claude`) | Mirror for `roster`, with the `test_edge_`/`test_ctx_` prefixes |
+| What a brief contains | `.claude/bin/brief.py:14` (`WP_SECTIONS = ("1", "2", "3", "4b", "5", "6", "7", "9", "11")`), `:81-90` (`slice_architecture`) | Section 10 (Decisions) and the other packages' `#### WP-NN` blocks are **not** in an implementer's brief: the bait goes in section 10 |
+| Writing the briefs of a plan | `python3 .claude/bin/agentic.py briefs` writes `.claude/state/briefs/<ID>.md` in a project where the flow is installed (`FixtureReady.prepare` installs it) | The acceptance test reads `WP-04.md` to prove the bait is absent from the brief |
+| A fixture's plan, oracle and references | `bench/fixtures/tally/repo/architecture.md:1-284` (plan structure, contracts with concrete values, ACs with `Check` paths, manifest), `bench/fixtures/tally/oracle/test_oracle.py:1-60` (imports inside each test, `test_edge_*`), `bench/fixtures/tally/reference/bad/tally/money.py:1-24` (right on the happy path, wrong on the edges) | `roster` mirrors all three |
+| Fixture metadata and difficulty | `bench/fixtures/vault/fixture.json` (`name`, `description`, `difficulty`) | `{"name": "roster", "description": "...", "difficulty": "trap"}` |
+| The fake `claude` writes one file per package | `.claude/bin/testutil.py:71-74` (`FAKE_WRITE`: `{"WP-01": "src/a.py", "WP-02": "src/b/x.py", "WP-03": "src/c.py"}`) | A fake run of `roster` writes nothing useful: its end-to-end acceptance checks the run completes and records a mutation block with `total` 0 or more, not a score |
+| Docs | `docs/how-to/bench.md` ("What it measures", "The fixtures" table, "Read RESULTS.md", "Add a fixture"), `README.md:108` (test counts), `docs/roadmap/repo-review-2026-11.md:30` (item 1.3) | The doc-updater marks 1.3 shipped and documents the column and the fixture |
 
-**What must NOT change:** `validate`'s refusal of `.claude/` ownership (`:403`), the write rules of `guard` (their wording may), `LEDGER_STATES`, the schemas of the other agents, `constants.blocking`, `close-stage`'s exit codes and its `RESULT:` line.
+**What must NOT change:** the results schema version (`SCHEMA = 1`; a missing `mutation` key reads as `None`), the oracle's isolation (never copied before the pipeline ends), `selftest`'s four checks, the existing fixtures.
 
 ## 5. Data model
-Report of an implementer (both engines, identical):
-```json
-{"status": "DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED",
- "wp": "WP-01", "files": [], "checks": [{"command": "", "passed": true, "detail": ""}],
- "internal_decisions": [], "not_checked": [],
- "concerns": ["<a doubt about the result, one sentence, with the file>"],
- "missing_context": {"what": "<what the brief lacked>", "section": "<section of architecture.md that should have it>"},
- "blocker": {"missing": "", "section": "", "options": []}}
+```python
+@dataclass(frozen=True)
+class Mutant:
+    file: str          # path relative to the project, forward slashes
+    line: int          # 1-based line of the mutated node
+    operator: str      # one of OPERATORS
+    description: str   # "< -> <=", "+ -> -", "and -> or", "drop not", "3 -> 4"
 ```
-`required`: `["status", "wp", "files", "checks", "internal_decisions", "blocker", "not_checked", "concerns", "missing_context"]`, in that order in both files. `concerns` is `[]` unless the status is `DONE_WITH_CONCERNS`; `missing_context` is `null` (type `["object", "null"]`, `required: ["what", "section"]`) unless `NEEDS_CONTEXT`; `blocker` is `null` unless `BLOCKED`.
+Per run, in the results file and in `doc["runs"][i]`:
+```json
+"mutation": {"total": 31, "killed": 24, "oracle_killed": 29, "timeouts": 1,
+             "survived": [{"file": "roster/intervals.py", "line": 18, "operator": "compare", "description": "< -> <="}]}
+```
+`total` is the number of mutants run (after the cap). `killed` counts the agents' suite; `oracle_killed` the oracle over the same mutants. **Baseline first:** before any mutant, each suite runs once on the unmutated code; a suite that is already red (or times out) there measures nothing, so its count is `null` (`killed: null` makes `survived` `[]`). A mutant whose test run exceeds `MUTANT_TIMEOUT_S` counts as killed (an infinite loop is a detected change) and in `timeouts`. The whole block is `null` when no production file yields a candidate. Summary: `mutation_median` (median of `killed/total` over the runs where `killed` is a number) and `mutation_oracle_median` likewise, `None` when no run has a number.
 
-Gate state, `.claude/state/gate.json`: `{"WP-01": {"denials": 1, "last": ["FAILED acceptance/test_ac_001.py::test_ac_001_x"]}}`. Reset per WP when its stage opens.
-
-Pending item of a concern: `{"type": "concern", "source": "WP-01", "wp": "WP-01", "problem": "<the sentence>"}`. No `severity`.
-
-Run record: `gate_denials: {"WP-01": 1}` (only WPs with at least one denial), summed from the `GATE:` lines of every close-stage, fix cycles included.
+The `roster` fixture, repo seed: `roster/__init__.py` (docstring, `__version__ = "0.1.0"`), `tests/test_version.py`, `README.md`, `architecture.md`.
 
 ## 6. Contracts between modules
-Python, `.claude/bin/agentic.py` (WP-01):
+`bench/mutate.py` (WP-01):
 ```python
-GATE = STATE / "gate.json"
-GATE_MAX_DENIALS = 2        # per WP and stage; afterwards the report is let through
-GATE_MAX_LINES = 40         # lines shown to the agent in a denial
-GATE_STATUSES = ("DONE", "DONE_WITH_CONCERNS")
+OPERATORS = ("compare", "arith", "boolop", "not", "const")
+MUTANTS_MAX = 40
+MUTANT_TIMEOUT_S = 120
 
-GATE_TIMEOUT_S = 840        # below the hook's 900 s, so the gate times out before the CLI kills the hook
+def candidates(source: str, file: str) -> list[tuple[Mutant, str]]
+    """Every single-point mutant of a Python source: (mutant, mutated source). Deterministic order: by line, column,
+    then OPERATORS order. compare: < <-> <=, > <-> >=, == <-> != (one operator per Compare node, the first op).
+    arith: + <-> - (BinOp only, not augmented assignment). boolop: and <-> or. not: `not x` -> `x`.
+    const: an int literal n (not bool) -> n + 1. A source that does not parse yields []."""
 
-def gate_denials(fn):        # locked_json(GATE, fn); fn(data) -> dict or None
-def gate_reset(owners):      # drops the counters of those WPs (a list of IDs); called by open_stage
-def gate_check(owner_id, status):
-    """The stop gate. Returns None to let the report through, or a list of lines to show (the report is refused).
-    Loads the manifest itself, inside its own try (see "fails open"). Lets through when: status is not in
-    GATE_STATUSES (or not a string); the manifest has no acceptance command;
-    the WP already has GATE_MAX_DENIALS denials; the command cannot run (exit 124/126/127) or times out
-    (run_command(cmd, timeout=GATE_TIMEOUT_S, scan=lines)); it passes; or the failure is not the WP's own (below).
-    On a refusal, increments gate.json for owner_id and stores the lines."""
+def sample(items: list, cap: int) -> list
+    """The whole list when len(items) <= cap; otherwise exactly cap items, evenly spaced (indices
+    i * len(items) // cap for i in range(cap)), in order, the same every time."""
+
+def score(project: Path, files: list[str], suites: dict[str, list[list[str]]], cap: int = MUTANTS_MAX,
+          timeout_s: float = MUTANT_TIMEOUT_S, env: dict | None = None) -> dict | None
+    """Runs every sampled mutant of the given production files against each suite. suites maps a name ("agents",
+    "oracle") to the commands (argv lists) that must all exit 0 for the mutant to survive; one of them failing or
+    timing out kills it. Each suite first runs once on the unmutated code: red or timed out there, its count is
+    None and it is not run again. The original file is restored after each mutant, also on error. env None means
+    os.environ. Commands run through compat.resolve and, on timeout, compat.kill_tree (whole process group), with
+    cwd=project. Returns the block of section 5 with "killed" for the "agents" suite and "oracle_killed" for the
+    "oracle" suite (None when that suite is missing or red at baseline), or None when there are no candidates.
+    Every suite runs with PYTHONDONTWRITEBYTECODE=1 in its env, and the mutated file's __pycache__/<stem>.*.pyc
+    files are deleted before each mutant and after the restore: a .pyc is validated by mtime in whole seconds and
+    size, and same-size mutants written within one second would otherwise run the previous mutant's bytecode.
+    Raises MutationError if a file cannot be read or written back."""
+
+class MutationError(Exception)
 ```
-No type annotations in `agentic.py` (the file has none and must import on Python 3.9: `list[str] | None` is a `TypeError` there).
-
-**The WP's own failure:** `found = attribute(manifest, lines).get(owner_id)`; the failure is the WP's own if `found["files"]` is non-empty, or if any of `found["acs"]` is owned by `owner_id` alone (listed in no other WP's `acs`). An AC shared with another package, or a package in a later wave, never refuses this one's report.
-
-**The gate fails open:** `gate_check` catches `ManifestError` (from its own `load_manifest()`), `OSError` and `ValueError` itself, prints `[agentic guard] gate skipped: <error>` to stderr and returns None. The hook's fail-closed wrapper stays for everything else; a broken gate must not refuse reports forever (the cap is only raised on a real denial).
-`guard(data)` handles `tool == "StructuredOutput"` right after `owner_id` is resolved from the env or from `claims.json` (`:1949`) and **before** the identity block that demands a claim (`:1950-1952`): a report is never refused for a missing claim (a reviewer or QA that never claimed still delivers its report). If `owner_id` matches `^WP-\d+$` it calls `gate_check(owner_id, status)`; otherwise it returns. On a list it calls `block(...)` with:
-```
-WP-01: the report says DONE but the acceptance tests of your package fail (denial 1 of 2). Failing lines:
-  <line>
-  ...
-Run `<acceptance.command>`, fix your files and submit the report again. If a test contradicts architecture.md, return BLOCKED and say which.
-```
-`close_stage` prints, before `RESULT:`, one line `GATE: WP-01=1 WP-02=0` listing every WP in `marks` in that order (judge IDs `QA`, `AT`, `REVIEW`, `DOCS` are not listed; no line when no mark is a WP).
-`status_to_state` maps `DONE`→`done`, `DONE_WITH_CONCERNS`→`done`, `NEEDS_CONTEXT`→`blocker`, `BLOCKED`→`blocker`, `BLOCKER`→`blocker` (kept for the test-author and doc-updater), the others as today.
-`merge_settings(dst, src)` also appends `"hook PreToolUse (StructuredOutput)"` to `added` when it upgraded an existing agentic entry's `matcher` and `timeout`; a second call adds nothing.
-
-`.claude/settings.json` (WP-01): the agentic `PreToolUse` entry becomes
-```json
-{"matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|StructuredOutput",
- "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py\" hook", "timeout": 900}]}
-```
-(`timeout` is in seconds; the CLI's default is 60; the acceptance command can take minutes.)
-
-Engines (WP-02), the same in `pipeline.py` (module-level functions) and `agentic-implement.js` (consts):
+`bench/bench.py` (WP-02):
 ```python
-def wave_states(wp_ids, reports) -> list[str]        # "WP-01=done" | "WP-01=blocker" | "WP-01=error" per the mapping above
-def gate_line(output) -> dict[str, int]               # parses "GATE: WP-01=1 WP-02=0" from a close-stage output; {} if absent
-def concern_item(wp, text) -> dict                    # the pending item of section 5
+def manifest_of(project: Path) -> dict          # the json wp-manifest block of project/architecture.md; {} if absent or invalid
+def production_files(project: Path, manifest: dict) -> list[str]    # section 4b rule; existing .py files, sorted, relative
+def project_commands(manifest: dict) -> list[list[str]]             # verify.tests and acceptance.command, shlex-split, in that order
+def _mutation(fixture: Path, project: Path, env: dict) -> dict | None
+    """mutate.score(project, production_files, {"agents": project_commands, "oracle": [the oracle command of
+    oracle_counts with -s/-t on fixture/oracle, cwd=project]}, env with PYTHONPATH=project). Called after
+    _run_oracle has read its counts and removed project/.bench_oracle (so the agents' suites never see the oracle
+    folder), only when the pipeline ended (not on timeout) and the result is OK or REVIEW; None otherwise.
+    A MutationError is printed to stderr and yields None: a run is never lost to its instrument."""
 ```
-Behaviour per status in `launch_wave`/`launchWave`, before the states are computed:
-- `DONE_WITH_CONCERNS`: each string of `concerns` → `concern_item` appended to `concern_pending` (`self.concern_pending` / `const concernPending = []`), a list of its own like `limit_pending`; the report stays in `run["work_packages"][wp]`. Both engines rebuild `run["pending"]` after QA (JS `:421`, `:463`; Python `:348`, `:397`): those assignments become `qa_pending + limit_pending + concern_pending`, so concerns survive to the result. Every review (the first and each one after a fix cycle) gets all concerns gathered so far, and a concern stays in `pending` even when the reviewer confirms it as a finding (the finding carries the severity; the concern records who raised it).
-- `NEEDS_CONTEXT` in an implement wave (`defects_by_wp` empty), first time for that WP in this run: one more call with prompt `implement_full` (label `f"{wp} (context)"`, same agent type); the second report replaces the first in `run["work_packages"][wp]` and is mapped like any other (a second `NEEDS_CONTEXT` is `blocker`). In a fix wave `NEEDS_CONTEXT` is `blocker` with no re-dispatch.
-- `BLOCKED`, and any status outside the four (a legacy `BLOCKER` from a custom agent): `blocker` state, the wave stops, as today.
-After every close-stage of a wave (implement or fix), `gate_line(close.output)` is summed into `run["gate_denials"]` (keys with 0 are not stored) right after `run["stages"]` is appended and **before** the `if not good` stop (JS `:310`, Python `:308`), so a wave that ends in REVIEW still reports its denials.
-Reviewer prompt: `prompts.reviewer` becomes `Review the integrated code according to architecture.md.{concerns}{rules}`, built from `concern_pending` (never from `run["pending"]`, which is rebuilt only after QA), where `{concerns}` is `""` when `concern_pending` is empty, else `"\nThe implementers finished with these concerns about their own code, as JSON:\n" + compact([{"wp", "problem"}...]) + "\nCheck each one: confirm it as a finding with its severity, or leave it out if the code is right."`. The JS builds the same string.
-New prompt `prompts.implement_full`: `Implement {wp}. Your first attempt returned NEEDS_CONTEXT: {missing}. This time your brief is architecture.md, whole: read it and implement. If the document does not settle it, return BLOCKED with the section that should.{rules}`, where `{missing}` is `missing_context.what` followed by ` (section <section>)`. If `missing_context` is not an object with a string `what`, there is no re-dispatch: the status maps to `blocker` (a malformed report is not a request for context).
-Conformance summary (both runners) gains `"gate_denials": result["gate_denials"]`, and the comparison tuple at `test_pipeline.py:144` includes it.
+`_run_oracle` removes `project/.bench_oracle` once it has its counts. The run's `seconds` keeps measuring the pipeline only (it is taken before the oracle runs today, `:356`): oracle and mutation time are the bench's, not the flow's. `_record(..., mutation: dict | None)` stores it under `"mutation"`. `_summarize` adds `mutation_median` and `mutation_oracle_median`. `TABLE_HEADER` gains `"Mutation"` after `"Oracle"`; `_rows` renders each half with two decimals or `?` (`0.72 / 0.90`, `0.00 / ?`, `?` when both are missing). `_print_runs` appends ` mutation {killed}/{total}` when present. `make_run(..., mutation=None)` in `test_bench.py`.
 
-Fake `claude` (WP-02, `testutil.py`): every implementer report now carries `concerns: []` and `missing_context: null`. `FAKE_CONCERNS=1` → every implementer answers `DONE_WITH_CONCERNS` with `concerns: ["the retry loop in src/<wp>.py may spin"]`. `FAKE_NEEDS_CONTEXT=<WP>` → that WP answers `NEEDS_CONTEXT` with `missing_context: {"what": "the error type of the contract", "section": "6"}` on its first call only (the marker-file pattern), `DONE` afterwards.
+The `roster` fixture's plan (WP-03 writes it; these are its contracts, which the oracle and the references follow). Minutes since midnight as `int`; an interval is half-open `[start, end)`.
+```python
+# roster/intervals.py  (fixture WP-01, wave 1)
+@dataclass(frozen=True)
+class Interval:
+    start: int
+    end: int           # start < end, both in 0..2880 (an overnight shift ends on the next day: end > 1440)
+def overlaps(a: Interval, b: Interval) -> bool          # touching intervals ([540, 720) and [720, 900)) do not overlap
+def merge(intervals: list[Interval]) -> list[Interval]  # sorted by start; overlapping OR touching intervals become one; input not changed
+def gaps(intervals: list[Interval], window: Interval) -> list[Interval]   # the parts of window not covered, sorted
+# roster/shifts.py  (fixture WP-02, wave 1)
+def parse_shift(text: str) -> Interval     # "09:00-17:30" -> Interval(540, 1050); "22:00-06:00" -> Interval(1320, 1800)
+def format_shift(shift: Interval) -> str   # the inverse; an end past midnight prints as "06:00"
+# roster/schedule.py  (fixture WP-03, wave 2, depends on fixture WP-01 and WP-02)
+class ConflictError(ValueError)
+class Schedule:                               # Schedule() takes no arguments
+    def assign(self, person: str, day: date, shift_text: str) -> Interval
+    def shifts(self, person: str) -> list[tuple[date, Interval]]      # sorted by day then start
+    def coverage_gaps(self, day: date, window: Interval) -> list[Interval]
+    def minutes(self, person: str) -> int
+# roster/rules.py  (fixture WP-04, wave 2, depends on fixture WP-01 only, consumes Schedule.shifts by signature)
+def rest_violations(shifts: list[tuple[date, Interval]], min_rest: int) -> list[tuple[date, date]]
+```
+Rules stated in the fixture plan's section 6/7 but **absent from its ACs** (trap a; the oracle's `test_edge_*` check them): `Interval` with `start >= end`, a negative start or an end above 2880 raises `ValueError` at construction; `overlaps` and `merge` treat touching intervals as not overlapping / as one; `parse_shift` rejects `"24:00-01:00"`, `"9:00-17:00"` (two digits each), `"09:00-09:00"` and `"09:60-10:00"` with `ValueError`; `assign` raises `ConflictError` when the new shift overlaps one of the same person on the same day, and a failed `assign` changes nothing; names are stripped and must be non-empty; `coverage_gaps` merges before computing; `minutes` sums lengths. The ACs cover the happy paths and at most two error cases, written so that the acceptance tests pass against the bad reference's happy path.
+
+The bait (trap b; the oracle's `test_ctx_*` check it): two choices `rest_violations` cannot make from section 6 alone. (1) The boundary: a rest **equal** to `min_rest` is enough; only a strictly shorter rest is a violation. (2) The rest between consecutive shifts of a person is measured from the **real end** of the earlier shift, so an overnight shift that ends at `1800` on day D ends at `06:00` on D+1, and a shift starting `08:00` on D+1 leaves 120 minutes of rest. The fixture plan states both **only in its section 10** (`D3`), not in section 6, not in WP-04's block, not in any AC; section 6 for `rest_violations` says only "returns the `(day, day)` pairs of consecutive shifts of the list, in `(day, start)` order, with insufficient rest between them", and the ACs for WP-04 use rests far from the boundary and no overnight shift. The boundary is undecidable from the document an implementer gets: it must ask (`NEEDS_CONTEXT`) or guess, and a guess is wrong half the time. The bad reference uses `<=` and measures from `min(end, 1440)` (the same day's midnight).
 
 ## 7. Conventions
-- The flow's existing style: English identifiers and messages; short flat functions; constants in UPPER_CASE next to their siblings (`MAX_CHECKED_COMMAND` `:185`); no new dependency; every hook path fails closed (the wrapper at `:1985` already does that for exceptions).
-- The hook writes nothing to stdout (the CLI does not show it); the agent sees stderr only on exit 2.
-- Messages to agents name the WP first, then what was refused, then what to do (`block` messages at `:1974-1981`).
-- The JS and Python engines mirror each other in behaviour; a change in one is a change in the other before any test runs.
-- Tests: `unittest`, one behaviour per test, named after it; the fake acceptance command is a script in the temp repo, never the real suite.
-- Commit format: the repo's history (`Short imperative summary (#PR)` after squash).
-- Forbidden: relaxing `validate`, touching the other agents' schemas, a `Stop`/`SubagentStop` hook, gating any owner that is not a `WP-NN`.
+- The bench's style: `from __future__ import annotations`, type annotations on public signatures, UPPER_CASE constants at the top, small functions, errors as `BenchError`/`MutationError` with a one-line message; no shell (`argv` lists), `cwd=project`, timeouts on every subprocess.
+- `mutate.py` imports nothing from `bench.py`; it may import `compat` the way `bench.py` does (`bench/bench.py:28-30`: `.claude/bin` on `sys.path`), for `compat.resolve` (so `python3` resolves on Windows) and `compat.kill_tree` (a timed-out suite dies with its grandchildren). `bench.py` imports `mutate` with `HERE` on `sys.path`, the same pattern.
+- The fixture's plan and code in English, `python3` in its commands, no dependencies, the `#### WP-NN` and `- AC-NNN` headings exactly, `Check` paths under `acceptance/`. The words `oracle`, `reference`, `bait`, `trap` and `mutation` never appear in the fixture's plan or README.
+- Tests: `unittest`, one behaviour per test; temp dirs via `tempfile.mkdtemp` and `addCleanup`; no real `claude` (the fake one from `testutil`).
+- Forbidden: a mutation operator that changes several nodes at once; writing the oracle into the project before the pipeline ends; a `mutation` block without `total`, `killed`, `oracle_killed`, `timeouts`, `survived`.
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-- AC-001 · A finished report with the package's acceptance tests red is refused
-  - Scenario: a temp repo (`test_agentic.Repo`) whose manifest has `acceptance.command` pointing at a script that exits 1 and prints `FAILED acceptance/test_x.py::test_ac_001_x - assert`, with `WP-01` (`acs: ["AC-001"]`) and `WP-02` (`acs: ["AC-002"]`). The script also creates a marker file when it runs.
-  - Action: `agentic.py hook` with `AGENTIC_WP=WP-01` and stdin `{"tool_name": "StructuredOutput", "tool_input": {"status": "DONE", "wp": "WP-01", ...}}`.
-  - Expected: exit 2; stderr contains `WP-01`, `denial 1 of 2` and the `FAILED` line; `.claude/state/gate.json` has `WP-01.denials == 1`.
-  - Must not: deny with `AGENTIC_WP=WP-02` (exit 0, no counter for `WP-02`); deny `WP-01` when the failing test names only an AC that `WP-01` shares with `WP-02` (`acs: ["AC-001", "AC-003"]` on both); run the command when the status is `BLOCKED` or `NEEDS_CONTEXT` (exit 0, no marker file).
-  - Check: `test_acceptance_v21.py::GateTests::test_ac_001_red_acceptance_refuses_the_report`
+- AC-001 · Mutants are generated deterministically with the five operators
+  - Scenario: the source `def f(a, b):\n    if a < b and not a:\n        return a + 3\n    return b` as `m.py`.
+  - Action: `mutate.candidates(source, "m.py")` twice.
+  - Expected: the two results are equal; the operators found, in order, are `["compare", "boolop", "not", "arith", "const"]`; the `compare` mutant's source contains `a <= b`, the `arith` one `a - 3`, the `const` one `return a + 4`, the `not` one `a < b and a`, the `boolop` one `a < b or not a`; every mutant has `line` 2 or 3 and `file == "m.py"`.
+  - Must not: mutate `True`/`False` as integers; produce a mutant for a source that does not parse (`candidates("def (", "x.py") == []`); change two nodes in one mutant (each mutated source differs from `ast.unparse(ast.parse(source))` in exactly one line).
+  - Check: `bench/acceptance/test_acceptance_quality.py::MutantTests::test_ac_001_candidates_are_deterministic`
   - WP: WP-01
-- AC-002 · The gate gives up after two denials and resets when the stage opens
-  - Scenario: AC-001's repo, with `gate.json` at `{"WP-01": {"denials": 2, "last": []}}`.
-  - Action: the same hook call; then `agentic.py open-stage 1` and the hook call again.
-  - Expected: first call exit 0 (let through, counter stays 2); after `open-stage 1` the counter for `WP-01` is gone and the call is denied again (exit 2, `denial 1 of 2`).
-  - Must not: let a `DONE` through on a red suite when the counter is below 2; count a denial for a WP other than the owner.
-  - Check: `test_acceptance_v21.py::GateTests::test_ac_002_cap_and_reset`
+- AC-002 · The sample is even, capped and deterministic
+  - Scenario: `list(range(100))`.
+  - Action: `mutate.sample(items, 40)`, `mutate.sample(items, 200)`, `mutate.sample([], 40)`.
+  - Expected: 40 items, strictly increasing, first `0`, the gap between neighbours 2 or 3; the whole list, equal to `items`; `[]`.
+  - Must not: use randomness (two calls give the same list).
+  - Check: `bench/acceptance/test_acceptance_quality.py::MutantTests::test_ac_002_sample_is_even_and_capped`
   - WP: WP-01
-- AC-003 · close-stage reports the denials and the engines sum them
-  - Scenario: AC-001's repo with `gate.json` `{"WP-01": {"denials": 1, "last": []}}` and a green acceptance script; the conformance scenario `gate denials are summed from close-stage`, whose `gate_fail` answers `close-stage 1` with exit 0 and output `WP-01: 1 file(s) changed: src/a.py\nWP-02: 1 file(s) changed: src/b/x.py\nGATE: WP-01=1 WP-02=0\nRESULT: OK`.
-  - Action: `agentic.py open-stage 1` (the gate reset leaves `WP-01` at 0, so `gate.json` is written after it), then `agentic.py close-stage 1 WP-01=done WP-02=done`; then both conformance runners on the scenario.
-  - Expected: the close-stage output has the line `GATE: WP-01=1 WP-02=0` before `RESULT: OK`; both runners' summary has `gate_denials == {"WP-01": 1}`.
-  - Must not: list `QA`, `AT`, `REVIEW` or `DOCS` in the `GATE:` line (`close-stage qa QA=pass` prints no `GATE:` line); store a WP with 0 denials in `gate_denials`.
-  - Check: `test_acceptance_v21.py::GateTests::test_ac_003_close_stage_line` (WP-01's half) and `test_acceptance_v21.py::EngineTests::test_ac_003_engines_sum` (WP-02's half)
-  - WP: WP-01, WP-02
-- AC-004 · The four statuses map deterministically in both engines
-  - Scenario: the conformance scenarios `concerns go to pending and to the reviewer` (`reports.implementer["WP-01"] = {"status": "DONE_WITH_CONCERNS", "concerns": ["the retry loop in src/a.py may spin"]}`), `needs context is re-dispatched once with the whole document` (`WP-02`: `[{"status": "NEEDS_CONTEXT", "missing_context": {...}}, {"status": "DONE"}]`), `needs context twice is a blocker` (`WP-02` answers `NEEDS_CONTEXT` on both calls, and `gate_fail: [{"prefix": "close-stage 1 ", "exit_code": 3, "output": "RESULT: REVIEW"}]`, as the scenario "a wave in REVIEW stops before the next" does, because the simulated gatekeeper answers exit 0 otherwise) and `needs context in a fix wave is a blocker` (`review: [{"status": "FAIL", "findings": [<one high finding on WP-01>]}]`; `reports.implementer["WP-01"] = [{"status": "DONE"}, {"status": "NEEDS_CONTEXT", "missing_context": {...}}]`, because the implement and the `(fix)` call share the key `WP-01`; and `gate_fail` on `close-stage 1 ` exit 3 with `--fix` in the prefix: `{"prefix": "close-stage 1 WP-01=blocker", "exit_code": 3, "output": "RESULT: REVIEW"}`).
-  - Action: both conformance runners.
-  - Expected: scenario 1: result `OK`, `pending` contains `concern`, the reviewer prompt (`prompts["reviewer:reviewer#1"]`) contains `the retry loop in src/a.py may spin`, the close-stage of wave 1 carries `WP-01=done`. Scenario 2: `agents` contains `implementer:WP-02 (context)` once, its prompt contains `architecture.md, whole` and `the error type of the contract`, the wave closes `WP-02=done`, result `OK`. Scenario 3: the wave closes `WP-02=blocker`, result `REVIEW`, `failed_stage` `wave 1`, `implementer:WP-02 (context)` exactly once. Scenario 4: the first wave closes `WP-01=done`, the fix wave closes `WP-01=blocker --fix`, result `REVIEW`, `failed_stage` `fix wave 1`, no `(context)` call.
-  - Must not: a concern item with a `severity`; a third dispatch of `WP-02`; a `(context)` call counted as a fix attempt.
-  - Check: `test_acceptance_v21.py::EngineTests::test_ac_004_status_mapping`
+- AC-003 · The score tells a strong suite from a weak one and restores the file
+  - Scenario: a temp project with `src/calc.py` (`def add(a, b):\n    return a + b\n\n\ndef small(x):\n    return x < 3\n`: three candidates, `arith`, `compare`, `const`, none equivalent), `tests/test_strong.py` asserting `add(2, 3) == 5`, `small(2)` and `not small(3)`, `tests/test_weak.py` that only imports both, and `tests/test_red.py` asserting `add(1, 1) == 3` (red on the original code).
+  - Action: `mutate.score(project, ["src/calc.py"], {"agents": [strong command], "oracle": [weak command]})`, with each command `[sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_<name>.py"]` and `PYTHONPATH` set to the project in `env`.
+  - Expected: `total == 3`, `killed == 3`, `oracle_killed == 0`, `survived == []`, `timeouts == 0`; `src/calc.py` has its original bytes afterwards; with `{"agents": [weak command]}` alone, `killed == 0`, `len(survived) == 3` and each survived item has `file`, `line`, `operator`, `description`; with `{"agents": [red command]}` alone, `killed is None`, `survived == []` and `total == 3`.
+  - Must not: leave a mutated file behind; return `None` when there are candidates; count a passing suite as a kill; count a suite that is red at baseline as killing anything.
+  - Check: `bench/acceptance/test_acceptance_quality.py::ScoreTests::test_ac_003_strong_kills_weak_survives`
+  - WP: WP-01
+- AC-004 · A mutant that hangs is killed by the timeout, and no candidates means None
+  - Scenario: `src/loop.py` with `def count(n):\n    i = 0\n    while i < n:\n        i = i + 1\n    return i` and a suite asserting `count(3) == 3` and `count(0) == 0`; and a second project whose only production file is `x = "a"`.
+  - Action: `mutate.score(..., timeout_s=5)` on each.
+  - Expected: first: `timeouts >= 1` and `killed == total` (the `+` to `-` mutant never ends and dies by timeout; `<` to `<=` returns 4; `i = 0` to `i = 1` fails `count(0) == 0`; `+ 1` to `+ 2` returns 4); second: `None`.
+  - Must not: hang the bench; count the timeout as survived.
+  - Check: `bench/acceptance/test_acceptance_quality.py::ScoreTests::test_ac_004_timeout_kills_and_empty_is_none`
+  - WP: WP-01
+- AC-005 · Each bench run records a mutation block and the report shows the column
+  - Scenario: the `benchfix` fixture and the fake `claude` as `test_acceptance_bench.Sandbox` sets them up (`FAKE_WRITE=1`: the agents write `x = 1` into `src/a.py`, `src/b/x.py`, `src/c.py`; `acc.py` passes when those exist and no `.bench_oracle` folder is present; the oracle's `test_d` always fails because nobody writes `src/d.py`).
+  - Action: `bench.py run --fixture benchfix --repeat 1 --out <dir>`; then `bench.py report --out <dir>`.
+  - Expected: `runs[0]["mutation"]` is a dict with `total == 3` (one `const` mutant per `x = 1`), `killed == 0` (the acceptance script checks existence only), `oracle_killed is None` (the oracle is red at baseline), `survived` of length 3, `timeouts == 0`; `summary["benchfix"]["mutation_median"] == 0.0` and `mutation_oracle_median is None`; `RESULTS.md` has `Mutation` in its header and `0.00 / ?` in the row; the printed run line ends with ` mutation 0/3`.
+  - Must not: run the mutation when the pipeline timed out (`--timeout-min 0.01` on the same fixture: `mutation` is `None` and the run is recorded as `timeout`); leave `.bench_oracle` in the project when the mutation runs (`acc.py` would be red and `killed` `None`); make a results file written by 2.1.0 (no `mutation` key) unreadable: `report` over a copy of `bench/results/2.1.0-20261101-145223-dcc313a.json` shows `?` in the column.
+  - Check: `bench/acceptance/test_acceptance_quality.py::BenchTests::test_ac_005_mutation_in_results_and_report`
   - WP: WP-02
-- AC-005 · Both engines carry the same implementer schema and the simulated claude speaks it
-  - Scenario: `pipeline-spec.json` and `agentic-implement.js` as merged; a temp project with the fake `claude` and `FAKE_CONCERNS=1`.
-  - Action: compare `schemas.implementer` of the spec with `REPORT_SCHEMA` extracted from the JS (as `test_acceptance_v2.py::SchemaTests` does); run `agentic.py run-pipeline` in the temp project.
-  - Expected: `status.enum == ["DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"]`, `required` identical in both and containing `concerns` and `missing_context`; `workflow-result.json` has `result == "OK"`, one `concern` pending item per WP and `gate_denials == {}`.
-  - Must not: `BLOCKER` in the implementer enum; a difference in `required` order between the two files.
-  - Check: `test_acceptance_v21.py::SchemaTests::test_ac_005_schema_in_both_engines_and_fake`
-  - WP: WP-02
-- AC-006 · The prompts say it
-  - Scenario: the merged `implementer.md` and `implement.md`.
-  - Action: read them.
-  - Expected: `implementer.md` names the four statuses, one line each, containing these phrases: `DONE_WITH_CONCERNS` with "one sentence per concern, with the file"; `NEEDS_CONTEXT` with "you will get the whole document once"; `BLOCKED` with "a contract does not match"; and the gate: "a report that says DONE while the acceptance tests of your criteria fail is refused, twice at most". `implement.md` has a bullet for `concern` items and one for `gate_denials`.
-  - Must not: the token `BLOCKER` anywhere in `implementer.md`.
-  - Check: `test_acceptance_v21.py::PromptTests::test_ac_006_prompts`
+- AC-006 · The roster fixture is sound and names its traps
+  - Scenario: the shipped `bench/fixtures/roster/`.
+  - Action: `bench.py selftest --fixture roster`; the oracle over `reference/good` and over `reference/bad` with `-v`.
+  - Expected: selftest prints `roster: ok`; the oracle has at least 24 tests, of which at least 8 named `test_edge_*` and at least 2 named `test_ctx_*`; `reference/good` passes all; `reference/bad` fails at least 4, and every failing test is named `test_edge_*` or `test_ctx_*` and at least one `test_ctx_*` fails.
+  - Must not: pass any oracle test on the bare repo.
+  - Check: `bench/acceptance/test_acceptance_quality.py::RosterTests::test_ac_006_sound_and_traps_named`
   - WP: WP-03
-- AC-007 · Version and notes
-  - Scenario: the merged repo.
-  - Action: read `plugin.json`, `upgrade.NOTES`, the roadmap.
-  - Expected: version `2.1.0`; `NOTES["2.1.0"]` has at least three strings, mentioning `gate`, `DONE_WITH_CONCERNS` and `settings.json` between them; the roadmap's "Versioning" section names 2.1.0 for items 2.1 and 2.2.
-  - Must not: `NOTES["2.0.0"]` changed (seven strings, same first sentence).
-  - Check: `test_acceptance_v21.py::ReleaseTests::test_ac_007_version_and_notes`
-  - WP: WP-04
-- AC-008 · install upgrades the hook matcher of a 2.0 project
-  - Scenario: a temp `settings.json` with the 2.0.0 agentic entry whose matcher the project trimmed to `Write|Edit|Bash` (no `timeout`) and a project-owned `PreToolUse` entry (`matcher: "Bash"`, another command).
-  - Action: `agentic.merge_settings(dst, src)` with the repo's `settings.json` as `src`, twice.
-  - Expected: the agentic entry's matcher is exactly `Write|Edit|Bash|StructuredOutput`, its hook has `timeout == 900`, `added` contains `hook PreToolUse (StructuredOutput)`; the project's entry is unchanged; the second call's `added` is empty.
-  - Must not: duplicate the agentic entry; alter the project's entry.
-  - Check: `test_acceptance_v21.py::InstallTests::test_ac_008_matcher_upgrade`
-  - WP: WP-01
+- AC-007 · The roster plan is valid, has the right shape, and hides the bait from the brief
+  - Scenario: a copy of `repo/` with the flow installed (`FixtureReady.prepare("roster")`).
+  - Action: `agentic.py validate`; read the manifest; `agentic.py briefs`; read `architecture.md` and `.claude/state/briefs/WP-04.md`.
+  - Expected: `Manifest valid`; four packages, `WP-01` and `WP-02` in wave 1, `WP-03` in wave 2 depending on both, `WP-04` in wave 2 depending on `WP-01` only; the plan's section 10 contains `D3` and the phrase `real end`; `WP-04.md` does not contain `real end` and does not contain `D3 ·`; the plan contains none of `oracle`, `reference`, `bait`, `trap`, `mutation` (case-insensitive); the repo's own tests pass (`python3 -m unittest discover -s tests`).
+  - Must not: state the rest rule in section 6, in WP-04's block or in an AC (`architecture.md` has exactly one occurrence of `real end`).
+  - Check: `bench/acceptance/test_acceptance_quality.py::RosterTests::test_ac_007_plan_valid_and_bait_hidden`
+  - WP: WP-03
+- AC-008 · The bench runs roster end to end with the simulated agents
+  - Scenario: the fake `claude` with `FAKE_WRITE` unset.
+  - Action: `bench.py run --fixture roster --repeat 1 --out <dir>`.
+  - Expected: exit 0; one results file with one run of fixture `roster`, `oracle.total >= 24`, a `mutation` key present (a dict or `null`).
+  - Must not: write the oracle into the project before the pipeline (the run's `result` is what the engine said, and the oracle's `.bench_oracle` folder is not in the fixture's `repo/`).
+  - Check: `bench/acceptance/test_acceptance_quality.py::RosterTests::test_ac_008_bench_runs_roster`
+  - WP: WP-03
 
 ### Work packages
-#### WP-01 · The gate in the hook, the GATE: line, the settings
+#### WP-01 · The mutation module
 - Wave 1.
-- Files: `.claude/bin/agentic.py`, `.claude/settings.json`, `.claude/bin/test_agentic.py`, `.claude/bin/test_acceptance_portable.py`.
-- Implements `gate_check`, `gate_reset`, `gate_denials`, the `GATE:` line, `status_to_state`, `merge_settings` (section 6). Consumes nothing.
-- ACs: AC-001, AC-002, AC-003 (the close-stage half), AC-008.
-- Patterns to mirror: `guard` write rules `:1961-1983` (message shape, `block`), `with_claims`/`locked_json` `:1673-1696` (state file), `acceptance_check` `:1230-1249` (exit codes), `attribute` `:1557-1574`, `failure_lines` `:1539-1543`, `open_stage` `:1459-1469`, `close_stage` `:1472-1508`, `merge_settings` `:1051-1085`; tests `test_agentic.py:57-80` and `InstallTests` `:933-1012`.
-- Gotchas: WP-02 lands before WP-01 (the `run-wave` tests of `test_agentic.py` need the fake `claude` to emit the new required fields), and every WP's checks run on the merged tree; the hook's `cwd` may be a subdirectory, use `ROOT`; the gate's `run_command` timeout is `GATE_TIMEOUT_S`, below the hook's 900 s; a shared AC (`acs` in two WPs) never counts against either; `gate.json` is written by parallel implementers, always through `locked_json`; a WP with neither `acs` nor mentioned files is never attributed (let through); the gate must not print to stdout; `status` may be missing or not a string in a malformed report: not in `GATE_STATUSES`, let through (the schema refuses it anyway); `open_stage` takes the label of a wave, `gate_reset` receives that wave's `owners`.
-- Exact imports and APIs: none new; `json`, `re`, `Path` are already imported.
-- WP validation: `python3 -m unittest discover -s .claude/bin -p test_agentic.py`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_portable.py`; `python3 -m compileall -q .claude/bin`.
+- Files: `bench/mutate.py`, `bench/test_mutate.py`.
+- Implements `Mutant`, `OPERATORS`, `MUTANTS_MAX`, `MUTANT_TIMEOUT_S`, `MutationError`, `candidates`, `sample`, `score` (section 6). Consumes nothing.
+- ACs: AC-001, AC-002, AC-003, AC-004.
+- Patterns to mirror: `bench/bench.py:28-66` (constants, `BenchError`), `:275-294` (`oracle_counts`: `subprocess.run` with `cwd`, `env`, `capture_output`, `timeout`, `stdin=DEVNULL`, the `(OSError, subprocess.SubprocessError)` catch), `:167-183` (`remove_tree`: retry and restore patterns), `bench/test_bench.py:1-33` (module loading, `TempCase`).
+- Gotchas: stale bytecode (section 6): set `PYTHONDONTWRITEBYTECODE=1` and delete the mutated module's `.pyc` files before each mutant and after the restore; a unit test with two same-size mutants of one line (`x = 1` and `x = 2` against a weak-then-strong pair of asserts) proves the code is really reloaded. `ast.unparse` loses comments and formatting, so the mutated source is the unparsed tree; write it with `encoding="utf-8"` and restore the **original bytes** (read them once with `read_bytes`) in a `finally`. Candidates come from the original tree: collect `(lineno, col_offset, operator, node_id)` on one walk, then for each candidate `copy.deepcopy` the tree and mutate that node only (match by the walk index, not by identity across copies). `Compare` nodes may have several `ops`: mutate `ops[0]` only. `const` skips `bool` (a subclass of `int`) and skips constants inside annotations and docstrings. `not` applies to `UnaryOp(Not)` only. `arith` applies to `BinOp` with `Add`/`Sub`, not `AugAssign`. Run each command as `subprocess.Popen(compat.resolve(argv), cwd=project, env=env, stdin=DEVNULL, stdout=PIPE, stderr=STDOUT, **compat.group_kwargs())`, then `communicate(timeout=timeout_s)`; on `TimeoutExpired`, `compat.kill_tree(proc.pid)` and `communicate()` again, and the mutant counts as killed. No `subprocess.run(timeout=)`: it leaves grandchildren alive. Commands run from `cwd=project` with the given `env` (the caller sets `PYTHONPATH`). Python 3.9 compatible: no `match`, no `X | Y` at runtime outside annotations under `from __future__ import annotations`.
+- Exact imports and APIs: `ast`, `copy`, `dataclasses`, `os`, `pathlib`, `subprocess`, `sys`; `compat.resolve` and `compat.kill_tree` from `.claude/bin/compat.py` (`sys.path` as `bench.py:28-30`). On timeout: `subprocess.Popen(...)` in its own group (`compat.group_kwargs()`), `communicate(timeout=)`, then `compat.kill_tree(proc.pid)`, as `run_command()` in `.claude/bin/agentic.py:1224-1243` does.
+- WP validation: `python3 -m unittest discover -s bench -p test_mutate.py`; `python3 -m compileall -q bench`.
 
-#### WP-02 · Statuses, concerns and gate_denials in both engines
-- Wave 1.
-- Files: `.claude/workflows/pipeline-spec.json`, `.claude/workflows/agentic-implement.js`, `.claude/bin/pipeline.py`, `.claude/bin/conformance.json`, `.claude/bin/test_pipeline.py`, `.claude/bin/test_workflow.mjs`, `.claude/bin/testutil.py`.
-- Implements `wave_states`, `gate_line`, `concern_item`, the re-dispatch, the reviewer `{concerns}`, the schema (section 5), the fake knobs. Consumes the `GATE:` line format by signature (WP-01, same wave).
-- ACs: AC-003 (the engines' half), AC-004, AC-005.
-- Patterns to mirror: `needsItem`/`needs_item` and the `needs validation` routing (JS `:188`, `pipeline.py:119-125`), `report`/`call` (JS `:182-186`, `pipeline.py:106-116`), `launchWave`/`launch_wave` (JS `:269-287`, `pipeline.py:262-287`), `changedBy` parsing (JS `:169-173`, `pipeline.py:128-131`), the 2.0.0 conformance scenarios (last two of `conformance.json`) and their assertions (`test_pipeline.py:160-166`, `test_workflow.mjs:525-529`), fake knobs `testutil.py:78-95`.
-- Gotchas: `concern_pending` must be added wherever `run["pending"]` is rebuilt (two places per engine) or the concerns vanish; `required` order identical in the spec and the JS (`deepEqual`); the engines record the *second* report of a re-dispatched WP; `fixCount`/`fix_count` must not count a `(context)` call; the reviewer prompt is built once per review from `concern_pending`; `summarize` in both runners must add `gate_denials` or the conformance comparison fails; the fake must emit `concerns: []` and `missing_context: null` in every implementer report or `structured_report` refuses it; `world`/`fromDecl` must accept a list override per WP (first call, then last element).
-- Exact imports and APIs: `render` (`pipeline.py:31`), `compact` (`pipeline.py:26`), `self.seq`/`seq`, `self.step`/`step`.
-- WP validation: `node .claude/bin/test_workflow.mjs`; `python3 -m unittest discover -s .claude/bin -p test_pipeline.py`; `python3 -m compileall -q .claude/bin`.
+#### WP-02 · Mutation per run, summary and report
+- Wave 2, `depends_on: ["WP-01"]`.
+- Files: `bench/bench.py`, `bench/test_bench.py`.
+- Implements `manifest_of`, `production_files`, `project_commands`, `_mutation`, the `_run_oracle` cleanup, the `_record`/`_summarize`/`_rows`/`_print_runs` changes (section 6). Consumes `mutate.score` by implementation (WP-01, wave 1: `import mutate` at the top of `bench.py` needs the module to exist); the unit tests stub `mutate.score` with `unittest.mock.patch.object(bench.mutate, "score", ...)`.
+- ACs: AC-005.
+- Patterns to mirror: `bench/bench.py:345-376` (`_run_once`, `_record`), `:412-427` (`_summarize`, `_summaries`), `:488-502` (`_rows`), `:566-572` (`_print_runs`), `:28-30` (how `compat` is imported, for `mutate`), `bench/acceptance/test_acceptance_fixtures.py:34-38` (`manifest_of` regex), `bench/test_bench.py:102-130` (`SummaryTests`, `ReportTests`).
+- Gotchas: `_mutation` runs after `_run_oracle`, which now removes `.bench_oracle` once it has counted (`remove_tree`); the oracle ceiling points `-s`/`-t` at `fixture/oracle` directly; it must not run on a timed-out pipeline (the project may be half-written and the test commands may hang) and must swallow `MutationError` into `None` with a line on stderr. The oracle command is the one of `oracle_counts` (`[sys.executable, "-m", "unittest", "discover", "-s", str(fixture / "oracle"), "-t", str(fixture / "oracle")]`) with `PYTHONPATH=project` in `env`; the agents' commands run with the same env. `production_files` follows the section 4b rule (every `.py` under the listed paths, minus `tests/`, `test_*.py`, `acceptance.files`, `qa.files`; `__init__.py` included). `_summarize` must accept runs without the key (`make_run` default) and 2.1.0 results files (`_rows` renders `?`). Keep `SCHEMA = 1`. The `Mutation` column goes right after `Oracle` in `TABLE_HEADER` and in the row.
+- Exact imports and APIs: `import mutate` after `sys.path.insert(0, str(HERE))` next to the `compat` import (`:28-30`), `shlex.split`, `re`.
+- WP validation: `python3 -m unittest discover -s bench -p test_bench.py`; `python3 -m compileall -q bench`.
 
-#### WP-03 · The prompts
+#### WP-03 · The roster fixture
 - Wave 1.
-- Files: `.claude/agents/implementer.md`, `.claude/commands/implement.md`, `.claude/bin/test_definitions.py`.
-- Implements the texts of AC-006. Consumes the schema of section 5 by signature.
-- ACs: AC-006.
-- Patterns to mirror: the "# Report" section of `implementer.md` (last paragraph); the "Ambiguity" and "Active guardrails" sections (`NEEDS_CONTEXT` replaces "stop and return BLOCKER" for a missing decision; `BLOCKED` for contradictions, mismatched contracts and guardrails); `implement.md:60-64` (one bullet per pending type); the 2.0.0 tests at the end of `test_definitions.py`.
-- Gotchas: `test_definitions.py` already pins phrases of `implementer.md` ("not_checked", the reuse ladder): keep them; `BLOCKER` must disappear from `implementer.md` but stays in `test-author.md` and `doc-updater.md`; the report paragraph must list `concerns` and `missing_context` with when each is non-empty.
-- WP validation: `python3 -m unittest discover -s .claude/bin -p test_definitions.py`.
-
-#### WP-04 · Version, notes, roadmap
-- Wave 1.
-- Files: `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, `.claude/bin/test_upgrade.py`, `.claude/bin/test_acceptance_upgrade.py`, `.claude/bin/test_acceptance_v2.py`, `docs/roadmap/repo-review-2026-11.md`.
-- ACs: AC-007.
-- Patterns to mirror: `NOTES["2.0.0"]` `upgrade.py:50-62` (tone: what changed, what the project must do); `test_acceptance_upgrade.py:258` and `test_acceptance_v2.py:177` (the version pins: both become `2.1.0`).
-- Notes to write (at least): the gate and its two denials; the four statuses and that a customised `implementer.md` from 2.0 must be merged (`BLOCKER` is no longer in the schema); `settings.json` matcher and timeout upgraded by `install` (a hand-edited agentic entry must be checked); `gate_denials` and `concern` items in `workflow-result.json`. Roadmap: item 2.1 corrected (`PreToolUse` on `StructuredOutput`, measured; not `SubagentStop`), "Versioning" names 2.1.0, "Recommended order" step 3 marked shipped.
-- WP validation: `python3 -m unittest discover -s .claude/bin -p "test_*upgrade.py"`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_v2.py`.
+- Files: `bench/fixtures/roster/` (everything under it).
+- Implements the fixture of section 6: `fixture.json`, `repo/` (README, `roster/__init__.py`, `tests/test_version.py`, `architecture.md`), `oracle/test_oracle.py`, `reference/good/roster/{intervals,shifts,schedule,rules}.py`, `reference/bad/roster/` (the same four). Consumes nothing.
+- ACs: AC-006, AC-007, AC-008.
+- Patterns to mirror: `bench/fixtures/tally/repo/architecture.md:1-284` (the plan: sections, contracts with concrete values, one AC per behaviour with `Check` under `acceptance/`, `#### WP-NN` blocks, the manifest with `stack`, `allow_bash`, `acceptance`, `verify`, `docs`), `bench/fixtures/tally/oracle/test_oracle.py:1-60` (imports inside each test, `test_edge_*`), `bench/fixtures/tally/reference/bad/tally/money.py:1-24` (plausible and wrong on the edges), `bench/fixtures/tally/repo/tests/test_version.py`, `bench/fixtures/vault/fixture.json`.
+- Gotchas: the fixture's plan must pass `agentic.py validate` once the flow is installed in a copy (`FixtureReady.prepare` does that): `mirror` entries must point at existing lines of the seed files (`roster/__init__.py:1-3`, `tests/test_version.py:1-15`), `acs` listed per package, the `docs` zone `["README.md"]` with `"codemap": null`, no `__init__.py` in `tests/` or `acceptance/`. The bait: section 10 of the fixture plan, decision `D3`, is the **only** place with the rest rule and the phrase `real end`; section 6 describes `rest_violations` without it; WP-04's block and ACs stay silent (AC-007 counts the phrase once). The fixture plan's ACs cover happy paths and at most two error cases so the acceptance tests pass against `reference/bad`'s happy path; every edge rule of section 6 is checked by a `test_edge_*` oracle test, the bait by `test_ctx_*` tests (a rest of exactly 480 with `min_rest` 480 is not a violation; an overnight shift followed by an early shift: 120 minutes of rest with `min_rest` 480 is a violation, which the bad reference misses). `reference/bad` must pass every oracle test that is not `test_edge_*` or `test_ctx_*`. Dates are `datetime.date`; `shifts` sorts by `(day, start)`. The fake `claude` writes nothing for this fixture, so AC-008 only checks the run completes.
+- Exact imports and APIs: standard library only in the fixture (`dataclasses`, `datetime`, `re`).
+- WP validation: `python3 bench/bench.py selftest --fixture roster`; `python3 -m unittest discover -s bench/fixtures/roster/repo/tests`.
 
 ```json wp-manifest
 {
-  "stack": ["python", "typescript"],
-  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(node .claude/bin/test_workflow.mjs)"],
-  "acceptance": {"files": [".claude/bin/test_acceptance_v21.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v21.py"},
-  "verify": {"build": "python3 -m compileall -q .claude/bin", "lint": "node .claude/bin/test_workflow.mjs", "tests": "python3 -m unittest discover -s .claude/bin -p test_*.py"},
-  "docs": {"files": ["README.md", "docs/how-it-works.md", "docs/how-to/"], "codemap": null},
+  "stack": ["python"],
+  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(python3 bench/bench.py selftest:*)"],
+  "acceptance": {"files": ["bench/acceptance/"], "command": "python3 -m unittest discover -s bench/acceptance -p test_acceptance_quality.py"},
+  "verify": {"build": "python3 -m compileall -q bench", "tests": "python3 -m unittest discover -s bench -p test_*.py", "lint": "python3 -m unittest discover -s bench/acceptance -p test_acceptance_*.py"},
+  "docs": {"files": ["README.md", "docs/how-to/", "docs/roadmap/"], "codemap": null},
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/agentic.py", ".claude/settings.json", ".claude/bin/test_agentic.py", ".claude/bin/test_acceptance_portable.py"],
-     "acs": ["AC-001", "AC-002", "AC-003", "AC-008"], "mirror": [".claude/bin/agentic.py:1929-1983", ".claude/bin/agentic.py:1557-1574", ".claude/bin/agentic.py:1459-1508", ".claude/bin/agentic.py:1051-1085"]},
-    {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude/workflows/pipeline-spec.json", ".claude/workflows/agentic-implement.js", ".claude/bin/pipeline.py", ".claude/bin/conformance.json", ".claude/bin/test_pipeline.py", ".claude/bin/test_workflow.mjs", ".claude/bin/testutil.py"],
-     "acs": ["AC-003", "AC-004", "AC-005"], "mirror": [".claude/bin/pipeline.py:106-131", ".claude/bin/pipeline.py:262-287", ".claude/workflows/agentic-implement.js:169-193", ".claude/workflows/agentic-implement.js:269-287"]},
-    {"id": "WP-03", "wave": 1, "depends_on": [], "files": [".claude/agents/implementer.md", ".claude/commands/implement.md", ".claude/bin/test_definitions.py"],
-     "acs": ["AC-006"], "mirror": [".claude/agents/implementer.md", ".claude/commands/implement.md:60-64"]},
-    {"id": "WP-04", "wave": 1, "depends_on": [], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", ".claude/bin/test_upgrade.py", ".claude/bin/test_acceptance_upgrade.py", ".claude/bin/test_acceptance_v2.py", "docs/roadmap/repo-review-2026-11.md"],
-     "acs": ["AC-007"], "mirror": [".claude/bin/upgrade.py:50-62"]}
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["bench/mutate.py", "bench/test_mutate.py"],
+     "acs": ["AC-001", "AC-002", "AC-003", "AC-004"], "mirror": ["bench/bench.py:28-66", "bench/bench.py:275-294", "bench/test_bench.py:1-33"]},
+    {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": ["bench/bench.py", "bench/test_bench.py"],
+     "acs": ["AC-005"], "mirror": ["bench/bench.py:345-376", "bench/bench.py:412-427", "bench/bench.py:488-502", "bench/acceptance/test_acceptance_fixtures.py:34-38"]},
+    {"id": "WP-03", "wave": 1, "depends_on": [], "files": ["bench/fixtures/roster/"],
+     "acs": ["AC-006", "AC-007", "AC-008"], "mirror": ["bench/fixtures/tally/repo/architecture.md:1-284", "bench/fixtures/tally/oracle/test_oracle.py:1-60", "bench/fixtures/tally/reference/bad/tally/money.py:1-24", "bench/fixtures/vault/fixture.json"]}
   ]
 }
 ```
 
 ## 9. Test strategy
-- Unit: WP-01 in `test_agentic.py` (gate: each let-through condition, a report from a reviewer that never claimed is let through, the denial message, the counter, the reset, the `GATE:` line, `status_to_state`, the matcher upgrade and its idempotence); WP-02 through the five new conformance scenarios in both runners plus the fake knobs; WP-03 in `test_definitions.py`; WP-04 in `test_upgrade.py`.
-- Acceptance: `.claude/bin/test_acceptance_v21.py`, AC-001…AC-008, written first and red (the gate, the statuses, the version do not exist yet). AC-005's end-to-end part uses the simulated `claude`, so nothing is spent. No acceptance test re-runs the whole suites.
-- QA: exploratory over the gate (a non-string status; a WP with no `acs` and unmentioned files; a corrupt `gate.json`; a `StructuredOutput` call from QA or the test-author, never gated; a report whose `wp` differs from the owner: the owner wins) and over the engines (`concerns` with non-strings; `NEEDS_CONTEXT` from a custom agent; a `GATE:` line with an unknown WP; a `GATE:` line in a fix wave summed with the implement wave's).
-- After merging, by hand: release 2.1.0, then `python3 bench/bench.py run --sessions 3` on the four fixtures, compared with the 2.0.0 rows of `bench/RESULTS.md`; the metrics are fix cycles, gate denials (new, from the kept session results), cost and minutes.
+- Unit: WP-01 in `bench/test_mutate.py` (each operator on a one-line source, bool and docstring constants skipped, `Compare` with two ops mutates the first, unparseable source, `sample` edges, `score` with stub commands such as `python -c "import sys; sys.exit(1)"`, restore on error); WP-02 in `bench/test_bench.py` (`production_files` on a manifest with a directory, a tests path and a missing file; `project_commands`; `_summarize` with and without `mutation`; `_rows` with `?`; `_mutation` with `mutate.score` patched to return a block, to return `None`, to raise `MutationError`); WP-03 through `selftest` and its own version test.
+- Acceptance: `bench/acceptance/test_acceptance_quality.py`, AC-001…AC-008, written first and red. AC-005 and AC-008 use the fake `claude` (no spend); AC-008 takes about as long as the existing end-to-end run of two fixtures (`test_acceptance_fixtures.py:143-171`, not measured here).
+- QA: exploratory over `mutate` (a file with syntax error after the agents, a mutant that writes to disk, a test command that is missing, a production file deleted by an agent, a non-UTF-8 source) and over the fixture (the bad reference against every `test_edge_*`; a plan whose `Check` paths are consistent with the manifest's `acceptance.files`).
+- After merging, by hand: `python3 bench/bench.py run` (five fixtures, three sessions) with the real `claude`; the new columns are the first quality signal; the roster rows say whether fix cycles or `NEEDS_CONTEXT` appear.
 
 ## 10. Decisions
-- **D1 · The gate is a `PreToolUse` hook on `StructuredOutput`, not `Stop`/`SubagentStop` (measured):** with `--json-schema` the structured answer is delivered before `Stop` fires and a block does not change it; a denied `StructuredOutput` makes the agent correct and re-submit in the same context. Roadmap item 2.1 said `SubagentStop`; the roadmap is corrected. Discarded: a check inside the engines after the report (would need a new dispatch, losing the agent's context, which is the whole point).
-- **D2 · Acceptance attributed to the WP, nothing else (user's choice):** only the acceptance tests have a deterministic owner (`acs` and paths); a `verify.*` failure would blame the wrong package in a parallel wave.
-- **D3 · Two denials per WP and stage (user's choice):** a third attempt in the same context rarely helps and the fix cycles already exist; the count resets when the stage opens so a fix wave gets its own two.
-- **D4 · Deterministic status mapping (user's choice):** `DONE_WITH_CONCERNS` is `done` plus pending items without severity, handed to the reviewer who can promote them to findings; `NEEDS_CONTEXT` buys one re-dispatch with the whole document, only in implement waves (in a fix wave the agent already has the code and the defects; a second miss is a plan problem, so `blocker`); `BLOCKED` is the old `BLOCKER`. Discarded: letting the launcher model decide (not reproducible, not measurable).
-- **D5 · `BLOCKER` is removed from the implementer enum**, kept for the test-author and doc-updater, and kept in `status_to_state` so their fallback runs still map. A hard rename rather than an alias: an alias would let a 2.0 customised `implementer.md` keep working while its prompt lies about the statuses.
-- **D6 · `gate_denials` reach the run through `close-stage` output**, not by the engines reading `gate.json`: the engines have no disk (the native workflow runs inside the Workflow tool) and every state fact already travels in gatekeeper output.
-- **D7 · Version 2.1.0, not 3.0:** the implementer schema and the settings change, so projects upgrade with `install` and read the notes, but no plan, manifest or command changes; the roadmap's "Versioning" section already said 2.x for sections 2-7.
-- **D8 · The hook `timeout` is set in `settings.json` and upgraded by `install`:** without it the CLI kills the hook at 60 s and a killed hook is read as allowed by the CLI. 900 s matches `run_command`'s cap.
-- **D9 · The gate fails open on its own errors and only on the WP's own failure:** a hook that refused every report because the manifest did not parse would stall a run with no cap; a shared AC would make the first finisher pay for the other's unfinished work. The write rules keep failing closed.
-- **D10 · The gate runs the whole acceptance command, not only the WP's tests:** the manifest has one command and no per-WP selection; attribution filters the result. Discarded: deriving a `-k AC-001` filter (framework-specific; the flow is language-agnostic).
+- **D1 · Agents' suite plus an oracle ceiling (user's choice):** a kill rate alone has no scale; the oracle, written by a person, says what a strong suite kills on the same mutants. Discarded: agents' tests only; unit tests only (the acceptance tests are the flow's judge and belong in the measure).
+- **D2 · Five classic operators, cap 40, even sample (user's choice):** enough signal at a bounded cost (40 runs of a suite that takes seconds). Discarded: no cap (minutes per run on a large suite); three operators (too coarse to tell suites apart).
+- **D3 · Fix-cycle trap plus a NEEDS_CONTEXT bait (user's choice):** the gate cannot be forced by a fixture (section 1); fix cycles come from reviewer/QA findings the acceptance tests do not see; the bait tests the one status the plan can provoke. Discarded: a cross-WP ambiguity (would mostly produce false gate denials on the first finisher).
+- **D4 · The bait lives in section 10:** `brief.py` leaves Decisions out of an implementer's brief (`WP_SECTIONS`), so a well-behaved implementer must ask (`NEEDS_CONTEXT`) and finds the answer in the whole document; an implementer that invents a reading is caught by `test_ctx_*`. Discarded: hiding it in another package's block (unnatural in a real plan; section 10 is where such a decision belongs).
+- **D5 · No mutation check in `selftest`:** a check "the oracle kills at least one mutant of reference/good" would flag the bench's own test fixtures (`x = 1` files, existence-only oracles) and every fixture with a trivial seed. The instrument is covered by its unit and acceptance tests instead; the ceiling in each run shows whether the oracle is strong.
+- **D6 · A separate module `mutate.py`:** `bench.py` is 618 lines and one purpose; mutation is another. `bench.py` loads it by path, as it does `compat`.
+- **D7 · Mutation only on a finished pipeline:** a timed-out run may have half-written code; a hanging suite would cost 40 timeouts. `None` says "not measured".
+- **D8 · `ast.unparse` rather than text patching:** exact, single-node, standard library; the lost formatting does not matter in a throwaway copy. Python 3.9 is the floor the bench already states.
+- **D9 · This plan is run by `/implement`:** nothing it owns is under `.claude/`, so for the first time the flow implements a change of its own repo. The docs zone is the doc-updater's.
 
 ## 11. Risks and open questions
-- **This plan cannot be run by `/implement` in this repo:** `validate` refuses any WP that owns a path under `.claude/` (`agentic.py:403`) and the hook blocks agents' writes there; both are security rules, not to be relaxed. The WPs are executed by hand in this session, with the acceptance tests written and red first, the WP validation commands and the verify phases run as the manifest states, and one commit per WP. The manifest stays truthful rather than valid.
-- **The native workflow is untested here:** the `StructuredOutput` denial was measured with `claude -p --agent` (the fallback engine's shape). Whether the Workflow tool's subagents fire `PreToolUse` on `StructuredOutput` with an `agent_id` that `claims.json` knows is assumed, not measured; the bench runs `run-pipeline`, so the measurement covers the fallback only. If the native workflow does not fire it, the gate is simply absent there (no hook call, no denial) and the statuses still work.
-- **Cost:** each gated report runs the acceptance suite once more (the implementer should have run it already); on the fixtures that is seconds. A denial costs one more agent turn, cheaper than a fix cycle. The bench decides; a null or negative result is still a result.
-- **Hook timeout:** a project whose `settings.json` was hand-edited may keep the 60 s default; the upgrade note says so and `install` fixes the standard entry. The gate's 840 s also count against the fallback engine's per-agent `timeout_s` (`agentic.json`); on the fixtures the acceptance suites take seconds, but a project with a slow suite should raise `timeout_s` or expect a `TIMEOUT` status; the note says so.
-- **False denials in a parallel wave:** a half-written file of WP-02 can break an import in WP-01's acceptance test; the output names `AC-001` and WP-01 is refused for a failure that is not its own. The cap of two bounds the damage and the report then goes through. A deterministic rule ("an import or collection error never counts") was considered and left out: the markers differ per framework and language. If the bench shows denials without a later fix, revisit.
-- **Customised implementers:** a project with an edited `implementer.md` from 2.0 keeps a prompt that says `BLOCKER` while the schema refuses it; the CLI forces one of the four values. The note tells them to merge.
-- **Rollback:** revert the PR; projects on 2.1.0 are refused by the downgrade guard, so a bad 2.1.0 needs a 2.1.1.
+- **The traps may not bite:** the roster fixture is designed so that acceptance passes while the oracle fails on the edges, but Sonnet implementers may read section 6 carefully and handle every edge; then roster behaves like tally and the fix-cycle signal stays at zero. That is a result too; the mutation score still measures test quality regardless.
+- **The bait may be answered by guessing:** an implementer may pick `<` or `<=` without `NEEDS_CONTEXT`; half the guesses are wrong and the oracle penalises them (`test_ctx_*`), which is the measurable outcome either way. The overnight half of the bait can be inferred by a careful reader from `end > 1440`; it is the boundary half that cannot.
+- **Mutation cost:** up to 40 runs of two suites plus 40 of the oracle per session; on these fixtures a suite takes about a second (not measured), so about two minutes per session. A project with a slow suite would pay more; `MUTANTS_MAX` and `MUTANT_TIMEOUT_S` bound it.
+- **Equivalent mutants:** some mutants do not change behaviour (a `+ 1` on an unused constant) and can never be killed; the rate is comparative across versions, not absolute, and the oracle ceiling shows the share that is killable.
+- **Time:** the mutation adds up to 40 suite runs per session to every end-to-end acceptance run and to CI (the fake-claude fixtures have 3 or 0 candidates, so seconds there; the roster fixture with real agents, about two minutes per session, not measured). The existing bench acceptance suites take 51 s together (measured here, 19 tests), so `verify.lint` fits the flow's 900 s limit with room for the new runs.
+- **Fake-claude runs produce no meaningful score:** AC-005 checks the plumbing (keys, zeroes, column), not the measure; the measure is only visible with a real `claude`.
