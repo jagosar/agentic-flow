@@ -115,6 +115,7 @@ Not yet tested: the interactive interview in the UI, installing the plugin from 
 
 - [How it works](docs/how-it-works.md): diagrams of the flow, the sequence, the lifecycle of a package, the hook and the permission matrix.
 - [Guides](docs/how-to/README.md): terminal, Desktop, VS Code, JetBrains, web and iOS, GitHub Actions and the [plugin](docs/how-to/plugin.md).
+- [Roadmap](docs/roadmap/repo-review-2026-11.md): ideas taken from ten other skill repos, ordered by what to build first.
 
 ## Credits
 
