@@ -48,6 +48,7 @@ Subcommands:
                       Updates the ledger by hand: running, done, blocker, pass, fail, stopped.
   stop [ID...]        Stops the running agents (all of them if none is given) and records it in the ledger.
   hook                PreToolUse hook (reads JSON from stdin).
+  hooks-check         JSON: whether the guardrail hook runs in this session (exit 3 if it does not).
 
 The ledger (.claude/state/ledger.md) is written by this script, not by the model: it survives context
 compaction and is the source for answering "how is it going?".
@@ -80,6 +81,9 @@ LEDGER_JSON = STATE / "ledger.json"
 LEDGER_MD = STATE / "ledger.md"
 LEDGER_STATES = ("running", "done", "blocker", "pass", "fail", "timeout", "stopped", "error")
 GATE = STATE / "gate.json"
+HOOK_SEEN = STATE / "hook-seen.json"  # the hook's heartbeat: its last call, and the last one from an agent of the flow
+HOOK_SEEN_MAX_AGE_S = 120  # a heartbeat older than this does not prove the hook runs now
+HOOK_SEEN_COMMAND_CHARS = 300
 GATE_MAX_DENIALS = 2  # per WP and stage; afterwards the report is let through
 GATE_MAX_LINES = 40  # lines shown to the agent in a denial
 GATE_TIMEOUT_S = 840  # below the hook's 900 s, so the gate times out before the CLI kills the hook
@@ -599,6 +603,7 @@ def snapshot(label):
         (STATE / f"tree-{label}.txt").write_text(tree, encoding="utf-8")
     (STATE / f"gitstate-{label}.json").write_text(json.dumps(git_state()), encoding="utf-8")
     locked_json(CLAIMS, lambda c: {})  # every stage starts with no claims (emptied: Windows cannot delete an open file)
+    locked_json(HOOK_SEEN, lambda s: dict(s, guarded_ts=None))  # and with no agent of the flow seen by the hook
     try:  # nor waits: an agent of an earlier stage that was stopped never sent the event that ends its wait
         sibling("waiting").clear(STATE)
     except Exception:  # noqa: BLE001 - a missing or broken waiting.py must not stop a stage from opening
@@ -700,6 +705,12 @@ def check_stage(manifest, label):
         if moved:
             print(f"git state changed during the stage: {', '.join(moved)} (no agent commits or touches .git or the baseline)")
             ok = False
+    if changed and not stage_guarded(label):
+        print(f"GUARDRAIL HOOK SAW NO FLOW AGENT: {len(changed)} file(s) changed in stage {label} and no hook call came "
+              "from an agent of the flow (agent_type or AGENTIC_WP). The ownership check above is the only guard that "
+              "applied; if this repeats in every stage, run /implement fallback and report the agent_type the hook "
+              f"recorded in {HOOK_SEEN.relative_to(ROOT).as_posix()}.")
+        ok = False
     problems = content_problems(manifest, label, owned)
     if problems:
         print("CONTENT NOT ALLOWED:")
@@ -1250,8 +1261,7 @@ def merge_settings(dst, src):
                 added.append(f"{key} {rule}")
     hooks = data.setdefault("hooks", {})
     pre = hooks.setdefault("PreToolUse", [])
-    ours = [(e, h) for e in pre for h in e.get("hooks", [])
-            if "agentic.py" in h.get("command", "") and h.get("command", "").rstrip().endswith("hook")]
+    ours = flow_hooks(pre)
     if not ours:
         pre.extend(src["hooks"]["PreToolUse"])
         added.append("hook PreToolUse")
@@ -1459,7 +1469,7 @@ def acceptance(manifest, expect):
 
 SEQ_OUTPUT_CAP = 12_000
 SEQ_COMMANDS = {"pipeline-plan", "briefs", "baseline", "open-stage", "close-stage", "verify", "codemap", "docs-check",
-                "acceptance", "callers"}
+                "acceptance", "callers", "hooks-check"}
 
 
 def cap_output(out):
@@ -1474,13 +1484,14 @@ def cap_output(out):
     return "[truncated]\n" + out[-SEQ_OUTPUT_CAP:]
 
 
-def run_steps(groups):
+def run_steps(groups, env=None):
     """Runs each command (an argv list) as its own process, in order, and stops at the first that fails.
-    Returns (ok, [{"cmd", "exit_code", "output"}])."""
+    `env`: the steps' environment (default: this process's, with CLAUDE_PROJECT_DIR). Returns (ok, [{"cmd", "exit_code", "output"}])."""
     results, ok = [], True
+    env = env if env is not None else dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT))
     for g in groups:
         r = subprocess.run([sys.executable, str(Path(__file__).resolve()), *g], cwd=ROOT, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", env=dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT)))
+                           encoding="utf-8", errors="replace", env=env)
         out = (r.stdout + r.stderr).strip()
         results.append({"cmd": " ".join(g), "exit_code": r.returncode,
                         "output": cap_output(out)})
@@ -1604,8 +1615,14 @@ def run_pipeline(manifest, args):
     completed = []
     seen = len(usage_records())
 
+    # The fallback's own checks never take hooks-check's live branch: launched by /implement from a Bash tool whose
+    # hook may be dead, a live check would close the way out. Its agents are `claude -p` processes, which load the
+    # project's hooks; the stage check judges them by their AGENTIC_WP heartbeats.
+    gate_env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    gate_env["CLAUDE_PROJECT_DIR"] = str(ROOT)
+
     def gate(cmds, label):
-        ok, results = run_steps([shlex.split(c) for c in cmds])
+        ok, results = run_steps([shlex.split(c) for c in cmds], env=gate_env)
         return {"steps": results}
 
     def agent(prompt, agent_type, label, ident):
@@ -2260,12 +2277,104 @@ def guard(data):
     content_checks(owner_id, ent, rel, abs_path, tool, tinput)
 
 
+HOOKS_DEAD_MSG = (
+    "The guardrail hook (`agentic.py hook`) did not run for this call, so no guardrail of the flow is active in this "
+    "session. Known causes: a cloud session with several repositories attached, or a thread inside a Claude project "
+    "(Claude Code does not read the repository's hooks there); `disableAllHooks` in a settings file; Windows without Git "
+    "for Windows. The fallback mode runs each agent as `claude -p`, which does load the repository's hooks: "
+    "`/implement fallback`. Or open a session with this repository alone.")
+
+
+def flow_hooks(pre_tool_use):
+    """The flow's own entries in a PreToolUse list: (entry, hook) pairs whose command runs `agentic.py ... hook`."""
+    return [(e, h) for e in pre_tool_use for h in e.get("hooks", [])
+            if "agentic.py" in h.get("command", "") and h.get("command", "").rstrip().endswith("hook")]
+
+
+def is_flow_agent(data):
+    """A call from an agent of the flow: a flow agent type, or a fallback agent (AGENTIC_WP). Never the gatekeeper or
+    the main thread, which run whether or not the agents' hooks do."""
+    if os.environ.get("AGENTIC_WP"):
+        return True
+    return data.get("agent_type") in claim_required_types() | READ_ONLY_AGENTS
+
+
+def record_hook_seen(data):
+    """The heartbeat: every hook call records itself; calls from agents of the flow also move guarded_ts."""
+    now = time.time()
+    tinput = data.get("tool_input") or {}
+    command = tinput.get("command", "") if data.get("tool_name") == "Bash" else ""
+    guarded = is_flow_agent(data)
+
+    def update(seen):
+        new = dict(seen, ts=now, tool=data.get("tool_name", ""), command=str(command)[:HOOK_SEEN_COMMAND_CHARS],
+                   agent_type=data.get("agent_type"))
+        new["guarded_ts"] = now if guarded else seen.get("guarded_ts")
+        return new
+    locked_json(HOOK_SEEN, update)
+
+
+def stage_guarded(label):
+    """True if an agent of the flow went through the hook since the stage opened."""
+    seen = locked_json(HOOK_SEEN, lambda s: None)
+    guarded, opened = seen.get("guarded_ts"), STATE / f"gitstate-{label}.json"
+    if guarded is None:
+        return False
+    return not opened.exists() or guarded >= opened.stat().st_mtime
+
+
+def hooks_static_problem():
+    """Why the project's settings would not run the flow's hook, or None."""
+    settings = ROOT / ".claude" / "settings.json"
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8")) if settings.exists() else {}
+    except ValueError:
+        return "settings.json is not valid JSON"
+    if not flow_hooks((data.get("hooks") or {}).get("PreToolUse", [])):
+        return "no agentic.py hook in .claude/settings.json PreToolUse"
+    for name in ("settings.json", "settings.local.json"):
+        path = ROOT / ".claude" / name
+        try:
+            local = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except ValueError:
+            continue
+        if local.get("disableAllHooks") is True:
+            return f"disableAllHooks is true in .claude/{name}"
+    return None
+
+
+def hooks_check():
+    """hooks-check: inside a Claude tool call (CLAUDECODE), the hook must have fired for it; elsewhere, the project
+    settings must configure it. Prints one JSON line; returns 0 or 3."""
+    if os.environ.get("CLAUDECODE"):
+        seen = locked_json(HOOK_SEEN, lambda s: None) if HOOK_SEEN.exists() else {}
+        ts = seen.get("ts")
+        fresh = isinstance(ts, (int, float)) and time.time() - ts <= HOOK_SEEN_MAX_AGE_S
+        if fresh:
+            print(json.dumps({"ok": True, "mode": "live", "seen": ts}))
+            return 0
+        print(json.dumps({"ok": False, "mode": "live", "seen": ts if isinstance(ts, (int, float)) else None,
+                          "reason": "the guardrail hook did not run for this call"}))
+        print(HOOKS_DEAD_MSG, file=sys.stderr)
+        return 3
+    problem = hooks_static_problem()
+    if problem:
+        print(json.dumps({"ok": False, "mode": "static", "reason": problem}))
+        print(f"The guardrail hook is not configured: {problem}. Run `python3 .claude/bin/agentic.py install .` from a "
+              "copy of the flow to restore .claude/settings.json, or remove disableAllHooks.", file=sys.stderr)
+        return 3
+    hook_cmd = flow_hooks(json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"])[0][1]["command"]
+    print(json.dumps({"ok": True, "mode": "static", "hook": hook_cmd}))
+    return 0
+
+
 def hook():
     """Fails closed: any error inside a WP or QA blocks the tool."""
     restricted = bool(os.environ.get("AGENTIC_WP"))
     try:
         data = json.loads(compat.read_stdin_text())
         restricted = restricted or bool(data.get("agent_id"))
+        record_hook_seen(data)
         guard(data)
     except SystemExit:
         raise
@@ -2285,6 +2394,8 @@ def main():
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "hook":
         hook()
+    elif cmd == "hooks-check":
+        sys.exit(hooks_check())
     elif cmd == "claim":
         if not args:
             die("Uso: claim ID")

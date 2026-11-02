@@ -49,6 +49,7 @@ def threaded(thunks):
 
 # verify and baseline run the whole suite: each goes in a gatekeeper call of its own, so it fits in one Bash timeout.
 WAVE_TAIL = ["verify", "open-stage review", "callers"]
+HOOKS_DEAD = ("the guardrail hook is not running in this session: run `agentic.py hooks-check` for the cause, or use /implement fallback")
 LOST = ("the gatekeeper returned no usable result (a timeout or garbled output); the command may have run anyway: "
         "check `agentic.py status` before resuming")
 
@@ -232,13 +233,17 @@ class Pipeline:
 
     def _execute(self):
         self.phase("Prepare")
-        first = self.seq(["pipeline-plan", "briefs"], "prepare")
-        plan_step = self.step(first, 0)
+        # hooks-check goes first: a session whose guardrail hook does not fire must not pay for a single agent.
+        first = self.seq(["hooks-check", "pipeline-plan", "briefs"], "prepare")
+        hook_step = self.step(first, 0)
+        if hook_step and not self.ok(hook_step):
+            return self.stop("prepare", HOOKS_DEAD, gate=hook_step)
+        plan_step = self.step(first, 1)
         self.plan = lines_json(plan_step["output"]) if self.ok(plan_step) else None
         if not self.plan:
             return self.stop("prepare", "pipeline-plan failed: the manifest is not valid", gate=plan_step)
-        if not self.ok(self.step(first, 1)):
-            return self.stop("prepare", "briefs failed", gate=self.step(first, 1))
+        if not self.ok(self.step(first, 2)):
+            return self.stop("prepare", "briefs failed", gate=self.step(first, 2))
         plan = self.plan
         self.rules = (f" Rules you must follow (language and common): {', '.join(plan['rules'])}."
                       if plan.get("rules") else "")

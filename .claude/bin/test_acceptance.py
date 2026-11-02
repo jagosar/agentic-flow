@@ -246,9 +246,9 @@ class PromptTests(unittest.TestCase):
         self.assertIn(".claude/state/briefs/WP-01.md", happy["prompts"]["implementer:WP-01#1"])
         for key in ("test-author:test-author#1", "test-auditor:test-auditor#1"):
             self.assertIn(".claude/state/briefs/AT.md", happy["prompts"][key])
-        self.assertEqual(happy["gates"][:3], ["pipeline-plan", "briefs", "baseline"])
+        self.assertEqual(happy["gates"][:4], ["hooks-check", "pipeline-plan", "briefs", "baseline"])
         resumed = self.dump["start_wave skips the baseline, wave 0 and earlier waves"]
-        self.assertEqual(resumed["gates"][:2], ["pipeline-plan", "briefs"])
+        self.assertEqual(resumed["gates"][:3], ["hooks-check", "pipeline-plan", "briefs"])
         judges = ("reviewer", "qa", "verifier", "doc-updater")
         seen = 0
         for scenario in self.dump.values():

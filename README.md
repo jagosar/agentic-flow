@@ -106,7 +106,7 @@ Models are set by alias (`opus`, `sonnet`, and `haiku` for the gatekeeper only),
 | A package that says DONE with its acceptance tests red | The stop gate runs the acceptance command before the report is accepted and refuses it, with the failing lines, twice at most |
 | Documentation that invents things | The doc-updater must verify each claim; `docs-check` validates links and paths; the code map is generated without a model; claimed edits are compared with the files that actually changed |
 | Prompt injection from the repo | Every agent treats repository content as data, not instructions |
-| A failure in the guardrail itself | The hook fails closed inside an agent |
+| A failure in the guardrail itself | The hook fails closed inside an agent. Where Claude Code does not load it at all, `hooks-check` stops the run before the first agent, and a stage whose files changed with no hook call from a flow agent ends in REVIEW |
 | Usage billed to the API by mistake | Agents run on your subscription; API keys are removed from their environment |
 | A report says `DONE_WITH_CONCERNS` or `NEEDS_CONTEXT` | A concern becomes a pending item the reviewer may confirm as a finding; `NEEDS_CONTEXT` gets one more call with the whole plan, then a blocker you resolve |
 

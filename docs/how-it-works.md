@@ -109,7 +109,7 @@ sequenceDiagram
     O->>O: validate, sync-permissions, rules-sync
     O->>W: launch agentic-implement (background)
     O-->>U: started, follow it in /workflows
-    W->>G: pipeline-plan + briefs
+    W->>G: hooks-check + pipeline-plan + briefs
     W->>G: baseline (the suite before any change, alone)
     W->>G: open-stage acceptance
     W->>AG: test-author
@@ -191,6 +191,8 @@ The ledger is written by `agentic.py`, not by the model, so it survives context 
 ## 4. Guardrails: the hook's decision
 
 The `PreToolUse` hook (`agentic.py hook`) runs before every Write, Edit, MultiEdit, NotebookEdit and Bash call, and before the `StructuredOutput` call that delivers an agent's report. It **fails closed**: inside an agent of the flow, any error blocks. The one exception is the stop gate, which fails open: a gate that could not run its check lets the report through and says so on stderr, so a broken manifest never stalls a run with no cap.
+
+The hook only guards a session where Claude Code loads it, and it cannot report its own absence. So it leaves a **heartbeat** on every call (`.claude/state/hook-seen.json`, with the last call from an agent of the flow apart). `hooks-check` reads it: run by `/implement` first and by both engines before any agent, it stops a session where the hook does not fire (a cloud session with several repositories, a thread inside a Claude project, `disableAllHooks`). The fallback engine checks the settings instead, because its agents are `claude -p` processes, which load the repository's hooks. Then `close-stage` ends in REVIEW any stage whose files changed while the hook saw no call from an agent of the flow: the case where the hook runs for the main session but not for the subagents.
 
 ```mermaid
 flowchart TD

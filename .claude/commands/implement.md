@@ -14,11 +14,12 @@ Arguments: $ARGUMENTS
 
 # 1. Pre-flight validation
 
-1. Run `python3 .claude/bin/agentic.py validate`. If it fails, stop and tell the user to go back to `/architect`.
-2. If section 11 of `architecture.md` blocks any WP, stop.
-3. If the design is not committed, recommend committing it before starting.
-4. Run `python3 .claude/bin/agentic.py sync-permissions`. It adds to `.claude/settings.local.json` the permissions the agents need (tests, verification), so the workflow does not stop to ask.
-5. Run `python3 .claude/bin/agentic.py rules-sync`. It leaves the common rules and the `stack`'s in `.claude/rules/agentic/`, which the agents receive in their prompt.
+1. Run `python3 .claude/bin/agentic.py hooks-check`. If it exits 3, the guardrail hook does not run in this session: stop, show the user its message, and offer `/implement fallback` (each agent runs as `claude -p`, which loads the repository's hooks) or a session with this repository alone. Do not launch the native workflow without guardrails.
+2. Run `python3 .claude/bin/agentic.py validate`. If it fails, stop and tell the user to go back to `/architect`.
+3. If section 11 of `architecture.md` blocks any WP, stop.
+4. If the design is not committed, recommend committing it before starting.
+5. Run `python3 .claude/bin/agentic.py sync-permissions`. It adds to `.claude/settings.local.json` the permissions the agents need (tests, verification), so the workflow does not stop to ask.
+6. Run `python3 .claude/bin/agentic.py rules-sync`. It leaves the common rules and the `stack`'s in `.claude/rules/agentic/`, which the agents receive in their prompt.
 
 # 2. Launch the workflow (the main path)
 
@@ -63,6 +64,7 @@ Then present it like this:
   - **Concerns** (items of type `concern`): doubts an implementer raised about its own code (`DONE_WITH_CONCERNS`), per WP; the reviewer already weighed them, so say whether each became a finding.
   - **Fix limit reached (per WP), or no WP:** the user decides.
 - **Not checked (`not_checked`):** per agent, what it did not check or skipped, plus QA's `gaps` and the doc-updater's `unverified`.
+- **Stages the hook did not guard:** a stage `check` that contains `GUARDRAIL HOOK SAW NO FLOW AGENT` means files changed with no hook call from an agent of the flow, so only the file comparison applied. Say so, and point to the `agent_type` recorded in `.claude/state/hook-seen.json` and to `/implement fallback`.
 - **Gate denials (`gate_denials`):** per WP, how many times the stop gate refused a finished report because its acceptance tests failed. A package with denials and no later fix cycle is a good sign; one at the cap of two deserves a look at its tests.
 - **Failed verifications (`verification_failures`):** each one's blocking phases and suspects, when a verification sent packages to a fix cycle.
 

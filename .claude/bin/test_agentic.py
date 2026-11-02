@@ -26,6 +26,7 @@ import testutil  # noqa: E402
 PY = shlex.join([Path(sys.executable).as_posix()])
 AGENTS_DIR = SCRIPT.parents[1] / "agents"
 WORKFLOWS_DIR = SCRIPT.parents[1] / "workflows"
+SETTINGS = SCRIPT.parents[1] / "settings.json"
 FINDING = {"severity": "high", "wp": "WP-02", "file": "src/b/x.py", "problem": "p", "evidence": "e"}
 
 MANIFEST = {
@@ -46,9 +47,11 @@ class Repo:
         (self.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{body}\n```\n", encoding="utf-8")
         shutil.copytree(AGENTS_DIR, self.dir / ".claude" / "agents")
         shutil.copytree(WORKFLOWS_DIR, self.dir / ".claude" / "workflows")
+        shutil.copy(SETTINGS, self.dir / ".claude" / "settings.json")  # hooks-check reads it
         subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
         self.env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.dir))
-        for var in ("AGENTIC_WP", "AGENTIC_CLAUDE"):
+        # CLAUDECODE: tests run inside Claude Code inherit it, and it would put hooks-check in live mode.
+        for var in ("AGENTIC_WP", "AGENTIC_CLAUDE", "CLAUDECODE"):
             self.env.pop(var, None)
 
     def run(self, *args, stdin=None, env=None):
@@ -57,6 +60,10 @@ class Repo:
 
     def hook(self, payload, wp=None):
         return self.run("hook", stdin=json.dumps(payload), env={"AGENTIC_WP": wp} if wp else None).returncode
+
+    def as_agent(self, wp="WP-01"):
+        """One tool call of a fallback agent through the hook: what a real agent's work leaves for the stage check."""
+        return self.hook({"tool_name": "Bash", "tool_input": {"command": "true"}}, wp=wp)
 
     def write(self, rel, text="x"):
         p = self.dir / rel
@@ -462,6 +469,7 @@ class PipelineCommandTests(Base):
         (self.repo.dir / "acc.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")  # before the snapshot: it belongs to nobody
         r = self.repo.run("open-stage", "acceptance")
         self.assertEqual(json.loads(r.stdout), {"stage": "acceptance", "owners": ["AT"]})
+        self.repo.as_agent("AT")
         self.repo.write("acceptance/test_ac_001.py")
         r = self.repo.run("close-stage", "acceptance", "AT=done", "--expect", "red")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -1038,6 +1046,7 @@ class LivingDocsTests(Base):
         self.assertEqual(plan["codemap"], "docs/CODEMAP.md")
         r = self.repo.run("open-stage", "docs")
         self.assertEqual(json.loads(r.stdout)["owners"], ["DOCS"])
+        self.repo.as_agent("DOCS")
         self.repo.write("README.md", "# new")
         self.assertEqual(self.repo.run("close-stage", "docs", "DOCS=done").returncode, 0)
         self.repo.run("open-stage", "docs")
@@ -1297,6 +1306,7 @@ class CheckStageTests(Base):
         self.repo.run("snapshot", "1")
 
     def test_own_changes_ok(self):
+        self.repo.as_agent()
         self.repo.write("src/a.py", "v2")
         self.repo.write("src/b/new.py")
         self.assertEqual(self.repo.run("check-wave", "1").returncode, 0)
@@ -1388,6 +1398,7 @@ class SafetyNetTests(Base):
         self.assertEqual(self.repo.run("check-wave", "2").returncode, 3, "src/a.py is wave 1's") 
         self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\n")
         self.repo.run("snapshot", "1")
+        self.repo.as_agent()
         self.repo.write("src/a.py", "KEY = 'AKIA" + "Q" * 16 + "'\nY = 1\n")
         self.assertEqual(self.check().returncode, 0, "the key was there before the stage")
 
@@ -1404,6 +1415,7 @@ class SafetyNetTests(Base):
         (self.repo.dir / "architecture.md").write_text(f"# A\n\n```json wp-manifest\n{json.dumps(m)}\n```\n",
                                                        encoding="utf-8")
         self.repo.run("snapshot", "1")
+        self.repo.as_agent()
         self.repo.write("pyproject.toml", "[tool.ruff]\nline-length = 300\n")
         self.assertEqual(self.check().returncode, 0)
 
