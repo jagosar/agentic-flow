@@ -49,6 +49,7 @@ Subcommands:
   stop [ID...]        Stops the running agents (all of them if none is given) and records it in the ledger.
   hook                PreToolUse hook (reads JSON from stdin).
   hooks-check         JSON: whether the guardrail hook runs in this session (exit 3 if it does not).
+  readme-header [--check]  Writes (or checks) the generated header at the top of README.md. JSON.
 
 The ledger (.claude/state/ledger.md) is written by this script, not by the model: it survives context
 compaction and is the source for answering "how is it going?".
@@ -159,6 +160,9 @@ DEFAULT_CONFIG = {
     # "inherit": they inherit the environment as is (useful in CI with an API key).
     "auth": "subscription",
     "max_fix_cycles": 2,  # further --fix cycles on the same WP escalate to the human or to /architect
+    # The generated header at the top of README.md (readme-header): off with "header": false; sponsor buttons as
+    # [{"label": "...", "url": "https://..."}].
+    "readme": {"header": True, "sponsors": []},
 }
 # Variables that would make an agent bill the API instead of the subscription.
 API_AUTH_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
@@ -238,10 +242,12 @@ def die(msg, code=1):
 
 # ---------- configuration ----------
 
-def load_config():
+def load_config(root=None):
+    """The defaults merged with .claude/agentic.json (ROOT's, or root's when given) and the AGENTIC_* variables."""
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
-    if CONFIG.exists():
-        user = json.loads(CONFIG.read_text(encoding="utf-8"))
+    path = Path(root) / ".claude" / "agentic.json" if root else CONFIG
+    if path.exists():
+        user = json.loads(path.read_text(encoding="utf-8"))
         for key, value in user.items():
             if isinstance(value, dict) and isinstance(cfg.get(key), dict):
                 cfg[key].update(value)
@@ -970,10 +976,10 @@ def source_files(root=None):
     return sorted(f for f in files if not set(f.split("/")[:-1]) & SKIP_DIRS and (root / f).is_file())
 
 
-def detect_stack():
-    """Languages with signals in the repo: {language: {"markers": [...], "files": N}}."""
+def detect_stack(root=None):
+    """Languages with signals in the repo (ROOT, or root): {language: {"markers": [...], "files": N}}."""
     found = {}
-    for rel in source_files():
+    for rel in source_files(root):
         name = rel.rsplit("/", 1)[-1]
         for pack, (markers, exts) in STACK_SIGNALS.items():
             is_marker = name in markers or (pack == "python" and name.startswith("requirements") and name.endswith(".txt"))
@@ -1297,6 +1303,182 @@ def merge_settings(dst, src):
     return data, added
 
 
+# ---------- the generated README header ----------
+
+README_HEADER_START = "<!-- agentic-flow:header:start -->"
+README_HEADER_END = "<!-- agentic-flow:header:end -->"
+TEMPLATE_MARKER = "<!-- agentic-flow-template -->"
+MAX_LANGUAGE_BADGES = 4
+LICENSE_FILES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING")
+# The first non-blank line of the licence file, lower-cased, CONTAINS one of these (in order: LGPL before GPL).
+LICENSE_IDS = (("MIT License", "MIT"), ("Apache License", "Apache-2.0"), ("GNU LESSER GENERAL PUBLIC LICENSE", "LGPL"),
+               ("GNU GENERAL PUBLIC LICENSE", "GPL"), ("Mozilla Public License", "MPL-2.0"),
+               ("BSD 3-Clause", "BSD-3-Clause"), ("BSD 2-Clause", "BSD-2-Clause"), ("ISC License", "ISC"),
+               ("free and unencumbered software", "Unlicense"))
+FLOW_URL = "https://github.com/jagosar/agentic-flow"
+SPONSOR_URL_RE = re.compile(r"https://[^\s()<>\[\]\"']+")
+SPONSOR_LABEL_MAX = 40
+NOT_DESCRIPTION_RE = re.compile(r"(#|<|```|\||- |\* |!|\[|>|\d+\. )")
+
+
+class HeaderError(Exception):
+    """A README header block that cannot be updated safely, or a bad `readme` config."""
+
+
+def shield_text(text):
+    """shields.io static badge escaping: '-' and '_' are doubled, then the text is URL-quoted."""
+    return urllib.parse.quote(text.replace("-", "--").replace("_", "__"), safe="")
+
+
+def licence_file(root):
+    """(file name, id) of the first licence file in root, or None."""
+    for name in LICENSE_FILES:
+        path = Path(root) / name
+        if path.is_file():
+            first = next((line.strip().lower() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+                          if line.strip()), "")
+            return name, next((lid for text, lid in LICENSE_IDS if text.lower() in first), "see LICENSE")
+    return None
+
+
+def sponsor_badges(sponsors):
+    """Badges for the valid entries; each skipped one is named on stderr."""
+    badges = []
+    for i, entry in enumerate(sponsors):
+        label = entry.get("label") if isinstance(entry, dict) else None
+        url = entry.get("url") if isinstance(entry, dict) else None
+        if not isinstance(label, str) or not isinstance(url, str):
+            reason = "not an object with label and url"
+        elif not url.startswith("https://"):
+            reason = "url must start with https://"
+        elif not SPONSOR_URL_RE.fullmatch(url):
+            reason = "url has a character that is not allowed"
+        elif not 1 <= len(label) <= SPONSOR_LABEL_MAX or any(c in label for c in "[]<>"):
+            reason = f"label must be 1-{SPONSOR_LABEL_MAX} characters without [ ] < >"
+        else:
+            badges.append(f"[![{label}](https://img.shields.io/badge/{shield_text(label)}-support-ea4aaa)]({url})")
+            continue
+        print(f"readme.sponsors[{i}] skipped: {reason}", file=sys.stderr)
+    return badges
+
+
+def readme_badges(root, readme_cfg, version):
+    """Licence, languages, built with agentic-flow, sponsors: Markdown badges, built without network."""
+    badges = []
+    lic = licence_file(root)
+    if lic:
+        name, lid = lic
+        badges.append(f"[![licence: {lid}](https://img.shields.io/badge/licence-{shield_text(lid)}-blue)]({name})")
+    stack = detect_stack(root)
+    for lang in sorted(stack, key=lambda k: (-stack[k]["files"], k))[:MAX_LANGUAGE_BADGES]:
+        badges.append(f"![{lang}](https://img.shields.io/badge/{shield_text(lang)}-informational)")
+    built = f"agentic-flow {version}" if version else "agentic-flow"
+    badges.append(f"[![built with {built}](https://img.shields.io/badge/built%20with-{shield_text(built)}-8A2BE2)]({FLOW_URL})")
+    return badges + sponsor_badges(readme_cfg.get("sponsors", []))
+
+
+def render_header(title, description, badges):
+    lines = [README_HEADER_START, '<div align="center">', "", f"# {title}", ""]
+    if description:
+        lines += description + [""]
+    return lines + [" ".join(badges), "", "</div>", README_HEADER_END]
+
+
+def update_block(lines, badges):
+    """lines holds one well-formed block: only its badge line changes."""
+    s = lines.index(README_HEADER_START)
+    e = s + lines[s:].index(README_HEADER_END)
+    inside = lines[s + 1:e]
+    if "</div>" not in inside:
+        raise HeaderError("README.md: no </div> inside the header block")
+    d = inside.index("</div>")
+    j = next((k for k in range(d - 1, -1, -1) if inside[k].strip()), None)
+    new_line = " ".join(badges)
+    if j is not None and inside[j].lstrip().startswith(("[![", "![")):
+        inside = inside[:j] + [new_line] + inside[j + 1:]
+    else:
+        at = (j + 1) if j is not None else 0
+        inside = inside[:at] + ["", new_line] + inside[at:]
+    return lines[:s + 1] + inside + lines[e:]
+
+
+def apply_header(text, default_title, badges):
+    """README text with the header block in place (docs/architecture/0010, section 6). Pure and idempotent."""
+    crlf = "\r\n" in text
+    lines = text.replace("\r\n", "\n").split("\n")
+    starts = lines.count(README_HEADER_START)
+    if starts > 1:
+        raise HeaderError("README.md: two start markers")
+    if starts == 1:
+        s = lines.index(README_HEADER_START)
+        if README_HEADER_END not in lines[s:]:
+            raise HeaderError("README.md: start marker without an end marker")
+        out = update_block(lines, badges)
+    else:
+        prefix, rest = ([TEMPLATE_MARKER], lines[1:]) if lines and lines[0] == TEMPLATE_MARKER else ([], lines)
+        first = next((i for i, line in enumerate(rest) if line.strip()), None)
+        title, description = default_title, []
+        if first is not None and rest[first].startswith("# "):
+            title = rest[first][2:].strip()
+            cut = first + 1
+            k = next((i for i in range(cut, len(rest)) if rest[i].strip()), None)
+            if k is not None:
+                end = next((i for i in range(k, len(rest)) if not rest[i].strip()), len(rest))
+                para = rest[k:end]
+                if all(not NOT_DESCRIPTION_RE.match(line) for line in para):
+                    description, cut = para, end
+            rest = rest[:first] + rest[cut:]
+        while rest and not rest[0].strip():
+            rest = rest[1:]
+        out = prefix + render_header(title, description, badges) + ([""] + rest if any(x.strip() for x in rest) else [""])
+    result = "\n".join(out)
+    if not result.endswith("\n"):
+        result += "\n"
+    return result.replace("\n", "\r\n") if crlf else result
+
+
+def readme_config(root):
+    """The validated `readme` section of root's config."""
+    readme = load_config(root).get("readme")
+    if not isinstance(readme, dict):
+        raise HeaderError("readme in .claude/agentic.json must be an object")
+    if not isinstance(readme.get("header", True), bool):
+        raise HeaderError("readme.header in .claude/agentic.json must be true or false")
+    if not isinstance(readme.get("sponsors", []), list):
+        raise HeaderError("readme.sponsors in .claude/agentic.json must be a list")
+    return readme
+
+
+def readme_header(root, check=False):
+    """readme-header [--check]: writes or checks the README header. Prints {"readme_header": state}; returns the exit code."""
+    root = Path(root)
+    path = root / "README.md"
+    try:
+        readme = readme_config(root)
+        if readme.get("header", True) is False:
+            print(json.dumps({"readme_header": "disabled"}))
+            return 0
+        text = path.open(encoding="utf-8", newline="").read() if path.exists() else ""
+        if text.split("\n", 1)[0].rstrip("\r") == TEMPLATE_MARKER:
+            version = None  # the flow's own repo: its release is the version, and its docs carry none
+        else:
+            record = root / INSTALL_RECORD
+            version = (json.loads(record.read_text(encoding="utf-8")).get("version") if record.exists() else None) \
+                or flow_version()
+        new = apply_header(text, root.resolve().name, readme_badges(root, readme, version))
+    except (HeaderError, ValueError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    state = "unchanged" if new == text else ("updated" if README_HEADER_START in text else "added")
+    print(json.dumps({"readme_header": state}))
+    if check:
+        return 0 if state == "unchanged" else 3
+    if state != "unchanged":
+        with path.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(new)
+    return 0
+
+
 def install(target, force=False, dry_run=False, allow_dirty=False):
     """Copies the flow to TARGET, or upgrades it. A flow file is replaced only if it is intact: its content is one the
     flow shipped (flow-history.json) or the previous install recorded. Edited ones are kept, with the new version in
@@ -1331,7 +1513,7 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
                      and any(fnmatch.fnmatch(r, g) for g in flow_globs)
                      and not (SOURCE_ROOT / r).exists() and (target / r).is_file() and intact(r))
     guarded = [r for r in sources if (target / r).exists()] + removed + [
-        ".claude/settings.json", ".gitignore", ".claude/agentic.json", INSTALL_RECORD]
+        ".claude/settings.json", ".gitignore", ".claude/agentic.json", INSTALL_RECORD, "README.md"]
     problems = upgrade.guard_problems(target, guarded)
     if not dry_run:
         if "not a git repository" in problems:
@@ -1395,6 +1577,18 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
             print(f"  rules: {', '.join(json.loads(r.stdout)['rules'])}")
         else:
             print(f"  rules: could not be installed ({(r.stderr.strip().splitlines() or ['no detail'])[-1]})")
+    # The README header, with this version's agentic.py pointed at the target (after the record: it shows the version).
+    r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "readme-header", *(["--check"] if dry_run else [])],
+                       cwd=target, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+    for line in r.stderr.strip().splitlines():
+        print(f"    {line}")
+    state = next((json.loads(line).get("readme_header") for line in reversed(r.stdout.splitlines())
+                  if line.strip().startswith("{")), None)
+    if r.returncode == 1 or not state:
+        print(f"  README header: error: {(r.stderr.strip().splitlines() or ['no detail'])[-1]}")
+    else:
+        print(f"  README header: {'would be ' if dry_run else ''}{state}")
     if report["modified by you (left alone)"]:
         print("kept files: " + ("run without --dry-run to get their new versions in .claude/state/upgrade/" if dry_run else
               "new versions in .claude/state/upgrade/ (compare with: diff -ru .claude/state/upgrade/.claude .claude)"))
@@ -2396,6 +2590,10 @@ def main():
         hook()
     elif cmd == "hooks-check":
         sys.exit(hooks_check())
+    elif cmd == "readme-header":
+        if any(a != "--check" for a in args):
+            die("Uso: readme-header [--check]")
+        sys.exit(readme_header(ROOT, check="--check" in args))
     elif cmd == "claim":
         if not args:
             die("Uso: claim ID")

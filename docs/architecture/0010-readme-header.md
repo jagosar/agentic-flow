@@ -64,7 +64,7 @@ The block written in `README.md` (blank lines inside the `div` are required for 
 
 One sentence that says what it is.
 
-[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE) ![python](https://img.shields.io/badge/python-informational) [![built with agentic-flow 2.4.0](https://img.shields.io/badge/built%20with-agentic--flow%202.4.0-8A2BE2)](https://github.com/jagosar/agentic-flow) [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-support-ea4aaa)](https://github.com/sponsors/someone)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE "the licence file found") ![python](https://img.shields.io/badge/python-informational) [![built with agentic-flow 2.4.0](https://img.shields.io/badge/built%20with-agentic--flow%202.4.0-8A2BE2)](https://github.com/jagosar/agentic-flow) [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-support-ea4aaa)](https://github.com/sponsors/someone)
 
 </div>
 <!-- agentic-flow:header:end -->
@@ -171,7 +171,7 @@ def load_config(root=None)
   - Check: `test_acceptance_header.py::EdgeTests`
   - WP: WP-01
 - AC-004 · Sponsors from the config, with unsafe entries skipped; the header can be turned off
-  - Scenario: `.claude/agentic.json` with `readme.sponsors` = a valid GitHub Sponsors entry, one with `http://` url, one with a url containing `)`, one with label `x](javascript:alert(1)`.
+  - Scenario: `.claude/agentic.json` with `readme.sponsors` = a valid GitHub Sponsors entry, one with `http://` url, one with a url containing `)`, one whose label contains `](` followed by a `javascript:` url.
   - Action: `readme-header`; then `readme.header: false` and a README changed by hand; `readme-header` again.
   - Expected: one sponsor badge (the valid one), stderr names the three skipped entries; with `header: false` it prints `"disabled"` and the file is untouched.
   - Must not: write any skipped entry's text into the README.
