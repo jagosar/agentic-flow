@@ -306,7 +306,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 ├── rules/agentic/          installed by rules-sync; Claude Code loads .claude/rules/
 ├── bin/
 │   ├── agentic.py          validate · pipeline-plan · open/close-stage · seq · verify · stack · rules-sync · codemap ·
-│   │                       docs-check · install · readme-header · run-pipeline · run-* · status · stop · hook (guardrails and the stop gate)
+│   │                       docs-check · install · run-pipeline · run-* · status · stop · hook (guardrails and the stop gate)
 │   ├── brief.py            slices architecture.md into the briefs the agents read
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer
 │   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
