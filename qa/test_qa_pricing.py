@@ -111,7 +111,7 @@ class FixtureHygieneTests(unittest.TestCase):
     def test_references_hold_only_money_and_cart(self):
         for arm in ("good", "bad"):
             base = FIXTURE / "reference" / arm
-            files = sorted(str(p.relative_to(base)) for p in base.rglob("*.py"))
+            files = sorted(p.relative_to(base).as_posix() for p in base.rglob("*.py"))
             self.assertEqual(files, ["shop/cart.py", "shop/money.py"])
 
     def test_oracle_has_no_typeerror_expectations(self):
