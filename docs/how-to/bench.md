@@ -1,7 +1,7 @@
 # Guide: the measurement bench
 
 **Goal:** know whether a change to the flow's agents or prompts makes real runs better or worse.
-**Status:** tested with a real `claude` on the five fixtures, three sessions each, on every flow version measured so far; the results are in [bench/RESULTS.md](../../bench/RESULTS.md). Its own tests use a simulated `claude`.
+**Status:** tested with a real `claude` on the fixtures that have results in RESULTS.md, three sessions each, on every flow version measured so far; the results are in [bench/RESULTS.md](../../bench/RESULTS.md). Its own tests use a simulated `claude`.
 
 ## What it measures
 
@@ -26,6 +26,7 @@ It does **not** measure:
 | `vault` | trap | A file vault in one wave: storage paths, download tokens and a sqlite catalogue | Judgement about untrusted input: the plan states functional behaviour only and says once that users are not trusted, while the oracle attacks with adversarial input (tests named `test_adv_*`) |
 | `tally` | trap | An expense-sharing library in three waves: money and dates, a ledger, settlement | A real `depends_on` chain and edge cases on money, dates and settlement (tests named `test_edge_*`) |
 | `roster` | trap | Shift scheduling in two waves: intervals and shift text, then a schedule and rest rules | Two traps: edge cases and contract errors stated in the contracts but absent from the acceptance criteria (tests named `test_edge_*`), and one decision that sits only in section 10 of the plan, which an implementer's brief does not include (tests named `test_ctx_*`) |
+| `pricing` | trap | A shop library with existing code and tests; the plan changes `parse_price`'s signature, and a caller that no package owns, has no test and the plan does not mention depends on the old one | Whether the reviewer's callers expose a break outside the diff (tests named `test_ctx_*`: the caller must still work); the session records `review_callers`, `review_confirmed` and `review_refuted` say what the reviewer received and decided |
 
 The oracle has no weights: the results count passed over total, and the per-test names in the oracle output say why a run lost points.
 
@@ -73,7 +74,7 @@ Two versions measured on different days meet different API speeds and usage limi
 python3 bench/bench.py ab --a agentic-flow--v2.1.0 --b . --fixture tally --repeat 3
 ```
 
-Each arm is a flow directory or a git ref of the repo (`--repo` to name another one); a ref is checked out in a temporary worktree that is removed at the end. The result is an `ab-*.json` file next to the other results, with each arm's sessions in its own folder, and an `ab-*.md` with two tables: per fixture, median(B) / median(A) for cost, minutes and output tokens, and B minus A for the mutation score, the oracle and the fix cycles; overall, the geometric mean of the ratios, a bootstrap interval (seeded with `--seed`) and a sign test over the fixtures. Only sessions that ended OK or REVIEW count. With three sessions per arm and five fixtures the sign test cannot go below p = 0.0625: read "no detectable difference" as that, not as "the same". `report` ignores A/B files, so `RESULTS.md` keeps one version per row.
+Each arm is a flow directory or a git ref of the repo (`--repo` to name another one); a ref is checked out in a temporary worktree that is removed at the end. The result is an `ab-*.json` file next to the other results, with each arm's sessions in its own folder, and an `ab-*.md` with two tables: per fixture, median(B) / median(A) for cost, minutes and output tokens, and B minus A for the mutation score, the oracle, the fix cycles, the callers the reviewer received (`review_callers`) and the findings it confirmed (`review_confirmed`); overall, the geometric mean of the ratios, a bootstrap interval (seeded with `--seed`) and a sign test over the fixtures. Only sessions that ended OK or REVIEW count. With three sessions per arm and six fixtures the sign test cannot go below p = 0.03125: read "no detectable difference" as that, not as "the same". `report` ignores A/B files, so `RESULTS.md` keeps one version per row.
 
 ## Add a fixture
 
@@ -87,7 +88,7 @@ reference/good/   a correct implementation, copied over repo/ by selftest: the o
 reference/bad/    a plausible wrong one (right on the happy path, wrong on the edge cases): the oracle must catch it
 ```
 
-Name the oracle's tests so a reference can be judged by what it fails: `vault` uses `test_adv_*` for adversarial tests and `tally` and `roster` use `test_edge_*` for edge cases (`roster` also uses `test_ctx_*` for its context trap), and their acceptance tests (`bench/acceptance/test_acceptance_fixtures.py`) check that the bad reference fails only those. Import the module under test inside each test, so each test fails on the bare repo.
+Name the oracle's tests so a reference can be judged by what it fails: `vault` uses `test_adv_*` for adversarial tests and `tally` and `roster` use `test_edge_*` for edge cases (`roster` also uses `test_ctx_*` for its context trap, and so does `pricing` for its caller outside the diff), and their acceptance tests (`bench/acceptance/test_acceptance_fixtures.py`) check that the bad reference fails only those. Import the module under test inside each test, so each test fails on the bare repo.
 
 Write the code and the plan in English, with commands in the plan using `python3`, and no dependencies. Check it with `selftest --fixture <name>`, then try it with `--fixture <name> --repeat 1`.
 

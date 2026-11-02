@@ -472,7 +472,18 @@ def _record(fixture: Path, index: int, outcome: str, result: dict | None, second
             "fix_cycles": _number_or(data.get("fix_cycles"), None),
             "test_audit_rounds": _number_or(_as_dict(data.get("test_audit")).get("rounds"), None),
             "agents": agents, "seconds": round(max(seconds, 0.001), 1), "oracle": oracle, "usage": usage,
-            "mutation": mutation, "verification_failures": _count(data.get("verification_failures"))}
+            "mutation": mutation, "verification_failures": _count(data.get("verification_failures")),
+            **_review_fields(result)}
+
+
+def _review_fields(result: dict | None) -> dict:
+    """Callers the reviewer received and findings it confirmed and refuted; None for anything missing or malformed."""
+    review = _as_dict(_as_dict(result).get("review"))
+    callers = review.get("callers")
+    confirmed, refuted = review.get("confirmed"), review.get("refuted")
+    return {"review_callers": callers if isinstance(callers, int) and not isinstance(callers, bool) else None,
+            "review_confirmed": len(confirmed) if isinstance(confirmed, list) else None,
+            "review_refuted": len(refuted) if isinstance(refuted, list) else None}
 
 
 def _count(value) -> int:
@@ -598,7 +609,7 @@ BOOTSTRAP_ITERATIONS = 2000
 CONFIDENCE = 0.95
 DEFAULT_SEED = 0
 RATIO_METRICS = ("cost_usd", "minutes", "output")
-DIFF_METRICS = ("mutation", "oracle", "fix_cycles")
+DIFF_METRICS = ("mutation", "oracle", "fix_cycles", "review_callers", "review_confirmed")
 COUNTED = ("OK", "REVIEW")  # an error or a timeout is not a measurement: its minutes are a cap or a setup failure
 ARMS = ("a", "b")
 
@@ -669,6 +680,8 @@ def _metric(run: dict, name: str) -> float | None:
         oracle = _as_dict(run.get("oracle"))
         total = _number_or(oracle.get("total"), 0)
         return _number_or(oracle.get("passed"), 0) / total if total else 0.0
+    if name in ("review_callers", "review_confirmed"):
+        return _number_or(run.get(name), None)
     return _number_or(run.get("fix_cycles"), None)
 
 
@@ -745,9 +758,10 @@ def ab_markdown(doc: dict) -> str:
     lines = [f"# A/B: {a['version']} ({a['spec']}) vs {b['version']} ({b['spec']})", "",
              f"{doc['repeat']} session(s) per arm and fixture, seed {doc['seed']}. Ratios are median(B) / median(A): "
              "below 1, B is cheaper, faster or shorter. Differences are B - A. Only OK and REVIEW sessions count.", "",
-             "| Fixture | Cost | Minutes | Output | Mutation | Oracle | Fix cycles |", "|---|---|---|---|---|---|---|"]
+             "| Fixture | Cost | Minutes | Output | Mutation | Oracle | Fix cycles | Callers | Confirmed |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for name, row in doc["comparison"]["fixtures"].items():
-        cells = [_number(row[m], 2) for m in RATIO_METRICS + DIFF_METRICS]
+        cells = [_number(row.get(m), 2) for m in RATIO_METRICS + DIFF_METRICS]
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     lines += ["", "| Metric | Geometric mean | Interval | B better / worse / tie | Sign test p |", "|---|---|---|---|---|"]
     for metric, s in doc["comparison"]["overall"].items():

@@ -305,6 +305,31 @@ class AbSourceTests(TempCase):
         bad = bench._record(Path("f"), 1, "OK", {"verification_failures": "x"}, 1.0, {"passed": 0, "total": 0})
         self.assertEqual((good["verification_failures"], bad["verification_failures"]), (2, 0))
 
+    def test_record_review_fields_and_garbage(self):
+        cases = [({"callers": 3, "confirmed": [{}], "refuted": [{}, {}]}, (3, 1, 2)),
+                 ({"confirmed": [{}], "refuted": [{}, {}]}, (None, 1, 2)),
+                 (None, (None, None, None)), ("x", (None, None, None)),
+                 ({"callers": "3", "confirmed": [{}], "refuted": []}, (None, 1, 0)),
+                 ({"callers": True, "confirmed": "x", "refuted": None}, (None, None, None))]
+        for review, expected in cases:
+            result = {} if review is None else {"review": review}
+            rec = bench._record(Path("f"), 1, "OK", result, 1.0, {"passed": 0, "total": 0})
+            self.assertEqual((rec["review_callers"], rec["review_confirmed"], rec["review_refuted"]), expected)
+
+    def test_metric_review_fields_and_markdown_columns(self):
+        run = {"result": "OK", "review_callers": 2, "review_confirmed": 1}
+        self.assertEqual((bench._metric(run, "review_callers"), bench._metric(run, "review_confirmed")), (2, 1))
+        self.assertIsNone(bench._metric({"result": "OK"}, "review_callers"))
+        runs = [dict(run, fixture="fx", arm="b"), {"result": "OK", "fixture": "fx", "arm": "a", "review_confirmed": 0}]
+        comparison = bench.compare(runs, seed=0)
+        self.assertEqual((comparison["fixtures"]["fx"]["review_callers"], comparison["fixtures"]["fx"]["review_confirmed"]),
+                         (None, 1.0))
+        spec = {"spec": "s", "version": "v"}
+        text = bench.ab_markdown({"a": spec, "b": spec, "repeat": 1, "seed": 0, "comparison": comparison})
+        table = [line for line in text.splitlines() if line.startswith("|")]
+        self.assertTrue(table[0].endswith("| Callers | Confirmed |"))
+        self.assertEqual((table[1].count("|") - 1, table[2].count("|") - 1), (9, 9))
+
 
 if __name__ == "__main__":
     unittest.main()

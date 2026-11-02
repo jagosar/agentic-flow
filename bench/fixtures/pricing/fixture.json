@@ -1,0 +1,1 @@
+{"name": "pricing", "description": "Prices with a currency in two parallel packages; a function's signature changes while a caller outside the plan depends on the old one.", "difficulty": "trap"}
