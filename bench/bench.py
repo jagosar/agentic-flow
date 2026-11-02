@@ -214,11 +214,16 @@ def _commit_all(project: Path, env: dict, message: str) -> None:
     _git(["commit", "-q", "--allow-empty", "-m", message], project, env)
 
 
+# Bytecode a fixture's folder may carry from a local run: copied into a session, close-stage would see it as a write
+# nobody owns and every session would end in REVIEW.
+IGNORE_BYTECODE = shutil.ignore_patterns("__pycache__", "*.pyc")
+
+
 def _prepare(fixture: Path, project: Path, source: Path, auth: str, env: dict) -> None:
     """Copies the fixture's repo into project, commits, installs the flow, sets auth, commits again.
     Raises BenchError if any step fails."""
     try:
-        shutil.copytree(fixture / "repo", project, dirs_exist_ok=True)
+        shutil.copytree(fixture / "repo", project, dirs_exist_ok=True, ignore=IGNORE_BYTECODE)
         _git(["init", "-q"], project, env)
         _commit_all(project, env, "fixture")
         subprocess.run([sys.executable, str(source / ".claude" / "bin" / "agentic.py"), "install", str(project)],
@@ -309,7 +314,7 @@ def oracle_counts(project: Path, oracle: Path) -> tuple[int, int]:
 def _run_oracle(fixture: Path, project: Path) -> dict:
     target = project / ".bench_oracle"
     try:
-        shutil.copytree(fixture / "oracle", target)
+        shutil.copytree(fixture / "oracle", target, ignore=IGNORE_BYTECODE)
     except OSError:
         return {"passed": 0, "total": 0}
     try:
@@ -407,9 +412,9 @@ def _oracle_on(fixture: Path, overlay: str | None) -> tuple[int, int]:
     """The oracle's (passed, total) over the fixture's repo, with reference/<overlay> copied on top when given."""
     project = Path(tempfile.mkdtemp(prefix="bench-selftest-"))
     try:
-        shutil.copytree(fixture / "repo", project, dirs_exist_ok=True)
+        shutil.copytree(fixture / "repo", project, dirs_exist_ok=True, ignore=IGNORE_BYTECODE)
         if overlay:
-            shutil.copytree(fixture / "reference" / overlay, project, dirs_exist_ok=True)
+            shutil.copytree(fixture / "reference" / overlay, project, dirs_exist_ok=True, ignore=IGNORE_BYTECODE)
         counts = _run_oracle(fixture, project)
     finally:
         remove_tree(project)

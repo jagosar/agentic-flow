@@ -57,6 +57,26 @@ ORACLE = ("import os\nimport unittest\n\nclass T(unittest.TestCase):\n"
           "    def test_b(self): self.assertTrue(os.path.exists('b.py'))\n")
 
 
+class BytecodeTests(TempCase):
+    def test_fixture_copies_leave_bytecode_behind(self):
+        # A local run leaves __pycache__ in a fixture; copied into a session it is a write nobody owns.
+        fixture = self.tmp / "fx"
+        (fixture / "repo" / "pkg" / "__pycache__").mkdir(parents=True)
+        (fixture / "repo" / "pkg" / "a.py").write_text("x = 1\n", encoding="utf-8")
+        (fixture / "repo" / "pkg" / "__pycache__" / "a.cpython-313.pyc").write_bytes(b"\x00")
+        (fixture / "repo" / "stray.pyc").write_bytes(b"\x00")
+        (fixture / "oracle").mkdir()
+        (fixture / "oracle" / "test_oracle.py").write_text("import unittest\n", encoding="utf-8")
+        project = self.tmp / "project"
+        shutil.copytree(fixture / "repo", project, dirs_exist_ok=True, ignore=bench.IGNORE_BYTECODE)
+        self.assertTrue((project / "pkg" / "a.py").is_file())
+        self.assertFalse((project / "pkg" / "__pycache__").exists())
+        self.assertFalse((project / "stray.pyc").exists())
+        copy = self.tmp / "copy"
+        shutil.copytree(fixture / "oracle", copy, ignore=bench.IGNORE_BYTECODE)
+        self.assertEqual(sorted(p.name for p in copy.iterdir()), ["test_oracle.py"])
+
+
 class IsolationTests(TempCase):
     def test_child_env_drops_user_context_and_keeps_the_claude_command(self):
         env = bench._child_env({"AGENTIC_CLAUDE": "python3 /x/claude_fake.py", "AGENTIC_WP": "WP-01", "PATH": "p"},

@@ -1,0 +1,430 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_ac_001_prefix_and_plain"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_ac_002_mismatch"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_ac_003_unknown_currency"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_ac_004_old_errors"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_ac_005_cart_in_usd"
+            ]
+          },
+          {
+            "ac": "AC-006",
+            "tests": [
+              "test_ac_006_cart_refuses_other_currency"
+            ]
+          },
+          {
+            "ac": "AC-007",
+            "tests": [
+              "test_ac_007_unknown_cart_currency"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Red now is from ImportError (CurrencyMismatch missing in shop.money), so individual test assertions have not run against any implementation.",
+          "Tests are not verified green against a real implementation."
+        ]
+      },
+      "check": "AT: 2 file(s) changed: acceptance/test_cart_currency.py, acceptance/test_money_currency.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: shop/money.py, tests/test_money.py\nWP-02: 2 file(s) changed: shop/cart.py, tests/test_cart.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0 WP-02=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "........",
+          "----------------------------------------------------------------------",
+          "Ran 8 tests in 0.001s",
+          "",
+          "OK"
+        ]
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "shop/money.py",
+        "tests/test_money.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest tests/test_money.py",
+          "passed": true,
+          "detail": "8 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "7 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Private helper _strip_prefix; prefix pattern is three uppercase letters + one space",
+        "Currency argument validated before the text"
+      ],
+      "blocker": null,
+      "not_checked": [
+        "Full tests/ discover not run: tests/test_cart.py belongs to another WP and may still call the old signature"
+      ],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE_WITH_CONCERNS",
+      "wp": "WP-02",
+      "files": [
+        "shop/cart.py",
+        "tests/test_cart.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": false,
+          "detail": "ImportError: shop.money has no CURRENCIES yet; WP-01, same wave, has not landed"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": false,
+          "detail": "Same ImportError; cannot pass until WP-01 lands"
+        }
+      ],
+      "internal_decisions": [
+        "Cart.__init__ validates the currency before setting any state, and add() validates before storing.",
+        "Tests import the real CurrencyMismatch from shop.money instead of a double."
+      ],
+      "blocker": null,
+      "not_checked": [
+        "Behaviour against the real new parse_price: shop/money.py still has the old code, so AC-005 to AC-007 and my new tests have not run green."
+      ],
+      "concerns": [
+        "shop/cart.py imports CURRENCIES from shop.money, which WP-01 has not added yet. The test and acceptance runs fail until it lands, so they need a re-run after integration."
+      ],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "...............",
+          "----------------------------------------------------------------------",
+          "Ran 15 tests in 0.001s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "opened": true
+  },
+  "qa": {
+    "status": "PASS",
+    "plan": [
+      "Baseline: unit tests (15) and acceptance tests (7) pass.",
+      "Contracts: Cart to parse_price, CURRENCIES and CurrencyMismatch tested from the cart side (all currency pairs, default EUR, independent carts).",
+      "Edge cases: malformed prefixes (double space, tab, lowercase, trailing newline, repeated prefix, bare prefix, 4-letter prefix), bad currency checked before the text, amount forms (`1.`, `.5`, `1,50`, `+1`, `1e2`, `EUR -0`), failed add leaves the cart unchanged. All pass.",
+      "Defect test test_d1_non_ascii_digits_rejected stays red on purpose (low severity).",
+      "Integration and regression: covered by the cart tests; the old errors are covered by AC-004.",
+      "Non-functional: discarded, the architecture mentions none.",
+      "Rerun from the repo root: python3 -m unittest discover -s qa -p 'test_qa*.py'"
+    ],
+    "defects": [
+      {
+        "id": "D1",
+        "severity": "low",
+        "wp": "WP-01",
+        "kind": "implementation",
+        "section": "6 (Contracts: parse_price); 2 (non-goal: localisation of numbers)",
+        "repro": "parse_price(\"١٢\", \"EUR\") returns 1200, and parse_price(\"１.00\", \"EUR\") returns 100. PRICE_RE uses \\d, which matches any Unicode digit, so Arabic-Indic and fullwidth digits are accepted as a price. Only the ASCII form is documented ('12.50').",
+        "fix": "In shop/money.py, change \\d to [0-9] in PRICE_RE, or compile it with re.ASCII.",
+        "if_skipped": "Non-ASCII digit strings are accepted as prices. This is low impact: the amounts parse correctly, but the input is not the documented format and could slip past downstream validation that assumes ASCII."
+      }
+    ],
+    "gaps": [
+      "The architecture states no behaviour for non-string text or non-int qty, so those were not tested.",
+      "Cart.add rejects qty < 1 with ValueError. Section 6 does not mention this, so I did not test it as a contract."
+    ],
+    "needs_validation": []
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_money_currency.py",
+        "line": 24,
+        "problem": "AC-004 says the old errors must not raise another exception type. The test uses assertRaises(ValueError), so a CurrencyMismatch (a ValueError subclass) would also pass. It does not check that 'EUR -1.00' fails because of the negative amount.",
+        "evidence": "An implementation that raised CurrencyMismatch for every bad text would pass AC-004. AC-001 and AC-003 would still catch most such mistakes."
+      },
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_cart_currency.py",
+        "line": 17,
+        "problem": "AC-006 checks that nothing is stored, but only after one failed add on an empty cart. It does not check that a cart with earlier lines stays unchanged.",
+        "evidence": "The brief's 'a failed add leaves the cart unchanged' is only weakly covered. An implementation that stores the line after parsing would still fail, so this is acceptable."
+      }
+    ]
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "Added a Currencies section to README.md: CURRENCIES, parse_price(text, currency), CurrencyMismatch, Cart(currency) with examples and errors.",
+        "Added a Tests section to README.md with the unit and acceptance commands."
+      ],
+      "unverified": [
+        "I did not run the README examples; I checked them only against shop/money.py, shop/cart.py and the acceptance criteria in architecture.md.",
+        "No CHANGELOG was added because docs.files only lists README.md."
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 0,
+  "pending": [
+    {
+      "type": "concern",
+      "source": "WP-02",
+      "wp": "WP-02",
+      "problem": "shop/cart.py imports CURRENCIES from shop.money, which WP-01 has not added yet. The test and acceptance runs fail until it lands, so they need a re-run after integration."
+    },
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "I did not run the README examples; I checked them only against shop/money.py, shop/cart.py and the acceptance criteria in architecture.md.",
+        "No CHANGELOG was added because docs.files only lists README.md."
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Red now is from ImportError (CurrencyMismatch missing in shop.money), so individual test assertions have not run against any implementation.",
+        "Tests are not verified green against a real implementation."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "I did not run the tests, because the shop module may not exist yet.",
+        "I did not check the tests in tests/ (unit tests), which are outside the acceptance zone.",
+        "I did not read the rule files .claude/rules/agentic/common.md and python.md."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-02",
+      "items": [
+        "Behaviour against the real new parse_price: shop/money.py still has the old code, so AC-005 to AC-007 and my new tests have not run green."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-01",
+      "items": [
+        "Full tests/ discover not run: tests/test_cart.py belongs to another WP and may still call the old signature"
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "Did not check README.md docs",
+        "Did not check whether `\\d` accepting Unicode digits was already the behaviour before this diff (`int()` parses them, so no wrong result)."
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "usage": {
+    "total": {
+      "input": 58548,
+      "cache_read": 392652,
+      "output": 17030,
+      "turns": 69,
+      "cost_usd": 0.4436132
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 9512,
+        "cache_read": 69258,
+        "output": 3057,
+        "cost_usd": 0.0755198,
+        "turns": 11
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 5326,
+        "cache_read": 19006,
+        "output": 1234,
+        "cost_usd": 0.0355326,
+        "turns": 7
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 6662,
+        "cache_read": 54901,
+        "output": 2171,
+        "cost_usd": 0.053828100000000004,
+        "turns": 12
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 9493,
+        "cache_read": 73327,
+        "output": 3811,
+        "cost_usd": 0.0833907,
+        "turns": 10
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 7476,
+        "cache_read": 26574,
+        "output": 622,
+        "cost_usd": 0.0387694,
+        "turns": 6
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 10737,
+        "cache_read": 99309,
+        "output": 4718,
+        "cost_usd": 0.1000269,
+        "turns": 14
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 9342,
+        "cache_read": 50277,
+        "output": 1417,
+        "cost_usd": 0.0565457,
+        "turns": 9
+      }
+    ]
+  }
+}
