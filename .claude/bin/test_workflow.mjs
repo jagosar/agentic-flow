@@ -181,13 +181,13 @@ test('a design defect: not fixed in a loop, returned as pending', async () => {
 test('refactor: no test-author, the existing suite is the baseline', async () => {
   const { calls, gates } = await simulate({ plan: { type: 'refactor' } })
   assert.ok(!calls.some(c => c.type === 'test-author'))
-  assert.equal(gates[2], 'baseline')
-  assert.equal(gates[3], 'acceptance --expect green')
+  assert.equal(gates[3], 'baseline')
+  assert.equal(gates[4], 'acceptance --expect green')
 })
 
 test('baseline: goes before wave 0 and its result is saved', async () => {
   const { result, gates } = await simulate()
-  assert.equal(gates[2], 'baseline')
+  assert.equal(gates[3], 'baseline')
   assert.ok(gates.indexOf('baseline') < gates.indexOf('open-stage acceptance'))
   assert.deepEqual(result.baseline.preexisting_failures, [])
 })
@@ -203,7 +203,7 @@ test('baseline with a pre-existing failure: does not block; a command that canno
 test('pipeline-plan and the briefs travel in one gatekeeper call; the baseline goes next, alone', async () => {
   const { calls } = await simulate()
   const [first, second] = calls.filter(c => c.type === 'gatekeeper')
-  assert.ok(first.prompt.endsWith('agentic.py seq pipeline-plan + briefs'))
+  assert.ok(first.prompt.endsWith('agentic.py seq hooks-check + pipeline-plan + briefs'))
   assert.ok(second.prompt.endsWith('agentic.py baseline'))
 })
 
@@ -304,7 +304,7 @@ test('gatekeeper calls are batched: close-stage travels with the next open-stage
   const { gates, gateCalls } = await simulate()
   assert.equal(gateCalls, 10, `a run with two waves needs 10 gatekeeper calls, not one per command (${gates.length} commands)`)
   assert.deepEqual(gates, [
-    'pipeline-plan', 'briefs', 'baseline', 'open-stage acceptance', 'close-stage acceptance AT=done --expect red', 'open-stage 1',
+    'hooks-check', 'pipeline-plan', 'briefs', 'baseline', 'open-stage acceptance', 'close-stage acceptance AT=done --expect red', 'open-stage 1',
     'close-stage 1 WP-01=done WP-02=done', 'open-stage 2',
     'close-stage 2 WP-03=done', 'verify', 'open-stage review', 'callers',
     'close-stage review REVIEW=pass', 'open-stage qa', 'close-stage qa QA=pass',

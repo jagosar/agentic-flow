@@ -165,6 +165,7 @@ const brief = id => `.claude/state/briefs/${id}.md`
 const REFUTE_CONFIDENCE = 0.7
 // verify and baseline run the whole suite: each goes in a gatekeeper call of its own, so it fits in one Bash timeout.
 const WAVE_TAIL = ['verify', 'open-stage review', 'callers']
+const HOOKS_DEAD = 'the guardrail hook is not running in this session: run `agentic.py hooks-check` for the cause, or use /implement fallback'
 const LOST = 'the gatekeeper returned no usable result (a timeout or garbled output); the command may have run anyway: check `agentic.py status` before resuming'
 // Files that close-stage saw change for an ID ("WP-01: 2 file(s) changed: a, b"). Used to compare what an agent
 // says it did with what is on disk.
@@ -391,11 +392,14 @@ async function fixCycle(defects, opened) {
 // touching anything: that way a phase that already failed at the end is a "pre-existing failure" and is blamed on no
 // package. When resuming from a wave (start_wave), the original run's baseline is kept.
 phase('Prepare')
-const first = await seq(['pipeline-plan', 'briefs'], 'prepare')
-const planStep = step(first, 0)
+// hooks-check goes first: a session whose guardrail hook does not fire must not pay for a single agent.
+const first = await seq(['hooks-check', 'pipeline-plan', 'briefs'], 'prepare')
+const hookStep = step(first, 0)
+if (hookStep && !ok(hookStep)) return stop('prepare', HOOKS_DEAD, { gate: hookStep })
+const planStep = step(first, 1)
 const plan = ok(planStep) ? lastJson(planStep.output) : null
 if (!plan) return stop('prepare', 'pipeline-plan failed: the manifest is not valid', { gate: planStep })
-if (!ok(step(first, 1))) return stop('prepare', 'briefs failed', { gate: step(first, 1) })
+if (!ok(step(first, 2))) return stop('prepare', 'briefs failed', { gate: step(first, 2) })
 // Language rules (rules-sync): every agent that writes or judges code receives them in its prompt.
 const RULES = plan.rules && plan.rules.length ? ` Rules you must follow (language and common): ${plan.rules.join(', ')}.` : ''
 if (startWave === null) {

@@ -195,7 +195,9 @@ def remove_tree(path: Path) -> None:
 def _child_env(base: dict, project: Path) -> dict:
     """The environment of every child: the project as CLAUDE_PROJECT_DIR, no AGENTIC_WP, and the agents isolated
     from the user's context."""
-    env = {k: v for k, v in base.items() if k != "AGENTIC_WP"}
+    # CLAUDECODE: a bench started from a Claude session is not driven by that session's tool calls; inherited, it would
+    # put the flow's hooks-check in live mode against a heartbeat that ages with every fixture.
+    env = {k: v for k, v in base.items() if k not in ("AGENTIC_WP", "CLAUDECODE")}
     env["CLAUDE_PROJECT_DIR"] = str(project)
     env.update(ISOLATION_ENV)
     env["AGENTIC_CLAUDE"] = shlex.join(shlex.split(base.get("AGENTIC_CLAUDE") or "claude") + ISOLATION_FLAGS)

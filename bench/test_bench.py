@@ -68,6 +68,12 @@ class IsolationTests(TempCase):
         self.assertEqual(env["CLAUDE_PROJECT_DIR"], str(self.tmp))
         self.assertEqual(bench._child_env({}, self.tmp)["AGENTIC_CLAUDE"], "claude --setting-sources project,local")
 
+    def test_child_env_drops_claudecode(self):
+        # Inherited from a Claude session, it would put the flow's hooks-check in live mode for every fixture.
+        env = bench._child_env({"CLAUDECODE": "1", "PATH": "p"}, self.tmp)
+        self.assertNotIn("CLAUDECODE", env)
+        self.assertEqual(env["PATH"], "p")
+
 
 class SelftestTests(TempCase):
     def fixture(self, good=("a.py", "b.py"), bad=("a.py",), oracle=ORACLE, name="fx"):
