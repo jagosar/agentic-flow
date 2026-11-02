@@ -1,7 +1,7 @@
 # Guide: cloud sessions (web and iOS)
 
 **Goal:** run the flow in a Claude Code cloud session, started from the browser, your phone, Desktop or the terminal.
-**Status:** not tested. This guide follows the official documentation for cloud sessions. The flow's authors did not verify that hooks fire in a cloud session: a bench run there saw none fire.
+**Status:** not tested. This guide follows the official documentation for cloud sessions. In a cloud session with two repositories attached, the flow's authors observed that the project's hook never ran, as the documentation says for several repositories; the flow now refuses to start there (`hooks-check`).
 
 Before you start, meet the [requirements](README.md#requirements) and [install the flow in your project](README.md#install-the-flow-in-a-project).
 
@@ -9,7 +9,7 @@ Before you start, meet the [requirements](README.md#requirements) and [install t
 
 - A cloud session runs in an Anthropic virtual machine (Ubuntu 24.04, with Python 3, git and other tools preinstalled) on a clone of your GitHub repo. It keeps working when you close your laptop.
 - It is available on Pro, Max and Team, counts against your plan's usage limits with no extra charge, and always uses your subscription.
-- The official documentation says it loads the repo's `.claude/agents/` and `.claude/settings.json` (hooks and permissions). The flow's authors did not verify this: the guardrails that depend on hooks may not apply here.
+- The official documentation says it loads the repo's `.claude/agents/` and `.claude/settings.json` (hooks and permissions) only when the session has one repository and is not a thread inside a Claude project. Attach this repository alone. If `hooks-check` exits 3, `/implement` stops before any agent; `/implement fallback` runs each agent as `claude -p`, which loads the hooks.
 - A GitHub connection, either way:
   - **In the browser:** install the **Claude GitHub App** during the first setup at [claude.ai/code](https://claude.ai/code).
   - **From the terminal:** run `/web-setup`, which reuses your `gh` login.
@@ -51,7 +51,7 @@ When it finishes you get the same report as in the [terminal guide](terminal.md#
 - It also lists the stop gate denials (`gate_denials`), the review and QA results, and the pending items: design questions, needs validation, concerns and fix limits. Each package can also report what it did not check (`not_checked`).
 - Nothing is committed until you approve the proposed commits. The steps are in [the working cycle](README.md#the-working-cycle).
 
-Because hooks were not verified here, check the diff yourself before you approve.
+A run that passed `hooks-check` had its hook running; a stage `check` with `GUARDRAIL HOOK SAW NO FLOW AGENT` did not. Either way, check the diff yourself before you approve.
 
 ## 4. Review and deliver
 

@@ -79,7 +79,7 @@ Commit it, so your team, CI and cloud sessions get the flow too:
 git add .claude .gitignore && git commit -m "Add agentic flow"
 ```
 
-Then open `claude` once in the folder and **accept the trust prompt**. Without it, Claude Code ignores the project's `permissions.allow`; hooks and `deny` rules apply anyway.
+Then open `claude` once in the folder and **accept the trust prompt**. Without it, Claude Code ignores the project's `permissions.allow`; hooks and `deny` rules apply anyway, except in a cloud session with several repositories or a thread inside a Claude project, where no project hook runs: `hooks-check` tells you.
 
 Check it:
 
@@ -178,6 +178,7 @@ python3 .claude/bin/agentic.py stack                   # detected languages agai
 python3 .claude/bin/agentic.py rules-sync              # installs the stack's rules in .claude/rules/agentic/
 python3 .claude/bin/agentic.py codemap                 # deterministic code map in docs/CODEMAP.md
 python3 .claude/bin/agentic.py callers                 # who calls the symbols a change touched (what the reviewer reads)
+python3 .claude/bin/agentic.py hooks-check             # whether the guardrail hook runs in this session (exit 3 if not)
 python3 .claude/bin/agentic.py docs-check              # links, anchors and paths in the documentation
 python3 .claude/bin/agentic.py install ../other-repo   # installs or updates the flow in another repo
 python3 .claude/bin/agentic.py briefs                  # writes each agent's slice of architecture.md in .claude/state/briefs/
@@ -188,11 +189,9 @@ python3 .claude/bin/agentic.py mark WP-02 blocker note # annotates by hand
 python3 .claude/bin/agentic.py run-pipeline
 # ...or stage by stage:
 python3 .claude/bin/agentic.py run-acceptance          # wave 0: the test-author writes the acceptance tests
-python3 .claude/bin/agentic.py acceptance --expect red # they must fail before the code
-python3 .claude/bin/agentic.py run-wave 1              # wave 1 in parallel
-python3 .claude/bin/agentic.py run-wave 1 WP-02        # a single package
+python3 .claude/bin/agentic.py acceptance --expect red|green  # red before the code, green after it
+python3 .claude/bin/agentic.py run-wave 1 [WP-02]      # wave 1 in parallel, or a single package
 python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # fix its defects from the newest review or QA (--all: medium and low too)
-python3 .claude/bin/agentic.py acceptance --expect green  # they must pass afterwards
 python3 .claude/bin/agentic.py run-review              # code reviewer (read-only)
 python3 .claude/bin/agentic.py run-qa                  # QA agent
 python3 .claude/bin/agentic.py run-docs                # doc-updater, after codemap
@@ -210,6 +209,7 @@ python3 bench/bench.py ab --a <ref> --b <ref>          # compares two versions o
 |---|---|---|
 | `does not support this model; version X or newer is required` | An old CLI for a new model | `claude update`. With npm: `npm install -g @anthropic-ai/claude-code@latest` (with nvm, use nvm's npm) |
 | `Ignoring 1 permissions.allow entry ... not been trusted` | The folder is not trusted | Open `claude` in it once and accept the prompt |
+| `hooks-check` exits 3, or `GUARDRAIL HOOK SAW NO FLOW AGENT` | Claude Code does not run the project's hook here: a cloud session with several repositories, a thread inside a Claude project, or `disableAllHooks` | Use `/implement fallback`, or open a session with this repository alone |
 | `Invalid manifest: ... model: sonnet` or `opus` | Someone pinned another model in an agent or command | Restore `model: sonnet` (working agents and `/implement`), `model: haiku` (only the `gatekeeper`) or `model: opus` (`/architect`, `plan-reviewer`) |
 | `File with two owners` | Two zones overlap in the manifest | Fix the manifest with `/architect`; see the example below |
 | `RESULT: REVIEW` with `NO REPORT` | The child process failed (usage limit, network, auth) | Read `.claude/state/runs/<ID>.log` |
