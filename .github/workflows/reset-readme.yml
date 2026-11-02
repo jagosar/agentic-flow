@@ -1,7 +1,6 @@
 # Only runs in repositories created from the template (never in the template itself). It replaces the
 # template's README with a minimal stub, because from then on the README belongs to the new software.
 # Idempotent: it acts only while README.md still carries the template marker, so it is a no-op afterwards.
-# The stub then gets the flow's generated header (readme-header): title, licence, languages, built with agentic-flow.
 # It cannot delete itself: GITHUB_TOKEN may not modify files under .github/workflows.
 name: reset-readme
 on:
@@ -33,7 +32,6 @@ jobs:
             exit 0
           fi
           printf '# %s\n\nTODO: describe this project.\n\nBuilt with [agentic-flow](https://github.com/jagosar/agentic-flow): see `docs/how-it-works.md`.\n' "$REPO_NAME" > README.md
-          python3 .claude/bin/agentic.py readme-header
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add README.md
