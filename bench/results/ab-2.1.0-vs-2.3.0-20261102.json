@@ -1,0 +1,1421 @@
+{
+ "schema": "ab-1",
+ "a": {
+  "spec": "agentic-flow--v2.1.0",
+  "version": "2.1.0",
+  "commit": "f27e523",
+  "dirty": false
+ },
+ "b": {
+  "spec": "PR 43 head 6c63ce4; its .claude/ differs from agentic-flow--v2.3.0 only in flow-history.json",
+  "version": "2.3.0",
+  "commit": "6c63ce4",
+  "dirty": false
+ },
+ "started": "2026-11-01T21:23:35",
+ "repeat": 3,
+ "auth": "subscription",
+ "seed": 0,
+ "runs": [
+  {
+   "arm": "a",
+   "fixture": "inventory",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 123.4,
+   "oracle": {
+    "passed": 16,
+    "total": 16
+   },
+   "usage": {
+    "input": 53765,
+    "cache_read": 296057,
+    "output": 13864,
+    "turns": 58,
+    "cost_usd": 0.3831857
+   },
+   "mutation": {
+    "total": 14,
+    "killed": 14,
+    "oracle_killed": 14,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "inventory",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 120.8,
+   "oracle": {
+    "passed": 16,
+    "total": 16
+   },
+   "usage": {
+    "input": 52284,
+    "cache_read": 304105,
+    "output": 15245,
+    "turns": 57,
+    "cost_usd": 0.3918765
+   },
+   "mutation": {
+    "total": 15,
+    "killed": 15,
+    "oracle_killed": 15,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "inventory",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 123.1,
+   "oracle": {
+    "passed": 16,
+    "total": 16
+   },
+   "usage": {
+    "input": 51791,
+    "cache_read": 312292,
+    "output": 14866,
+    "turns": 53,
+    "cost_usd": 0.3869332
+   },
+   "mutation": {
+    "total": 15,
+    "killed": 15,
+    "oracle_killed": 15,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "inventory",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 130.7,
+   "oracle": {
+    "passed": 16,
+    "total": 16
+   },
+   "usage": {
+    "input": 55264,
+    "cache_read": 343652,
+    "output": 15767,
+    "turns": 59,
+    "cost_usd": 0.4129592
+   },
+   "mutation": {
+    "total": 14,
+    "killed": 14,
+    "oracle_killed": 14,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "inventory",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 112.2,
+   "oracle": {
+    "passed": 16,
+    "total": 16
+   },
+   "usage": {
+    "input": 53206,
+    "cache_read": 276358,
+    "output": 13703,
+    "turns": 59,
+    "cost_usd": 0.3773778
+   },
+   "mutation": {
+    "total": 15,
+    "killed": 15,
+    "oracle_killed": 15,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "inventory",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 125.7,
+   "oracle": {
+    "passed": 16,
+    "total": 16
+   },
+   "usage": {
+    "input": 51944,
+    "cache_read": 345401,
+    "output": 14463,
+    "turns": 58,
+    "cost_usd": 0.3868141
+   },
+   "mutation": {
+    "total": 15,
+    "killed": 15,
+    "oracle_killed": 15,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "roster",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 180.6,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 88293,
+    "cache_read": 504677,
+    "output": 28058,
+    "turns": 76,
+    "cost_usd": 0.6840477
+   },
+   "mutation": {
+    "total": 39,
+    "killed": 32,
+    "oracle_killed": 33,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "roster/intervals.py",
+      "line": 23,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 30,
+      "operator": "compare",
+      "description": "> -> >="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 41,
+      "operator": "compare",
+      "description": "<= -> <"
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 43,
+      "operator": "compare",
+      "description": ">= -> >"
+     },
+     {
+      "file": "roster/rules.py",
+      "line": 8,
+      "operator": "const",
+      "description": "1440 -> 1441"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 17,
+      "operator": "arith",
+      "description": "+ -> -"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 21,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "roster",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 168.3,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 89126,
+    "cache_read": 451141,
+    "output": 27035,
+    "turns": 77,
+    "cost_usd": 0.6718081
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 33,
+    "oracle_killed": 34,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "roster/intervals.py",
+      "line": 24,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 31,
+      "operator": "compare",
+      "description": "> -> >="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 42,
+      "operator": "compare",
+      "description": "<= -> <"
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 44,
+      "operator": "compare",
+      "description": ">= -> >"
+     },
+     {
+      "file": "roster/rules.py",
+      "line": 8,
+      "operator": "const",
+      "description": "1440 -> 1441"
+     },
+     {
+      "file": "roster/rules.py",
+      "line": 19,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 21,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "roster",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 205.5,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 97248,
+    "cache_read": 621878,
+    "output": 31072,
+    "turns": 82,
+    "cost_usd": 0.7617038
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 34,
+    "oracle_killed": 34,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "roster/intervals.py",
+      "line": 30,
+      "operator": "compare",
+      "description": "> -> >="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 41,
+      "operator": "compare",
+      "description": "<= -> <"
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 43,
+      "operator": "compare",
+      "description": ">= -> >"
+     },
+     {
+      "file": "roster/rules.py",
+      "line": 8,
+      "operator": "const",
+      "description": "1440 -> 1441"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 17,
+      "operator": "arith",
+      "description": "+ -> -"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 21,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "roster",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 190.5,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 90280,
+    "cache_read": 528913,
+    "output": 30069,
+    "turns": 78,
+    "cost_usd": 0.7145213
+   },
+   "mutation": {
+    "total": 39,
+    "killed": 33,
+    "oracle_killed": 33,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "roster/intervals.py",
+      "line": 30,
+      "operator": "compare",
+      "description": "> -> >="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 41,
+      "operator": "compare",
+      "description": "<= -> <"
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 43,
+      "operator": "compare",
+      "description": ">= -> >"
+     },
+     {
+      "file": "roster/rules.py",
+      "line": 8,
+      "operator": "const",
+      "description": "1440 -> 1441"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 17,
+      "operator": "arith",
+      "description": "+ -> -"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 21,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "roster",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 185.5,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 92813,
+    "cache_read": 699814,
+    "output": 26913,
+    "turns": 92,
+    "cost_usd": 0.7101633999999999
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 34,
+    "oracle_killed": 34,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "roster/intervals.py",
+      "line": 23,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 30,
+      "operator": "compare",
+      "description": "> -> >="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 41,
+      "operator": "compare",
+      "description": "<= -> <"
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 43,
+      "operator": "compare",
+      "description": ">= -> >"
+     },
+     {
+      "file": "roster/rules.py",
+      "line": 8,
+      "operator": "const",
+      "description": "1440 -> 1441"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 21,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "roster",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 167.2,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 89802,
+    "cache_read": 563369,
+    "output": 26577,
+    "turns": 83,
+    "cost_usd": 0.6811349
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 35,
+    "oracle_killed": 34,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "roster/intervals.py",
+      "line": 30,
+      "operator": "compare",
+      "description": "> -> >="
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 41,
+      "operator": "compare",
+      "description": "<= -> <"
+     },
+     {
+      "file": "roster/intervals.py",
+      "line": 43,
+      "operator": "compare",
+      "description": ">= -> >"
+     },
+     {
+      "file": "roster/rules.py",
+      "line": 8,
+      "operator": "const",
+      "description": "1440 -> 1441"
+     },
+     {
+      "file": "roster/shifts.py",
+      "line": 21,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "tally",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 185.7,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 98083,
+    "cache_read": 511675,
+    "output": 28091,
+    "turns": 78,
+    "cost_usd": 0.7242375
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 34,
+    "oracle_killed": 34,
+    "timeouts": 2,
+    "survived": [
+     {
+      "file": "tally/dates.py",
+      "line": 11,
+      "operator": "boolop",
+      "description": "or -> and"
+     },
+     {
+      "file": "tally/dates.py",
+      "line": 17,
+      "operator": "const",
+      "description": "1 -> 2"
+     },
+     {
+      "file": "tally/dates.py",
+      "line": 17,
+      "operator": "const",
+      "description": "32 -> 33"
+     },
+     {
+      "file": "tally/ledger.py",
+      "line": 34,
+      "operator": "const",
+      "description": "0 -> 1"
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "const",
+      "description": "0 -> 1"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "tally",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 213.8,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 102052,
+    "cache_read": 531741,
+    "output": 29836,
+    "turns": 79,
+    "cost_usd": 0.7595661
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 36,
+    "oracle_killed": 35,
+    "timeouts": 4,
+    "survived": [
+     {
+      "file": "tally/dates.py",
+      "line": 17,
+      "operator": "const",
+      "description": "4 -> 5"
+     },
+     {
+      "file": "tally/ledger.py",
+      "line": 35,
+      "operator": "const",
+      "description": "0 -> 1"
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "const",
+      "description": "0 -> 1"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "tally",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 184.0,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 96780,
+    "cache_read": 545536,
+    "output": 27671,
+    "turns": 79,
+    "cost_usd": 0.7182035999999999
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 35,
+    "oracle_killed": 35,
+    "timeouts": 2,
+    "survived": [
+     {
+      "file": "tally/dates.py",
+      "line": 11,
+      "operator": "boolop",
+      "description": "or -> and"
+     },
+     {
+      "file": "tally/dates.py",
+      "line": 17,
+      "operator": "const",
+      "description": "4 -> 5"
+     },
+     {
+      "file": "tally/ledger.py",
+      "line": 35,
+      "operator": "const",
+      "description": "0 -> 1"
+     },
+     {
+      "file": "tally/money.py",
+      "line": 28,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "tally/money.py",
+      "line": 28,
+      "operator": "const",
+      "description": "0 -> 1"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "tally",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 182.4,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 96395,
+    "cache_read": 463257,
+    "output": 27322,
+    "turns": 79,
+    "cost_usd": 0.7049657
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 37,
+    "oracle_killed": 36,
+    "timeouts": 1,
+    "survived": [
+     {
+      "file": "tally/ledger.py",
+      "line": 29,
+      "operator": "const",
+      "description": "0 -> 1"
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "const",
+      "description": "0 -> 1"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "tally",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 1,
+   "test_audit_rounds": 1,
+   "agents": 13,
+   "seconds": 241.8,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 134332,
+    "cache_read": 668754,
+    "output": 33552,
+    "turns": 106,
+    "cost_usd": 0.9394874
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 37,
+    "oracle_killed": 37,
+    "timeouts": 1,
+    "survived": [
+     {
+      "file": "tally/dates.py",
+      "line": 13,
+      "operator": "const",
+      "description": "10 -> 11"
+     },
+     {
+      "file": "tally/dates.py",
+      "line": 29,
+      "operator": "compare",
+      "description": "> -> >="
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "const",
+      "description": "0 -> 1"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "tally",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 9,
+   "seconds": 186.1,
+   "oracle": {
+    "passed": 39,
+    "total": 39
+   },
+   "usage": {
+    "input": 96563,
+    "cache_read": 500057,
+    "output": 29201,
+    "turns": 78,
+    "cost_usd": 0.7280997
+   },
+   "mutation": {
+    "total": 40,
+    "killed": 37,
+    "oracle_killed": 36,
+    "timeouts": 4,
+    "survived": [
+     {
+      "file": "tally/ledger.py",
+      "line": 35,
+      "operator": "const",
+      "description": "0 -> 1"
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "compare",
+      "description": "< -> <="
+     },
+     {
+      "file": "tally/money.py",
+      "line": 29,
+      "operator": "const",
+      "description": "0 -> 1"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "tempconv",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 273.8,
+   "oracle": {
+    "passed": 17,
+    "total": 17
+   },
+   "usage": {
+    "input": 44120,
+    "cache_read": 271207,
+    "output": 14016,
+    "turns": 57,
+    "cost_usd": 0.3436487
+   },
+   "mutation": {
+    "total": 19,
+    "killed": 18,
+    "oracle_killed": 18,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "tempconv/convert.py",
+      "line": 31,
+      "operator": "const",
+      "description": "9 -> 10"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "tempconv",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 114.3,
+   "oracle": {
+    "passed": 17,
+    "total": 17
+   },
+   "usage": {
+    "input": 44722,
+    "cache_read": 285585,
+    "output": 14425,
+    "turns": 56,
+    "cost_usd": 0.3515805
+   },
+   "mutation": {
+    "total": 15,
+    "killed": 15,
+    "oracle_killed": 15,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "tempconv",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 104.1,
+   "oracle": {
+    "passed": 17,
+    "total": 17
+   },
+   "usage": {
+    "input": 43934,
+    "cache_read": 278904,
+    "output": 13710,
+    "turns": 57,
+    "cost_usd": 0.3406104
+   },
+   "mutation": {
+    "total": 21,
+    "killed": 20,
+    "oracle_killed": 20,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "tempconv/convert.py",
+      "line": 31,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "tempconv",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 103.1,
+   "oracle": {
+    "passed": 17,
+    "total": 17
+   },
+   "usage": {
+    "input": 45641,
+    "cache_read": 290714,
+    "output": 13693,
+    "turns": 57,
+    "cost_usd": 0.3484454
+   },
+   "mutation": {
+    "total": 21,
+    "killed": 20,
+    "oracle_killed": 20,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "tempconv/convert.py",
+      "line": 31,
+      "operator": "compare",
+      "description": "< -> <="
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "tempconv",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 280.9,
+   "oracle": {
+    "passed": 17,
+    "total": 17
+   },
+   "usage": {
+    "input": 46510,
+    "cache_read": 324842,
+    "output": 15767,
+    "turns": 60,
+    "cost_usd": 0.3760662
+   },
+   "mutation": {
+    "total": 21,
+    "killed": 20,
+    "oracle_killed": 20,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "tempconv/convert.py",
+      "line": 31,
+      "operator": "const",
+      "description": "9 -> 10"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "tempconv",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 7,
+   "seconds": 102.6,
+   "oracle": {
+    "passed": 17,
+    "total": 17
+   },
+   "usage": {
+    "input": 44255,
+    "cache_read": 294006,
+    "output": 13896,
+    "turns": 56,
+    "cost_usd": 0.34526060000000003
+   },
+   "mutation": {
+    "total": 21,
+    "killed": 20,
+    "oracle_killed": 20,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "tempconv/convert.py",
+      "line": 31,
+      "operator": "const",
+      "description": "9 -> 10"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "vault",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 2,
+   "agents": 10,
+   "seconds": 213.6,
+   "oracle": {
+    "passed": 30,
+    "total": 30
+   },
+   "usage": {
+    "input": 151470,
+    "cache_read": 407715,
+    "output": 30241,
+    "turns": 85,
+    "cost_usd": 0.9488895
+   },
+   "mutation": {
+    "total": 23,
+    "killed": 22,
+    "oracle_killed": 22,
+    "timeouts": 0,
+    "survived": [
+     {
+      "file": "vault/tokens.py",
+      "line": 37,
+      "operator": "boolop",
+      "description": "or -> and"
+     }
+    ]
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "vault",
+   "index": 1,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 8,
+   "seconds": 149.9,
+   "oracle": {
+    "passed": 30,
+    "total": 30
+   },
+   "usage": {
+    "input": 67697,
+    "cache_read": 323368,
+    "output": 19343,
+    "turns": 63,
+    "cost_usd": 0.4964268
+   },
+   "mutation": {
+    "total": 19,
+    "killed": 19,
+    "oracle_killed": 19,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "vault",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 8,
+   "seconds": 163.7,
+   "oracle": {
+    "passed": 30,
+    "total": 30
+   },
+   "usage": {
+    "input": 68828,
+    "cache_read": 356851,
+    "output": 23746,
+    "turns": 66,
+    "cost_usd": 0.5483251
+   },
+   "mutation": {
+    "total": 21,
+    "killed": 21,
+    "oracle_killed": 20,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "vault",
+   "index": 2,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 2,
+   "agents": 10,
+   "seconds": 231.7,
+   "oracle": {
+    "passed": 30,
+    "total": 30
+   },
+   "usage": {
+    "input": 87662,
+    "cache_read": 407849,
+    "output": 28425,
+    "turns": 76,
+    "cost_usd": 0.6755229
+   },
+   "mutation": {
+    "total": 21,
+    "killed": 21,
+    "oracle_killed": 21,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "a",
+   "fixture": "vault",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 8,
+   "seconds": 229.9,
+   "oracle": {
+    "passed": 30,
+    "total": 30
+   },
+   "usage": {
+    "input": 83493,
+    "cache_read": 455525,
+    "output": 31623,
+    "turns": 74,
+    "cost_usd": 0.6956065
+   },
+   "mutation": {
+    "total": 25,
+    "killed": 25,
+    "oracle_killed": 24,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  },
+  {
+   "arm": "b",
+   "fixture": "vault",
+   "index": 3,
+   "result": "OK",
+   "failed_stage": null,
+   "fix_cycles": 0,
+   "test_audit_rounds": 1,
+   "agents": 8,
+   "seconds": 199.8,
+   "oracle": {
+    "passed": 30,
+    "total": 30
+   },
+   "usage": {
+    "input": 71981,
+    "cache_read": 434449,
+    "output": 24415,
+    "turns": 68,
+    "cost_usd": 0.5753629
+   },
+   "mutation": {
+    "total": 28,
+    "killed": 28,
+    "oracle_killed": 27,
+    "timeouts": 0,
+    "survived": []
+   },
+   "verification_failures": 0
+  }
+ ],
+ "comparison": {
+  "fixtures": {
+   "inventory": {
+    "cost_usd": 1.01,
+    "minutes": 0.998,
+    "output": 1.072,
+    "mutation": 0.0,
+    "oracle": 0.0,
+    "fix_cycles": 0
+   },
+   "roster": {
+    "cost_usd": 0.959,
+    "minutes": 0.907,
+    "output": 0.964,
+    "mutation": 0.004,
+    "oracle": 0.0,
+    "fix_cycles": 0
+   },
+   "tally": {
+    "cost_usd": 1.005,
+    "minutes": 1.002,
+    "output": 1.04,
+    "mutation": -0.025,
+    "oracle": 0.0,
+    "fix_cycles": 0
+   },
+   "tempconv": {
+    "cost_usd": 0.991,
+    "minutes": 0.38,
+    "output": 0.991,
+    "mutation": 0.0,
+    "oracle": 0.0,
+    "fix_cycles": 0
+   },
+   "vault": {
+    "cost_usd": 0.788,
+    "minutes": 0.712,
+    "output": 0.785,
+    "mutation": 0.0,
+    "oracle": 0.0,
+    "fix_cycles": 0
+   }
+  },
+  "overall": {
+   "cost_usd": {
+    "geomean": 0.947,
+    "interval": [
+     0.837,
+     0.982
+    ],
+    "wins": 3,
+    "losses": 2,
+    "ties": 0,
+    "p": 1.0
+   },
+   "minutes": {
+    "geomean": 0.755,
+    "interval": [
+     0.71,
+     0.988
+    ],
+    "wins": 4,
+    "losses": 1,
+    "ties": 0,
+    "p": 0.375
+   },
+   "output": {
+    "geomean": 0.965,
+    "interval": [
+     0.876,
+     1.003
+    ],
+    "wins": 3,
+    "losses": 2,
+    "ties": 0,
+    "p": 1.0
+   }
+  }
+ },
+ "note": "Merged: inventory, roster, tally, tempconv from the 2026-11-01 run (stopped by a container restart before vault); vault from the 2026-11-02 run, same arms, same repeat, same seed."
+}

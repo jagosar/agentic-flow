@@ -1,0 +1,531 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_intervals.py::test_overlap_of_two_intervals",
+              "test_intervals.py::test_touching_intervals_do_not_overlap"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_intervals.py::test_merging_intervals"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_intervals.py::test_gaps_in_a_window"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_shifts.py::test_shift_text_becomes_an_interval"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_shifts.py::test_an_interval_becomes_shift_text"
+            ]
+          },
+          {
+            "ac": "AC-006",
+            "tests": [
+              "test_shifts.py::test_nonsense_shift_text_is_rejected",
+              "test_shifts.py::test_other_malformed_text_is_rejected"
+            ]
+          },
+          {
+            "ac": "AC-007",
+            "tests": [
+              "test_schedule.py::test_shifts_are_listed_in_order"
+            ]
+          },
+          {
+            "ac": "AC-008",
+            "tests": [
+              "test_schedule.py::test_coverage_gaps_across_people"
+            ]
+          },
+          {
+            "ac": "AC-009",
+            "tests": [
+              "test_schedule.py::test_minutes_worked"
+            ]
+          },
+          {
+            "ac": "AC-010",
+            "tests": [
+              "test_schedule.py::test_a_double_booking_is_refused"
+            ]
+          },
+          {
+            "ac": "AC-011",
+            "tests": [
+              "test_rules.py::test_a_short_rest_is_reported"
+            ]
+          },
+          {
+            "ac": "AC-012",
+            "tests": [
+              "test_rules.py::test_few_shifts_no_violations"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Extra contract tests beyond the ACs: invalid Interval construction, touching intervals, malformed shift text, ConflictError subclassing ValueError, name stripping, empty-name rejection, unknown person.",
+          "The tests fail with ModuleNotFoundError for roster.intervals. They fail at import, so no assertion has run yet.",
+          "No reference implementation, so I haven't confirmed that every assertion can pass.",
+          "Edge cases that section 6 leaves open aren't tested, such as overnight shifts in coverage_gaps and rest across non-adjacent days."
+        ]
+      },
+      "check": "AT: 4 file(s) changed: acceptance/test_intervals.py, acceptance/test_rules.py, acceptance/test_schedule.py, acceptance/test_shifts.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: roster/intervals.py, tests/test_intervals.py\nWP-02: 2 file(s) changed: roster/shifts.py, tests/test_shifts.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0 WP-02=0\nRESULT: OK"
+    },
+    {
+      "stage": "wave 2",
+      "ok": true,
+      "check": "WP-03: 2 file(s) changed: roster/schedule.py, tests/test_schedule.py\nWP-04: 2 file(s) changed: roster/rules.py, tests/test_rules.py\nStage 2: all changes are within their owners.\nGATE: WP-03=0 WP-04=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "..",
+          "----------------------------------------------------------------------",
+          "Ran 2 tests in 0.000s",
+          "",
+          "OK"
+        ]
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "roster/intervals.py",
+        "tests/test_intervals.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "26 tests OK (includes tests from other WPs already in the repo)"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance -p test_intervals.py",
+          "passed": true,
+          "detail": "5 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Used typing.List in annotations for Python 3.9 compatibility, with the __future__ import",
+        "merge sorts by (start, end) on a copy, so the caller's list is not changed",
+        "gaps skips intervals outside the window and clips to the window edges"
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE",
+      "wp": "WP-02",
+      "files": [
+        "roster/shifts.py",
+        "tests/test_shifts.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "9 tests OK"
+        },
+        {
+          "command": "python3 -m unittest acceptance.test_shifts",
+          "passed": true,
+          "detail": "4 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Used re.fullmatch with explicit ranges so trailing newlines and non-ASCII digits are rejected",
+        "Tests use a local _Span double for format_shift instead of importing Interval"
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-03": {
+      "status": "DONE",
+      "wp": "WP-03",
+      "files": [
+        "roster/schedule.py",
+        "tests/test_schedule.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "39 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "19 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Names are stripped in every method, including lookups (shifts, minutes).",
+        "coverage_gaps counts only shifts stored on the given day; an overnight shift's tail on the next day is not counted."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-04": {
+      "status": "DONE",
+      "wp": "WP-04",
+      "files": [
+        "roster/rules.py",
+        "tests/test_rules.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "31 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "test_rules passes (AC-011, AC-012); the only error is the missing roster.schedule (WP-03, same wave)"
+        }
+      ],
+      "internal_decisions": [
+        "Rest between shifts = next.start + days_between*1440 - prev.end, a violation when it is below min_rest.",
+        "A gap exactly equal to min_rest is not a violation."
+      ],
+      "blocker": null,
+      "not_checked": [
+        "Integration with the real Schedule.shifts output, because WP-03 isn't in the repo yet."
+      ],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          ".......................................",
+          "----------------------------------------------------------------------",
+          "Ran 39 tests in 0.002s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "opened": true,
+    "callers": 0
+  },
+  "qa": {
+    "status": "PASS",
+    "plan": [
+      "Baseline: tests (39) and acceptance (19) pass.",
+      "Contracts/integration: Schedule + rest_violations with overnight shifts, tested in qa/test_qa.py; all pass.",
+      "Edge cases: interval bounds, merge/gaps edges, malformed shift text (newline, unicode digits, 24:00), atomic failed assign, name stripping, touching shifts; all pass.",
+      "Acceptance: covered by acceptance/, not duplicated.",
+      "Regression, non-functional: discarded (no prior code, no such requirements)."
+    ],
+    "defects": [],
+    "gaps": [
+      "Non-str or non-int inputs (e.g. parse_shift(None), Interval(0.5, 1.5)) are not specified in architecture.md, so they were not tested.",
+      "Overnight shifts that overlap the next day's shifts for the same person are allowed. The contract only forbids same-day overlaps, so this was not reported.",
+      "Re-run command: python3 -m unittest discover -s qa. I wrote no qa/report.md because the launcher asked for JSON."
+    ],
+    "needs_validation": []
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "severity": "medium",
+        "wp": "AT",
+        "file": "acceptance/test_intervals.py",
+        "line": 16,
+        "problem": "merge is only tested with an overlapping pair. The contract says touching intervals also merge, and no test covers that. Clipping to the window in gaps is also untested: no interval extends past the window, none lies outside it, and none fills it completely.",
+        "evidence": "A merge that uses `a.end > b.start` instead of `>=` still passes. A gaps that does not clip to the window still passes the AC-003 data."
+      },
+      {
+        "severity": "medium",
+        "wp": "AT",
+        "file": "acceptance/test_rules.py",
+        "line": 14,
+        "problem": "AC-011 is checked with one data set. The rule is not tested at the boundary where rest equals min_rest. It is not tested with an overnight shift that ends on the next day and gives short rest before the next morning's shift. Its pair logic could be hard-coded.",
+        "evidence": "A rest_violations that uses `rest <= min_rest` instead of `<` passes. One that returns `[(shifts[0][0], shifts[0][0])]` when there are 3 or more shifts passes both rules tests."
+      },
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_schedule.py",
+        "line": 47,
+        "problem": "No test shows that a shift touching an existing one (09:00-17:00 then 17:00-20:00) is accepted. A conflict check that is too strict is not caught.",
+        "evidence": "An assign that raises ConflictError on `<=` boundary overlap passes every test."
+      }
+    ]
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "README: added requirements, usage example, module summary with contracts, and test commands"
+      ],
+      "unverified": [
+        "CHANGELOG not created: it is outside docs.files (only README.md)",
+        "Usage example outputs taken from architecture.md/code reading; not executed",
+        "intervals.py and shifts.py not read directly; their behaviour is documented from architecture.md section 6"
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 0,
+  "pending": [
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "CHANGELOG not created: it is outside docs.files (only README.md)",
+        "Usage example outputs taken from architecture.md/code reading; not executed",
+        "intervals.py and shifts.py not read directly; their behaviour is documented from architecture.md section 6"
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Extra contract tests beyond the ACs: invalid Interval construction, touching intervals, malformed shift text, ConflictError subclassing ValueError, name stripping, empty-name rejection, unknown person.",
+        "The tests fail with ModuleNotFoundError for roster.intervals. They fail at import, so no assertion has run yet.",
+        "No reference implementation, so I haven't confirmed that every assertion can pass.",
+        "Edge cases that section 6 leaves open aren't tested, such as overnight shifts in coverage_gaps and rest across non-adjacent days."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "I did not run the tests, because the roster modules do not exist yet.",
+        "I did not read .claude/rules/agentic/common.md or python.md.",
+        "I did not check how overnight shifts are handled in coverage_gaps or in conflict detection across days. The brief does not specify it."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-04",
+      "items": [
+        "Integration with the real Schedule.shifts output, because WP-03 isn't in the repo yet."
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "I did not run the unit or acceptance tests; other stages cover them.",
+        "I did not read the test files in detail.",
+        "An overnight shift on day D and an early shift on D+1 can overlap without raising ConflictError. Section 6 says conflicts are checked on the same day only, so I treated this as intended."
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "verification_failures": [],
+  "usage": {
+    "total": {
+      "input": 89126,
+      "cache_read": 451141,
+      "output": 27035,
+      "turns": 77,
+      "cost_usd": 0.6718081
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 17404,
+        "cache_read": 62388,
+        "output": 7284,
+        "cost_usd": 0.1486748,
+        "turns": 13
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 10045,
+        "cache_read": 20190,
+        "output": 1699,
+        "cost_usd": 0.059177,
+        "turns": 8
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 5951,
+        "cache_read": 54410,
+        "output": 1978,
+        "cost_usd": 0.04900499999999999,
+        "turns": 7
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 6793,
+        "cache_read": 40829,
+        "output": 2706,
+        "cost_usd": 0.058298899999999994,
+        "turns": 9
+      },
+      {
+        "id": "WP-04",
+        "agent": "implementer",
+        "label": "WP-04",
+        "input": 6268,
+        "cache_read": 54587,
+        "output": 2191,
+        "cost_usd": 0.0524207,
+        "turns": 11
+      },
+      {
+        "id": "WP-03",
+        "agent": "implementer",
+        "label": "WP-03",
+        "input": 9698,
+        "cache_read": 75100,
+        "output": 4211,
+        "cost_usd": 0.088388,
+        "turns": 9
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 10325,
+        "cache_read": 29388,
+        "output": 784,
+        "cost_usd": 0.0520668,
+        "turns": 5
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 13672,
+        "cache_read": 85877,
+        "output": 4592,
+        "cost_usd": 0.1091717,
+        "turns": 8
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 8970,
+        "cache_read": 28372,
+        "output": 1590,
+        "cost_usd": 0.0546052,
+        "turns": 7
+      }
+    ]
+  }
+}
