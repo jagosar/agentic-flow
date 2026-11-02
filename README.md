@@ -1,8 +1,16 @@
 <!-- agentic-flow-template -->
+<!-- agentic-flow:header:start -->
+<div align="center">
+
 # agentic-flow
 
 A small team of Claude Code agents that turns an idea into tested code.
 Opus designs. Sonnet builds, in parallel. You make the two decisions that matter: you approve the design and you approve the commit.
+
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE) ![python](https://img.shields.io/badge/python-informational) [![built with agentic-flow](https://img.shields.io/badge/built%20with-agentic--flow-8A2BE2)](https://github.com/jagosar/agentic-flow)
+
+</div>
+<!-- agentic-flow:header:end -->
 
 <p align="center">
   <img src="docs/assets/flow.gif" width="800" alt="The flow in eight scenes. Opus writes architecture.md (contracts, acceptance criteria, work packages) and a second Opus reviews it before you approve it. A separate agent writes the acceptance tests, which fail because no code exists yet. Implementers build the work packages in parallel, and the hook blocks a write outside a package's files. Build, types, lint, tests and acceptance are verified against a baseline. A reviewer, an adversarial verifier and QA find a defect; its owner fixes it in one cycle. The documentation is brought up to date. Ready: you approve the commit.">

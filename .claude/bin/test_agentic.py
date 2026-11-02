@@ -3,7 +3,9 @@
 Run: python3 -m unittest discover -s .claude/bin -p "test_*.py"
 Each test works in a temporary git repo; the launcher uses a fake `claude`, with no real calls.
 """
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shlex
@@ -1697,6 +1699,61 @@ class LauncherTests(Base):
         (self.repo.dir / "architecture.md").write_text(f"```json wp-manifest\n{json.dumps(m)}\n```", encoding="utf-8")
         self.assertEqual(self.repo.run("run-wave", "1").returncode, 1)
         self.assertFalse(self.called("WP-01"))
+
+
+class ReadmeHeaderUnitTests(unittest.TestCase):
+    BADGES = ["![python](https://img.shields.io/badge/python-informational)"]
+
+    def test_shield_text_escapes_dashes_underscores_and_spaces(self):
+        self.assertEqual(agentic.shield_text("agentic-flow 2.4.0"), "agentic--flow%202.4.0")
+        self.assertEqual(agentic.shield_text("a_b"), "a__b")
+
+    def test_licence_ids(self):
+        cases = {"The MIT License (MIT)\n": "MIT", "\n    Apache License\n": "Apache-2.0",
+                 "GNU LESSER GENERAL PUBLIC LICENSE\n": "LGPL", "GNU GENERAL PUBLIC LICENSE\n": "GPL",
+                 "This is free and unencumbered software released into the public domain.\n": "Unlicense",
+                 "All rights reserved.\n": "see LICENSE"}
+        for text, expected in cases.items():
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as d:
+                Path(d, "LICENSE.md").write_text(text, encoding="utf-8")
+                self.assertEqual(agentic.licence_file(d), ("LICENSE.md", expected))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(agentic.licence_file(d))
+
+    def test_sponsor_rules(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            badges = agentic.sponsor_badges([{"label": "ok", "url": "https://x.y/z"}, "nope",
+                                             {"label": "a" * 41, "url": "https://x.y/z"},
+                                             {"label": "sp ace", "url": "https://x.y/a b"}])
+        self.assertEqual(len(badges), 1)
+        self.assertIn("readme.sponsors[1] skipped: not an object with label and url", err.getvalue())
+        self.assertIn("readme.sponsors[2] skipped: label must be", err.getvalue())
+        self.assertIn("readme.sponsors[3] skipped: url has a character that is not allowed", err.getvalue())
+
+    def test_a_list_or_badges_after_the_title_are_not_a_description(self):
+        for second in ("- item", "[![x](y)](z)", "> quote", "1. step", "```"):
+            with self.subTest(second=second):
+                out = agentic.apply_header(f"# T\n\n{second}\n", "d", self.BADGES)
+                inside = out.split(agentic.README_HEADER_END)[0]
+                self.assertNotIn(second, inside)
+                self.assertIn(second, out.split(agentic.README_HEADER_END)[1])
+
+    def test_crlf_is_kept_and_the_result_is_idempotent(self):
+        out = agentic.apply_header("# T\r\n\r\nDesc.\r\n\r\nBody\r\n", "d", self.BADGES)
+        self.assertNotIn("\n", out.replace("\r\n", ""))
+        self.assertEqual(agentic.apply_header(out, "d", self.BADGES), out)
+
+    def test_a_missing_badge_line_is_inserted_not_overwritten(self):
+        out = agentic.apply_header("# T\n\nDesc.\n", "d", self.BADGES)
+        out = out.replace(self.BADGES[0] + "\n", "")
+        again = agentic.apply_header(out, "d", self.BADGES)
+        self.assertIn("Desc.", again)
+        self.assertIn(self.BADGES[0], again)
+
+    def test_two_start_markers_are_an_error(self):
+        s = agentic.README_HEADER_START
+        with self.assertRaises(agentic.HeaderError):
+            agentic.apply_header(f"{s}\n{s}\n", "d", self.BADGES)
 
 
 if __name__ == "__main__":
