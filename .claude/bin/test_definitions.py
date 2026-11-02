@@ -6,8 +6,10 @@ or documents a command that does not exist, these tests fail.
 Run: python3 -m unittest discover -s .claude/bin -p "test_*.py"
 """
 import json
+import os
 import re
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -415,6 +417,13 @@ class DocumentationDriftTests(unittest.TestCase):
             for cmd in {c for c, star in found if not star}:
                 with self.subTest(file=path.relative_to(ROOT).as_posix(), command=cmd):
                     self.assertIn(cmd, valid)
+
+    def test_the_readme_header_is_current(self):
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "AGENTIC_WP")}
+        env["CLAUDE_PROJECT_DIR"] = str(ROOT)
+        r = subprocess.run([sys.executable, str(AGENTIC), "readme-header", "--check"], cwd=ROOT, env=env,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(r.returncode, 0, "run `python3 .claude/bin/agentic.py readme-header`: " + r.stdout + r.stderr)
 
     def test_internal_links(self):
         def anchors(text):

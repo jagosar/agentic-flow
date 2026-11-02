@@ -90,6 +90,7 @@ What else it does:
 - **Version and notes.** The first line shows the jump between the installed flow and the new one, and `upgrade notes:` lists, release by release, what changed and may affect you (a removed command, a prompt to merge, a changed hook). Read them before you commit.
 - **The hook.** For a repo whose hook entry is older, it appends `StructuredOutput` to the matcher and sets the longer timeout the stop gate needs, keeping the rest of your entry.
 - **Your plan.** If the repo has an `architecture.md`, it validates it with the new version and tells you, without failing the upgrade.
+- **The README header.** It writes a generated header at the top of `README.md` (title, description, licence, languages, built with agentic-flow, and the sponsor buttons in `.claude/agentic.json`), between markers. The first time it moves your H1 and first paragraph into it; later runs only refresh the badges and never touch the rest. `README.md` counts for the uncommitted-changes guard. Turn it off with `readme.header: false` in `.claude/agentic.json`.
 
 Line endings do not count: a flow file checked out with CRLF (Windows with `core.autocrlf=true`) is recognised as intact and updated. A flow from before Windows support looked edited in that case and kept such files.
 

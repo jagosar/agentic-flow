@@ -64,6 +64,11 @@ NOTES = {
         "close-stage refuses a stage whose files changed with no hook call from an agent of the flow "
         "(GUARDRAIL HOOK SAW NO FLOW AGENT): the hook did not guard those writes. If it repeats in every stage of the "
         "native workflow, use /implement fallback and report the agent_type recorded in hook-seen.json.",
+        "install (and /agentic-flow:init) now writes a generated header at the top of README.md: title, description, "
+        "licence, languages, built with agentic-flow and the sponsor buttons you declare in .claude/agentic.json "
+        "(readme.sponsors). The first time it moves your README's H1 and first paragraph into the block; afterwards it "
+        "only refreshes the badges and never touches anything outside the markers. Turn it off with "
+        "readme.header: false. README.md now counts for install's uncommitted-changes guard.",
     ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "

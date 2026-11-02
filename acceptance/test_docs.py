@@ -104,7 +104,8 @@ class ReadmeTests(DocCase):
         text = read(README)
         lines = text.splitlines()
         self.assertEqual(lines[0], "<!-- agentic-flow-template -->")
-        self.assertEqual(lines[1], "# agentic-flow")
+        self.assertEqual(lines[1], "<!-- agentic-flow:header:start -->")  # the generated header (readme-header)
+        self.assertIn("\n# agentic-flow\n", text.split("<!-- agentic-flow:header:end -->")[0])
         self.assertEqual(headings(text, 2), self.H2)
         before_quick = text.split("## Quick start", 1)[0]
         self.assertNotIn(FENCE, before_quick, "fenced block before Quick start")

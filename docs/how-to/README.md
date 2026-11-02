@@ -157,13 +157,15 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 {
   "timeout_s": 1800,
   "auth": "subscription",
-  "max_fix_cycles": 2
+  "max_fix_cycles": 2,
+  "readme": {"header": true, "sponsors": [{"label": "GitHub Sponsors", "url": "https://github.com/sponsors/you"}]}
 }
 ```
 
 - **`timeout_s`:** the longest a stage may run; agents still alive are ended and marked `TIMEOUT`. For a one-off change: `AGENTIC_TIMEOUT_S`. The stop gate runs the acceptance suite inside the implementer's time (up to 14 minutes per check): with a slow suite, raise `timeout_s` or expect a `TIMEOUT`.
 - **`auth: "subscription"`:** agents run on your subscription. In `-p` mode Claude Code uses `ANTHROPIC_API_KEY` whenever it exists, so the launcher removes `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the agents' environment. Use `"inherit"` only to bill the API.
 - **`max_fix_cycles`:** fix cycles allowed per package before it escalates to a person.
+- **`readme`:** `install` writes a header at the top of `README.md` (title, description, licence, languages, built with agentic-flow, and these sponsor buttons, `https` only), between markers it alone rewrites. `"header": false` turns it off; `readme-header` refreshes it by hand.
 - **Models:** not configurable; set by alias.
 
 ## Script reference
@@ -179,21 +181,19 @@ python3 .claude/bin/agentic.py rules-sync              # installs the stack's ru
 python3 .claude/bin/agentic.py codemap                 # deterministic code map in docs/CODEMAP.md
 python3 .claude/bin/agentic.py callers                 # who calls the symbols a change touched (what the reviewer reads)
 python3 .claude/bin/agentic.py hooks-check             # whether the guardrail hook runs in this session (exit 3 if not)
+python3 .claude/bin/agentic.py readme-header           # the generated header at the top of README.md (--check: only tell)
 python3 .claude/bin/agentic.py docs-check              # links, anchors and paths in the documentation
 python3 .claude/bin/agentic.py install ../other-repo   # installs or updates the flow in another repo
 python3 .claude/bin/agentic.py briefs                  # writes each agent's slice of architecture.md in .claude/state/briefs/
 python3 .claude/bin/agentic.py status                  # the ledger: every agent and stage, with tokens and cost
 python3 .claude/bin/agentic.py stop [WP-02]            # stops every running agent, or only the one named
 python3 .claude/bin/agentic.py mark WP-02 blocker note # annotates by hand
-# Fallback mode: the whole pipeline (or --start-wave N, or --resume after the last finished wave):
-python3 .claude/bin/agentic.py run-pipeline
-# ...or stage by stage:
-python3 .claude/bin/agentic.py run-acceptance          # wave 0: the test-author writes the acceptance tests
+python3 .claude/bin/agentic.py run-pipeline            # fallback mode: the whole pipeline (--start-wave N, --resume)
+python3 .claude/bin/agentic.py run-acceptance          # stage by stage: wave 0, the test-author writes the acceptance tests
 python3 .claude/bin/agentic.py acceptance --expect red|green  # red before the code, green after it
 python3 .claude/bin/agentic.py run-wave 1 [WP-02]      # wave 1 in parallel, or a single package
 python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # fix its defects from the newest review or QA (--all: medium and low too)
-python3 .claude/bin/agentic.py run-review              # code reviewer (read-only)
-python3 .claude/bin/agentic.py run-qa                  # QA agent
+python3 .claude/bin/agentic.py run-review | run-qa     # code reviewer (read-only), or the QA agent
 python3 .claude/bin/agentic.py run-docs                # doc-updater, after codemap
 python3 .claude/bin/agentic.py check-wave 1            # ownership check
 python3 bench/bench.py ab --a <ref> --b <ref>          # compares two versions of the flow (see the bench guide)
