@@ -60,10 +60,13 @@ jobs:
         run: |
           set -o pipefail
           python -m unittest discover -s .claude/bin -p "test_*.py" -v 2>&1 | tee "$RUNNER_TEMP/unittest.txt"
-          python -m unittest discover -s bench -p "test_*.py" -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
-          python -m unittest discover -s bench/acceptance -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
-          python -m unittest discover -s acceptance -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
-          python -m unittest discover -s qa -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
+          # The other suites exist in agentic-flow itself; install copies this workflow into template copies that
+          # may not have them, so a missing folder is skipped instead of failing the job.
+          for suite in bench bench/acceptance acceptance qa; do
+            [ -d "$suite" ] || { echo "skipped: no $suite/"; continue; }
+            pattern=$([ "$suite" = bench ] && echo "test_*.py" || echo "test*.py")
+            python -m unittest discover -s "$suite" -p "$pattern" -v 2>&1 | tee -a "$RUNNER_TEMP/unittest.txt"
+          done
       # The failures as one annotation, readable on the pull request and through the API without the full log.
       - name: Failures as an annotation
         if: failure()
