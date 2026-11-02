@@ -56,6 +56,15 @@ NOTES = {
         "The run result gains verification_failures: every failed verification (its blocking phases, suspects and "
         "failing lines), so a fix cycle that verification triggered keeps its reason. /implement presents them.",
     ],
+    "2.4.0": [
+        "The guardrail hook now leaves a heartbeat (.claude/state/hook-seen.json), and hooks-check says whether it runs "
+        "in this session. /implement runs it first, and both engines run it before any agent: a session where Claude "
+        "Code does not load the repository's hooks (a cloud session with several repositories, a thread inside a "
+        "Claude project, disableAllHooks) stops instead of running without guardrails. Use /implement fallback there.",
+        "close-stage refuses a stage whose files changed with no hook call from an agent of the flow "
+        "(GUARDRAIL HOOK SAW NO FLOW AGENT): the hook did not guard those writes. If it repeats in every stage of the "
+        "native workflow, use /implement fallback and report the agent_type recorded in hook-seen.json.",
+    ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
         "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "

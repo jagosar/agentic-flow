@@ -168,7 +168,7 @@ class PromptTests(unittest.TestCase):
 class ReleaseTests(unittest.TestCase):
     def test_ac_005_version_and_notes(self):
         version = json.loads(text(ROOT / ".claude-plugin" / "plugin.json"))["version"]
-        self.assertEqual(version, "2.3.0")
+        self.assertEqual(version, "2.4.0")
         notes = upgrade.NOTES["2.2.0"]
         self.assertGreaterEqual(len(notes), 2)
         joined = " ".join(notes)
