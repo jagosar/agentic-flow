@@ -46,8 +46,10 @@ class Project:
             f"{heading}\n\n```json wp-manifest\n{json.dumps(data, indent=2)}\n```\n", encoding="utf-8")
         shutil.copytree(ROOT / ".claude" / "workflows", self.dir / ".claude" / "workflows")
         shutil.copytree(ROOT / ".claude" / "agents", self.dir / ".claude" / "agents")
+        shutil.copy(ROOT / ".claude" / "settings.json", self.dir / ".claude" / "settings.json")  # hooks-check reads it
         subprocess.run(["git", "init", "-q"], cwd=self.dir, check=True)
-        self.env = {k: v for k, v in os.environ.items() if k not in ("AGENTIC_WP", "AGENTIC_CLAUDE")}
+        # CLAUDECODE: inherited inside Claude Code, it would put hooks-check in live mode.
+        self.env = {k: v for k, v in os.environ.items() if k not in ("AGENTIC_WP", "AGENTIC_CLAUDE", "CLAUDECODE")}
         self.env["CLAUDE_PROJECT_DIR"] = str(self.dir)
 
     def run(self, *args, stdin=None, env=None):

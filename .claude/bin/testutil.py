@@ -10,6 +10,8 @@ from pathlib import Path
 
 import compat
 
+AGENTIC_PATH = Path(__file__).resolve().parent / "agentic.py"
+
 
 def fake_exe(directory, name: str, python_source: str) -> Path:
     """An executable `name` that can be found on PATH (with `directory` on it) and runs python_source with this
@@ -37,7 +39,7 @@ def claude_command(fake_py) -> str:
 # schema requires. Environment knobs:
 #   FAKE_STATUS  the status to report (default: PASS for judges, DONE for the rest)
 #   FAKE_SLEEP   seconds to wait before answering
-#   FAKE_WRITE   implementers write their package's file;  FAKE_ROGUE  WP-02 also writes a file nobody owns
+#   FAKE_WRITE   implementers go through the hook once, then write their package's file;  FAKE_ROGUE  WP-02 also writes a file nobody owns
 #   FAKE_MODE    "structured" (default, with token usage), "nousage", or "text" (the old STATUS: format)
 #   FAKE_REVIEW_FINDING / FAKE_QA_DEFECT  a WP: the reviewer / QA reports one high defect on it, on its first call only
 #   FAKE_NEEDS_VALIDATION  a WP: the reviewer adds one needs_validation item on it;  FAKE_NOT_CHECKED  every report
@@ -70,7 +72,14 @@ def write(rel):
     os.makedirs(os.path.dirname(rel) or ".", exist_ok=True)
     with open(rel, "w", encoding="utf-8") as f:
         f.write("x = 1\\n")
+def through_hook():
+    # A real agent's tool calls go through the PreToolUse hook; the fake goes through it once before it writes, so the
+    # heartbeat the stage check reads exists (AGENTIC_WP and CLAUDE_PROJECT_DIR come from the launcher).
+    import subprocess
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "true"}}).encode("utf-8")
+    subprocess.run([sys.executable, AGENTIC, "hook"], input=payload, capture_output=True)
 if agent == "implementer" and os.environ.get("FAKE_WRITE"):
+    through_hook()
     write({"WP-01": "src/a.py", "WP-02": "src/b/x.py", "WP-03": "src/c.py"}[ident])
     if os.environ.get("FAKE_ROGUE") and ident == "WP-02":
         write("other.py")
@@ -111,7 +120,8 @@ print(json.dumps(out))
 def install_fake_claude(directory) -> str:
     """Writes FAKE_CLAUDE in directory and returns the AGENTIC_CLAUDE value that runs it."""
     fake = Path(directory) / "claude_fake.py"
-    fake.write_text(FAKE_CLAUDE, encoding="utf-8")
+    # The temporary repos have no .claude/bin: the fake runs the hook of the flow these tests belong to.
+    fake.write_text(f"AGENTIC = {str(AGENTIC_PATH)!r}\n" + FAKE_CLAUDE, encoding="utf-8")
     return claude_command(fake)
 
 

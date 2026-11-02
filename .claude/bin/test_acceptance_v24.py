@@ -6,6 +6,7 @@ run-pipeline with the fake `claude`. Nothing is spent.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -189,7 +190,7 @@ class PreflightTests(unittest.TestCase):
     def test_ac_006_implement_checks_the_hook_first(self):
         text = read(".claude/commands/implement.md")
         pre = text.split("# 1. Pre-flight validation")[1].split("# 2.")[0]
-        steps = [line for line in pre.splitlines() if line[:3].rstrip(".").isdigit() and ". " in line[:4]]
+        steps = [line for line in pre.splitlines() if re.match(r"\d+\. ", line)]
         self.assertTrue(steps, pre)
         self.assertIn("agentic.py hooks-check", steps[0])
         self.assertTrue(any("agentic.py validate" in s for s in steps[1:]))
