@@ -174,7 +174,7 @@ NOTES_1_1_X = upgrade.NOTES.get("1.1.0", []) + upgrade.NOTES.get("1.1.4", [])
 class VersionTests(unittest.TestCase):
     def test_ac_005_version_and_notes(self):
         version = json.loads(text(ROOT / ".claude-plugin" / "plugin.json"))["version"]
-        self.assertEqual(version, "2.4.0")
+        self.assertEqual(version, "2.4.1")
         notes = " ".join(upgrade.notes_between("1.1.4", "2.0.0"))
         self.assertTrue(notes)
         for word in ("needs_validation", "not_checked", "four parts", "reuse", "customised"):
