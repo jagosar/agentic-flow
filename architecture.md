@@ -1,247 +1,145 @@
-# Architecture: a brownfield bench fixture and review metrics, so the bench can measure the reviewer's callers (issue 69)
-Type: feature · Size: standard
+# Architecture: a broken caller outside every package is fixed from the changed package (issue 83, agentic-flow 2.4.1)
+Type: fix · Size: small
 
 ## 1. Goal
-The bench cannot tell whether the reviewer's callers (roadmap 3.1, shipped in 2.2.0) help: its fixtures start from almost nothing, so every caller of changed code sits inside the diff (3 of 15 sessions of the 2.2.0 run gave the reviewer any caller, and none led to a finding). This change adds a fixture with existing code and tests, `pricing`, whose plan changes a function's signature while a caller that no package owns, has no test and the plan does not mention, depends on the old one. Only a reviewer that reads the callers can see the break; the oracle checks that the caller still works. The bench also records, per session, how many callers the reviewer received and how many findings it confirmed and refuted, and `bench.py ab` compares them, so an A/B of 2.1.0 (no callers) against 2.4.0 on this fixture measures 3.1.
+In the `pricing` A/B (`bench/results/ab-2.1.0-vs-2.4.0-20261102-210456.md`), 2.4.0's reviewer confirmed in 3 of 3 sessions that `shop/receipt.py`, a caller no package owns, broke when `parse_price` gained a required parameter. Every fix cycle then ended `BLOCKED`: the implementer asked for ownership of the caller instead of keeping it working from its own files with a default for the new parameter. The prompts told it to return `BLOCKED` when a guardrail stops it, and nothing told it that a caller outside every package is kept working from the changed package's side. This change says so in the fix-cycle prompt (both engines and the one-off `run-wave --fix`) and in `implementer.md`. It is a prompt change: its effect on real agents is not measured here.
 
 ## 2. Scope
 ### Included
-- `bench/fixtures/pricing/`: `fixture.json`, `repo/` (existing code, tests and the plan), `oracle/`, `reference/good/`, `reference/bad/`.
-- `bench/bench.py`: three review fields in each session record; two new difference metrics in `compare` and in the A/B Markdown.
-- `docs/how-to/bench.md`: the fixture in the table, the new fields; the roadmap entry.
+- The `fix` prompt in `.claude/workflows/pipeline-spec.json` and its hand-kept copy in `.claude/workflows/agentic-implement.js`.
+- `implementer.md`: the `BLOCKED` status and the guardrails paragraph.
+- Version 2.4.1, its upgrade note, the version pins, the roadmap entry.
 ### Excluded (non-goals)
-- Changing the reviewer, the `callers` step or any file under `.claude/`.
-- A results column in `bench/RESULTS.md` (`report` is unchanged).
-- Running the A/B: done by hand after merging (section 9).
+- The reviewer's `fix` field, a deterministic "outside every package" marker on defects, a plan-reviewer check (not chosen).
+- An A/B to measure the effect (not now, by the user's choice).
+- Any change to the hook, which keeps blocking writes outside the package's files.
 
 ## 3. Stack
-Python 3.9+, standard library only, `unittest`. Fixture code uses `from __future__ import annotations`.
-- Build: `python3 -m compileall -q bench`
-- Tests: `python3 -m unittest discover -s bench -p "test_*.py"`
-- Bench acceptance: `python3 -m unittest discover -s bench/acceptance` (about a minute; runs `selftest` and `install`)
+Python 3.9+ standard library and Node 20 for the workflow tests.
+- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"`, `node .claude/bin/test_workflow.mjs`; docs: `python3 -m unittest discover -s acceptance`, `python3 -m unittest discover -s qa`.
 
 ## 4. Repository structure
 ```
-bench/fixtures/pricing/fixture.json                     WP-01
-bench/fixtures/pricing/repo/README.md                   WP-01
-bench/fixtures/pricing/repo/architecture.md             WP-01 (the plan the flow implements in the bench)
-bench/fixtures/pricing/repo/shop/__init__.py            WP-01
-bench/fixtures/pricing/repo/shop/money.py               WP-01 (before the change)
-bench/fixtures/pricing/repo/shop/cart.py                WP-01 (before the change)
-bench/fixtures/pricing/repo/shop/receipt.py             WP-01 (the untested caller)
-bench/fixtures/pricing/repo/tests/test_version.py       WP-01
-bench/fixtures/pricing/repo/tests/test_money.py         WP-01 (before the change)
-bench/fixtures/pricing/repo/tests/test_cart.py          WP-01 (before the change)
-bench/fixtures/pricing/oracle/test_oracle.py            WP-01
-bench/fixtures/pricing/reference/good/shop/money.py     WP-01
-bench/fixtures/pricing/reference/good/shop/cart.py      WP-01
-bench/fixtures/pricing/reference/bad/shop/money.py      WP-01
-bench/fixtures/pricing/reference/bad/shop/cart.py       WP-01
-bench/bench.py                                          WP-02
-bench/test_bench.py                                     WP-02
-docs/how-to/bench.md                                    WP-03
-docs/roadmap/repo-review-2026-11.md                     WP-03
-bench/acceptance/test_acceptance_pricing.py             AT
+.claude/workflows/pipeline-spec.json        WP-01 (the fix prompt)
+.claude/workflows/agentic-implement.js      WP-01 (its copy)
+.claude/agents/implementer.md               WP-01
+.claude-plugin/plugin.json                  WP-02 (2.4.1)
+.claude/bin/upgrade.py                      WP-02 (NOTES["2.4.1"])
+.claude/bin/test_acceptance_upgrade.py    WP-02 (version pin)
+.claude/bin/test_acceptance_v2.py         WP-02 (version pin)
+.claude/bin/test_acceptance_v21.py        WP-02 (version pin)
+.claude/bin/test_acceptance_v22.py        WP-02 (version pin)
+.claude/bin/test_acceptance_v23.py        WP-02 (version pin)
+.claude/bin/test_acceptance_v24.py        WP-02 (version pin)
+docs/roadmap/repo-review-2026-11.md         WP-02
+.claude/bin/test_acceptance_v241.py         AT (new)
 ```
 
 ## 4b. Existing code context
 | What an implementer needs to know | Where it is | Pattern or rule |
 |---|---|---|
-| A fixture's layout and rules | `docs/how-to/bench.md:78-92` ("Add a fixture") | `repo/` committed as is; `oracle/test_*.py` never copied before the run; `reference/good` passes the whole oracle; `reference/bad` is right on the happy path; import the module under test inside each test so every test fails on the bare repo |
-| A simple fixture to copy in shape | `bench/fixtures/tempconv/repo/architecture.md:1-60` (sections 1-7), `bench/fixtures/tempconv/repo/tempconv/__init__.py`, `bench/fixtures/tempconv/repo/tests/test_version.py` | Same section order and voice for the fixture's plan; `python3 -m unittest discover -s tests`; no `__init__.py` in `tests/` or `acceptance/` |
-| A trap fixture's manifest | `bench/fixtures/roster/repo/architecture.md:219-237` | `stack`, `allow_bash`, `acceptance` in `acceptance/`, `verify.tests`, `docs` zone `README.md`, `mirror` per WP |
-| Oracle naming for traps | `bench/fixtures/roster/oracle/test_oracle.py` (`test_ctx_*`), `docs/how-to/bench.md:90` | The trap's tests are `test_ctx_*`; the bad reference fails only those |
-| `selftest` | `bench/bench.py:419-431` | Bare repo passes 0 oracle tests, good passes all, bad passes fewer than all |
-| Fixture acceptance helpers | `bench/acceptance/test_acceptance_fixtures.py:40-93` (`FixtureCase`: `selftest`, `oracle_counts`, `check_good`, `check_bad`, `run_plan_tests`; `manifest_of` at `:32-37`), `bench/acceptance/test_acceptance_bench.py:306-328` (`FixtureReady.prepare`: copy, git, install, validate) | The acceptance tests import and reuse them |
-| What `callers` reports | `.claude/bin/agentic.py:1093-1104` (`changed_code_files`: modified since `HEAD` or untracked), `:1170-1180` (`callers`: one JSON line with `changed`, `symbols`, `callers`) | In a prepared copy, editing `shop/money.py` without committing makes `callers` list `shop/receipt.py` |
-| The run result's review block | `.claude/bin/pipeline.py:460-461` (`run["review"] = {"confirmed": [...], "refuted": [...], "advisory": [...], "opened": ..., "callers": n}`); 2.1.0 results have no `callers` key | The last review of the run; a fix cycle's re-review replaces it |
-| The session record | `bench/bench.py:465-479` (`_record`, `_count`), `bench/test_bench.py:303-306` (its test) | New fields next to `verification_failures`; garbage tolerated as `_count` does |
-| A/B metrics | `bench/bench.py:600-603` (`RATIO_METRICS`, `DIFF_METRICS`, `COUNTED`), `:654-673` (`_metric`), `:680-710` (`compare`), `:742-756` (`ab_markdown` header and rows), `bench/test_bench.py:261-273` (compare tests) | A new difference metric is a name in `DIFF_METRICS`, a branch in `_metric` and a column in `ab_markdown` |
-| The bench guide's fixture table and the roadmap entry | `docs/how-to/bench.md:22-28`, `docs/roadmap/repo-review-2026-11.md:109` ("The bench cannot measure the reviewer's callers") | One row; the entry gains "Shipped:" with what was added |
+| The fix prompt, as the fallback engine and the one-off command render it | `.claude/workflows/pipeline-spec.json:13` (`prompts.fix`: "... Stay within the contract, do not touch other packages' files or the acceptance tests, and keep the acceptance tests of your criteria green.{retry}{rules}") | The new sentence goes after "green." and before `{retry}` |
+| Its copy in the native workflow | `.claude/workflows/agentic-implement.js:298-299` (the template literal that starts "Fix ${wp}.") | Same sentence, same place: the conformance tests compare both engines' prompts verbatim (`.claude/bin/test_pipeline.py:115-130`, key `prompts`) |
+| How both engines render it | `.claude/bin/pipeline.py:336-337` (`render(self.prompts["fix"], ...)`); `.claude/bin/agentic.py:819-821` (`render_prompt`, used by `run-wave --fix`) | No code change: both read the spec |
+| Scenarios that run a fix cycle | `.claude/bin/conformance.json`, scenario "verification fails on a package: it is fixed and verified again" | Its prompts include a `(fix)` call in both engines |
+| The implementer's statuses and guardrails | `.claude/agents/implementer.md:38` (shared-code rule), `:47` (`BLOCKED` bullet), `:55` (guardrails paragraph: "If a block stops you from finishing ... return `BLOCKED`") | The two places that sent the agent to `BLOCKED` |
+| Upgrade notes and version pins | `.claude/bin/upgrade.py:58-67` (`NOTES["2.4.0"]`), `plugin.json:4`, pins at `test_acceptance_upgrade.py:258`, `_v2.py:177`, `_v21.py:283`, `_v22.py:171`, `_v23.py:256`, `_v24.py:270` | Every pin becomes `"2.4.1"`; `_v24.py:271-276` keeps reading `NOTES["2.4.0"]` |
+| The roadmap entry | `docs/roadmap/repo-review-2026-11.md:110` ("A confirmed finding on a file nobody owns cannot be fixed ...") | Gains "Fixed in 2.4.1 (prompts only; not measured)" |
 
 ## 5. Data model
-Session record (`bench/bench.py`, JSON), three new keys:
-```json
-{"review_callers": 2, "review_confirmed": 1, "review_refuted": 0}
-```
-Each is an `int`, or `null` when the run result has no review block, or the block lacks that key, or its value has the wrong type (`callers` must be an int and not a bool; `confirmed` and `refuted` must be lists, counted with `len`).
+None.
 
 ## 6. Contracts between modules
-```python
-# bench/bench.py
-DIFF_METRICS = ("mutation", "oracle", "fix_cycles", "review_callers", "review_confirmed")
-def _review_fields(result: dict | None) -> dict
-    # {"review_callers": int|None, "review_confirmed": int|None, "review_refuted": int|None}, from result["review"].
-def _record(...) -> dict          # existing; the dict gains the three keys of _review_fields(result)
-def _metric(run, name)            # existing; "review_callers" and "review_confirmed" return run[name] (None if absent)
-def ab_markdown(doc) -> str       # existing; the per-fixture table gains "Callers" and "Confirmed" columns, in DIFF_METRICS order
+The sentence, identical in `pipeline-spec.json` (`prompts.fix`) and in `agentic-implement.js`, inserted after "keep the acceptance tests of your criteria green." with one space before it:
 ```
-
-The fixture (`bench/fixtures/pricing/`), as the flow will see it in the bench:
-
-Before the change (`repo/`):
-```python
-# shop/money.py
-def parse_price(text: str) -> int:
-    """'12.50' -> 1250 (cents). ValueError for empty text, a negative amount, more than two decimals or no number."""
-def format_cents(cents: int) -> str:
-    """1250 -> '12.50'; -5 -> '-0.05'."""
-
-# shop/cart.py
-class Cart:
-    def add(self, name: str, price_text: str, qty: int = 1) -> None   # parse_price(price_text); qty >= 1 else ValueError
-    def total(self) -> int
-    def lines(self) -> list[tuple[str, int, int]]                     # (name, qty, line total in cents), insertion order
-
-# shop/receipt.py   (no test anywhere; owned by no work package of the fixture's plan; never named in it)
-def from_rows(rows: list[tuple[str, str, int]]) -> str:
-    """rows of (name, price_text, qty) -> one line per row 'name x{qty}  {format_cents(parse_price(price_text) * qty)}'
-    and a last line 'TOTAL  {format_cents(sum)}', joined with '\n'. Calls parse_price(price_text) with ONE argument."""
+A defect in a file no package owns (for example, a caller your change broke) is fixed from your own files: keep that caller working with a compatible change, such as a default for a new parameter or a wrapper that keeps the old signature, unless section 6 explicitly forbids it. Return BLOCKED only when no compatible change exists in your files.
 ```
+`implementer.md`:
+- The `BLOCKED` bullet ends with: "A caller outside every package that your change breaks is not a reason to stop: keep it working from your own files (a default, a wrapper), unless section 6 explicitly forbids that; then `BLOCKED`, naming the caller."
+- The guardrails paragraph's sentence "If a block stops you from finishing, do not try to get around it (for example, by writing with Bash): return `BLOCKED`." gains, after it: "A file no package owns is never yours to edit, but a caller in it that your change breaks is yours to keep working, from your own files."
 
-After the change, as the fixture's plan specifies it (the agents' target):
-```python
-# shop/money.py
-CURRENCIES = ("EUR", "USD", "GBP")
-class CurrencyMismatch(ValueError): ...
-def parse_price(text: str, currency: str) -> int:
-    """'12.50' or 'EUR 12.50' (prefix, one space) -> 1250. currency not in CURRENCIES -> ValueError. A prefix that is
-    a known currency other than `currency` -> CurrencyMismatch. Old errors unchanged."""
-def format_cents(cents: int) -> str   # unchanged
-
-# shop/cart.py
-class Cart:
-    def __init__(self, currency: str = "EUR") -> None   # unknown currency -> ValueError
-    currency: str
-    def add(self, name: str, price_text: str, qty: int = 1) -> None   # parse_price(price_text, self.currency)
-```
-The plan's section 6 writes `parse_price(text, currency)` as above, without a default, and says nothing about defaults either way (it neither requires nor forbids one). `reference/good/shop/money.py` gives `currency` a default of `"EUR"` (the compatible implementation a reviewer who reads `receipt.py` would ask for); `reference/bad/shop/money.py` keeps it required, so `receipt.from_rows` raises `TypeError`. Both references share the same `cart.py`.
+`upgrade.NOTES["2.4.1"]`, one note: "The fix-cycle prompt and implementer.md say that a caller outside every package that a change breaks is kept working from the changed package's files (a default for a new parameter, a wrapper), and that BLOCKED is only for when no compatible change exists or section 6 explicitly forbids it. A customised implementer.md keeps the old wording: merge the two sentences."
 
 ## 7. Conventions
-- English; standard library only; no network; `python3` in the fixture's plan commands.
-- The fixture's plan follows `/architect`'s section order (as `tempconv`'s does), is a valid manifest (`agentic.py validate` says "Manifest valid" after `install`), and never contains the words `receipt`, `oracle` or `reference` (any case). Neither does `repo/README.md`, which is the fixture plan's docs zone and which the agents read.
-- Every behaviour a `test_ac_*` checks is stated in the fixture's plan (section 6 or an AC). For example: a prefix that is not one of `CURRENCIES` (`"JPY 1.00"`) is a plain `ValueError`, not `CurrencyMismatch`; `"EUR12.50"` without the space is a `ValueError`.
-- Its section 4b lists `shop/cart.py` as the only caller of `parse_price`, with `file:line`, as an incomplete plan would.
-- Every oracle test must fail on the bare repo: each one calls `parse_price` with a currency, `Cart(currency=...)` or the new error, even the `test_ctx_*` ones (they first assert `parse_price("EUR 1.00", "EUR") == 100`, then check `receipt.from_rows`). Tests of old errors use `assertRaises(ValueError)` with the two-argument call (never `TypeError`); the `"JPY 1.00"` test checks the exact type (`type(e) is ValueError`), because `CurrencyMismatch` is a subclass of `ValueError`.
-- The bench's review fields never raise: a malformed result gives `null`s.
+- English; one sentence per rule; the spec and the JS copy must be byte-identical in the rendered prompt.
+- No hard-coded version in the docs (`acceptance/test_docs.py:95-97`).
+- One commit per WP; no model names.
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-- AC-001 · The fixture is sound
-  - Scenario: `bench/fixtures/pricing/` after the change.
-  - Action: `bench.py selftest --fixture pricing --source <repo>`; the oracle on `reference/good` and on `reference/bad`.
-  - Expected: selftest prints `pricing: ok` and exits 0; `fixture.json` has `name` `pricing` and `difficulty` `trap`; the good reference passes every oracle test, at least 15, of which at least 3 are `test_ctx_*`; the bad reference fails at least 3 `test_ctx_*` tests and passes every other test.
-  - Must not: have an oracle test that passes on the bare repo.
-  - Check: `bench/acceptance/test_acceptance_pricing.py::SoundTests`
+- AC-001 · The fix prompt says how to handle a caller nobody owns
+  - Scenario: the spec after the change.
+  - Action: read `pipeline-spec.json`'s `prompts.fix`; render it with `agentic.render_prompt({}, "fix", "WP-01", defects="[]", retry="")`.
+  - Expected: both contain the section-6 sentence exactly; in the template it sits after "criteria green." and before `{retry}`.
+  - Must not: change anything else: the template with the new sentence (and its leading space) removed equals the template before the change, byte for byte (the test keeps that old template as a constant).
+  - Check: `.claude/bin/test_acceptance_v241.py::FixPromptTests`
   - WP: WP-01
-- AC-002 · The trap has the shape it needs
-  - Scenario: the fixture's `repo/`, copied, committed and with the flow installed (`FixtureReady.prepare`).
-  - Action: read the files; run the plan's `verify.tests`.
-  - Expected: `shop/receipt.py` calls `parse_price(` with one argument; no file under `repo/tests/` mentions `receipt`; neither `repo/README.md` nor the plan contains `receipt`, `oracle` or `reference` (any case); no work package's `files` covers `shop/receipt.py`; a line of the plan contains both `shop/cart.py:` and `parse_price`; the plan has two work packages, both in wave 1; `validate` passes; the existing tests pass on the bare repo.
-  - Must not: let the existing suite or the plan reveal the caller.
-  - Check: `bench/acceptance/test_acceptance_pricing.py::TrapShapeTests`
+- AC-002 · Both engines send the same fix prompt
+  - Scenario: the conformance scenario "verification fails on a package: it is fixed and verified again".
+  - Action: run it through `test_pipeline.run_scenario` and through `node .claude/bin/test_workflow.mjs --dump`.
+  - Expected: in both summaries, the prompt under the key `implementer:WP-02 (fix)#1` (as `test_pipeline.summarize` names it, `test_pipeline.py:115-129`) contains the section-6 sentence, and the two prompts are equal.
+  - Must not: differ between engines.
+  - Check: `.claude/bin/test_acceptance_v241.py::EnginesTests`
   - WP: WP-01
-- AC-003 · The flow's `callers` step sees the hidden caller
-  - Scenario: a prepared copy; `reference/bad/shop/money.py` and `cart.py` copied over it, not committed.
-  - Action: `python3 .claude/bin/agentic.py callers` in the copy (with `CLAUDE_PROJECT_DIR` set to it).
-  - Expected: the JSON line lists `shop/money.py` as changed, `parse_price` among its symbols, and a caller entry in `shop/receipt.py`.
-  - Must not: depend on the reviewer: the check is the deterministic step.
-  - Check: `bench/acceptance/test_acceptance_pricing.py::CallersTests`
+- AC-003 · `implementer.md` no longer sends a broken outside caller to `BLOCKED`
+  - Scenario: `implementer.md` after the change.
+  - Action: read the `BLOCKED` bullet and the guardrails paragraph.
+  - Expected: the bullet contains "not a reason to stop" and "explicitly forbids"; the paragraph contains "never yours to edit" and "yours to keep working"; the old sentence "If a block stops you from finishing" is still there.
+  - Must not: loosen the hook rule: the sentence "A hook blocks any write outside your WP's files" is still present, unchanged.
+  - Check: `.claude/bin/test_acceptance_v241.py::ImplementerTests`
   - WP: WP-01
-- AC-004 · Each session records the review
-  - Scenario: run results whose `review` is: (a) `{"callers": 3, "confirmed": [{}], "refuted": [{}, {}]}`; (b) `{"confirmed": [{}], "refuted": [{}, {}]}` (2.1.0, no `callers`); (c) absent; (d) `"x"`; (e) `{"callers": "3", "confirmed": [{}], "refuted": []}`; (f) `{"callers": True, "confirmed": "x", "refuted": None}`.
-  - Action: `bench._record(...)` on each.
-  - Expected, as `(review_callers, review_confirmed, review_refuted)`: (a) `(3, 1, 2)`; (b) `(None, 1, 2)`; (c) `(None, None, None)`; (d) `(None, None, None)`; (e) `(None, 1, 0)`; (f) `(None, None, None)`.
-  - Must not: raise on any of them.
-  - Check: `bench/acceptance/test_acceptance_pricing.py::RecordTests`
-  - WP: WP-02
-- AC-005 · The A/B compares callers and confirmed findings
-  - Scenario: runs of one fixture, all with `result` `"OK"` (other results are not measurements), arm A with `review_callers` `None` and `review_confirmed` 0, arm B with 2 and 1.
-  - Action: `bench.compare(runs, seed=0)` and `bench.ab_markdown(doc)`.
-  - Expected: the fixture row has `review_callers` `None` (arm A has no value) and `review_confirmed` `1.0`; the Markdown table header ends with `| Callers | Confirmed |`, its separator row has 9 columns, and the fixture's row has 9 cells.
-  - Must not: change the ratio metrics or the overall table.
-  - Check: `bench/acceptance/test_acceptance_pricing.py::CompareTests`
-  - WP: WP-02
-- AC-006 · The guide and the roadmap say it
+- AC-004 · Release 2.4.1
   - Scenario: the repository after the change.
-  - Action: read `docs/how-to/bench.md` and the roadmap.
-  - Expected: the fixture table has a `pricing` row naming the trap (`test_ctx_*`, a caller outside the diff); the guide names `review_callers` and `review_confirmed`; the roadmap's line about the bench and the reviewer's callers contains "Shipped".
-  - Must not: hard-code a flow version or a test count in `bench.md` (`qa/test_qa_docs.py:76-80`).
-  - Check: `bench/acceptance/test_acceptance_pricing.py::DocsTests`
-  - WP: WP-03
+  - Action: read `plugin.json`, `upgrade.NOTES` and the roadmap.
+  - Expected: version `2.4.1`; `NOTES["2.4.1"]` has one note mentioning `implementer.md` and `compatible`; the note counts of 2.4.0/2.3.0/2.2.0/2.1.0/2.0.0 are `[2, 2, 2, 4, 7]`; the roadmap line starting "- A confirmed finding on a file nobody owns" contains "Fixed in 2.4.1".
+  - Must not: change the other notes: `NOTES`' keys are exactly the old ones plus `"2.4.1"`, with the counts above; the six pins read `"2.4.1"`.
+  - Check: `.claude/bin/test_acceptance_v241.py::ReleaseTests`
+  - WP: WP-02
 
 ### Work packages
-#### WP-01 · The `pricing` fixture
+#### WP-01 · The rule in the prompts
 - Wave: 1.
-- Files: `bench/fixtures/pricing/`.
-- Contracts: the fixture's code and plan as in section 6.
+- Files: `.claude/workflows/pipeline-spec.json`, `.claude/workflows/agentic-implement.js`, `.claude/agents/implementer.md`.
 - ACs: AC-001, AC-002, AC-003.
-- **Patterns to mirror:** `bench/fixtures/tempconv/repo/architecture.md:1-60` (plan shape and voice), `bench/fixtures/roster/repo/architecture.md:219-237` (manifest), `bench/fixtures/tempconv/repo/tests/test_version.py` (test style), `bench/fixtures/roster/oracle/test_oracle.py` (oracle style).
-- **Gotchas:**
-  - The fixture's plan: two packages in wave 1, contracts first. WP-01 owns `shop/money.py` and `tests/test_money.py`; WP-02 owns `shop/cart.py` and `tests/test_cart.py` and consumes `parse_price` by signature. Acceptance in `acceptance/`, `verify.tests` `python3 -m unittest discover -s tests`, docs zone `README.md`, `mirror` pointing at the existing files (`validate` checks the line ranges exist).
-  - Its ACs (at least 6) cover only `money` and `cart`: prefixes, mismatch, unknown currency, old errors, a cart in USD, a cart refusing a EUR price. None mentions the caller.
-  - Its section 4b names `shop/cart.py:<line>` as the caller of `parse_price` (the line where `Cart.add` calls it), and nothing else.
-  - The existing `tests/test_money.py` and `tests/test_cart.py` call the old one-argument API and pass on the bare repo; the fixture's packages own them and will update them, so they never protect `receipt.py`.
-  - Oracle: `test_ac_*` (at least 12) and `test_ctx_*` (at least 3: two rows, a row whose price text has the `EUR ` prefix, the `TOTAL` line). Each imports inside the test, and each touches new behaviour (section 7), so the bare repo passes 0.
-  - `reference/good` and `reference/bad` hold only `shop/money.py` and `shop/cart.py`; they differ only in `currency`'s default.
-- **WP validation:** `python3 bench/bench.py selftest --fixture pricing`, and from the repo root `python3 -m unittest discover -s bench/acceptance -p test_acceptance_pricing.py -k SoundTests -k TrapShapeTests -k CallersTests`.
+- **Patterns to mirror:** `.claude/workflows/pipeline-spec.json:13`, `.claude/workflows/agentic-implement.js:298-299`, `.claude/agents/implementer.md:44-55`.
+- **Gotchas:** the JS copy is a template literal: keep the sentence on the same line as "criteria green." so the rendered strings match. `test_definitions.py` checks the agent files' required sections; do not rename any heading. The sentence has no `{` or `}` (`pipeline.render`, `.claude/bin/pipeline.py:31-35`, replaces `{key}` placeholders), no backtick and no `${`, so it can sit inside the second template literal of `agentic-implement.js:299`, before its closing backtick.
+- **WP validation:** `node .claude/bin/test_workflow.mjs`, `python3 -m unittest discover -s .claude/bin -p "test_pipeline.py"`, `python3 -m unittest discover -s .claude/bin -p "test_definitions.py"`, and the AC-001…AC-003 classes of `test_acceptance_v241.py`.
 
-#### WP-02 · Review fields in the bench
+#### WP-02 · Version 2.4.1, note and roadmap
 - Wave: 1.
-- Files: `bench/bench.py`, `bench/test_bench.py`.
-- Contracts: implements the `bench.py` part of section 6.
-- ACs: AC-004, AC-005.
-- **Patterns to mirror:** `bench/bench.py:465-479` (`_record`, `_count`), `:654-673` (`_metric`), `:742-756` (`ab_markdown`), `bench/test_bench.py:261-273` and `:303-306`.
-- **Gotchas:** `_as_dict` and `_number_or` (`bench.py:264-270`) already tolerate garbage; `bool` is an `int` in Python, so reject it for `callers`. The difference metrics are medians of B minus A; an arm with no value gives `None` (the existing rule in `compare`). The ab doc's schema stays `ab-1` (old files lack the new keys and read as `None`).
-- **WP validation:** `python3 -m unittest discover -s bench -p "test_*.py"`, `python3 -m unittest discover -s qa -p "test_qa_bench.py"` (it checks that `_record` never raises), and from the repo root `python3 -m unittest discover -s bench/acceptance -p test_acceptance_pricing.py -k RecordTests -k CompareTests`.
-
-#### WP-03 · The guide and the roadmap
-- Wave: 1.
-- Files: `docs/how-to/bench.md`, `docs/roadmap/repo-review-2026-11.md`.
-- Contracts: none.
-- ACs: AC-006.
-- **Patterns to mirror:** `docs/how-to/bench.md:22-28` (fixture table), `docs/roadmap/repo-review-2026-11.md:105` (how a shipped entry is written).
-- **Gotchas:** `bench.md` is capped at 160 lines (`qa/test_qa_docs.py:57`); no versions or test counts. Line 4 says the five fixtures were tested with a real `claude`: `pricing` has no real run until the A/B after merging, so reword it to "on the fixtures that have results in RESULTS.md" instead of changing the count. Line 76 says the sign test cannot go below p = 0.0625 with five fixtures: with six it is 0.03125; its list of B − A differences gains the callers and confirmed counts. Line 90 lists each fixture's test-name prefixes: add `pricing` (`test_ctx_*`). The roadmap line keeps its text and gains, at the end: "Shipped: the `pricing` fixture (an untested caller outside every package and outside the plan) and the review fields in each session record; the A/B that uses them runs after merging."
-- **WP validation:** `python3 -m unittest discover -s qa -p "test_qa_docs.py"`, `python3 -m unittest discover -s acceptance`.
+- Files: `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, the six `test_acceptance_*.py` version pins, `docs/roadmap/repo-review-2026-11.md`.
+- ACs: AC-004.
+- **Patterns to mirror:** `.claude/bin/upgrade.py:58-67`, `.claude/bin/test_acceptance_v24.py:267-280`.
+- **WP validation:** the six pinned files and the upgrade tests, not the whole `test_acceptance_*.py` pattern (it also matches `test_acceptance_v241.py`, whose other classes check WP-01's text and stay red until WP-01 lands, not yours): `python3 -m unittest discover -s .claude/bin -p "test_acceptance_v2.py"`, the same with `test_acceptance_v21.py`, `test_acceptance_v22.py`, `test_acceptance_v23.py`, `test_acceptance_v24.py`, `test_acceptance_upgrade.py`, `test_upgrade.py`, and from `.claude/bin` `python3 -m unittest test_acceptance_v241.ReleaseTests`.
 
 ```json wp-manifest
 {
-  "stack": ["python"],
-  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(python3 bench/bench.py selftest:*)", "Bash(python3 bench/bench.py run:*)"],
-  "acceptance": {"files": ["bench/acceptance/test_acceptance_pricing.py"], "command": "python3 -m unittest discover -s bench/acceptance -p test_acceptance_pricing.py"},
-  "verify": {"build": "python3 -m compileall -q bench", "types": "python3 -m unittest discover -s qa", "lint": "python3 -m unittest discover -s acceptance", "tests": "python3 -m unittest discover -s bench -p \"test_*.py\""},
+  "stack": ["python", "typescript"],
+  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(node .claude/bin/test_workflow.mjs)"],
+  "acceptance": {"files": [".claude/bin/test_acceptance_v241.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v241.py"},
+  "verify": {"build": "python3 -m compileall -q .claude/bin", "lint": "node .claude/bin/test_workflow.mjs", "types": "python3 -m unittest discover -s acceptance", "tests": "python3 -m unittest discover -s .claude/bin -p \"test_*.py\""},
   "docs": {"files": ["docs/how-it-works.md"], "codemap": null},
-  "ignore": ["bench/results/"],
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["bench/fixtures/pricing/"],
-     "acs": ["AC-001", "AC-002", "AC-003"], "mirror": ["bench/fixtures/tempconv/repo/architecture.md:1-60", "bench/fixtures/roster/repo/architecture.md:219-237", "bench/fixtures/tempconv/repo/tests/test_version.py", "bench/fixtures/roster/oracle/test_oracle.py"]},
-    {"id": "WP-02", "wave": 1, "depends_on": [], "files": ["bench/bench.py", "bench/test_bench.py"],
-     "acs": ["AC-004", "AC-005"], "mirror": ["bench/bench.py:465-479", "bench/bench.py:654-673", "bench/bench.py:742-756", "bench/test_bench.py:261-273"]},
-    {"id": "WP-03", "wave": 1, "depends_on": [], "files": ["docs/how-to/bench.md", "docs/roadmap/repo-review-2026-11.md"],
-     "acs": ["AC-006"], "mirror": ["docs/how-to/bench.md:22-28", "docs/roadmap/repo-review-2026-11.md:105"]}
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/workflows/pipeline-spec.json", ".claude/workflows/agentic-implement.js", ".claude/agents/implementer.md"],
+     "acs": ["AC-001", "AC-002", "AC-003"], "mirror": [".claude/workflows/pipeline-spec.json:13", ".claude/workflows/agentic-implement.js:298-299", ".claude/agents/implementer.md:44-55"]},
+    {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", ".claude/bin/test_acceptance_upgrade.py", ".claude/bin/test_acceptance_v2.py", ".claude/bin/test_acceptance_v21.py", ".claude/bin/test_acceptance_v22.py", ".claude/bin/test_acceptance_v23.py", ".claude/bin/test_acceptance_v24.py", "docs/roadmap/repo-review-2026-11.md"],
+     "acs": ["AC-004"], "mirror": [".claude/bin/upgrade.py:58-67", ".claude/bin/test_acceptance_v24.py:267-280"]}
   ]
 }
 ```
 
 ## 9. Test strategy
-- Unit: WP-02 in `bench/test_bench.py` (each review-field case, `_metric` for the two names, the Markdown header and a row).
-- Acceptance: `bench/acceptance/test_acceptance_pricing.py`, AC-001…AC-006, written first and red (no `pricing` fixture, no review fields, no columns, no docs). It imports `FixtureCase` and `manifest_of` from `test_acceptance_fixtures.py` and `FixtureReady` from `test_acceptance_bench.py` (add `bench/acceptance` to `sys.path`), and loads `bench.py` as `bench/test_bench.py:15-18` does.
-- QA: the bench suites (`bench/acceptance` included), `selftest` on every fixture, and a dry check that `bench.py run --fixture pricing` with the fake `claude` (`testutil.install_fake_claude`) completes; that check is QA's, not an AC.
-- After merging, by hand: `bench.py ab --a agentic-flow--v2.1.0 --b agentic-flow--v2.4.0 --fixture pricing --repeat 3`, as a background task of the session (detached runs die when the container is reclaimed); results committed under `bench/results/`.
+- Acceptance: `.claude/bin/test_acceptance_v241.py`, AC-001…AC-004, written first and red (today the sentence is absent everywhere and the version is 2.4.0). AC-002 reuses `run_scenario` and `CONFORMANCE` from `test_pipeline.py` and the Node dump, as `test_acceptance_v24.py:EnginesTests` does.
+- Regression: the whole `.claude/bin` suite, `test_workflow.mjs` (conformance prompts compared verbatim), the docs suites.
+- Not measured: whether real agents now keep the caller working. The `pricing` fixture can tell (`test_ctx_*` passing, sessions ending OK) with an A/B of 2.4.0 against 2.4.1, when the user wants it.
+- After merging, by hand: `agentic.py flow-history`, release `agentic-flow--v2.4.1`, `install` in the projects.
 
 ## 10. Decisions
-- **D1 · An untested caller that the plan omits (user's choice):** it isolates 3.1. A tested caller would be caught by verification against the baseline instead.
-- **D2 · The signature gains a required parameter:** the smallest change that breaks a one-argument caller with a `TypeError`, and that has a compatible fix inside the changed package (a default). A return-type change was discarded: no compatible fix stays inside the package's files.
-- **D3 · Review counts in the session record, compared by `ab` (user's choice);** `RESULTS.md` keeps its columns.
-- **D4 · The last review's counts:** the run result keeps only the final review; a finding fixed in a cycle shows as a fix cycle and a passing `test_ctx_*`, not as a confirmed finding. Recorded as is; the oracle is the outcome measure.
-- **D5 · Through `/implement`:** nothing under `.claude/`. In a session where `hooks-check` fails (as this cloud session), `/implement fallback`.
-- **D6 · An A/B of 2.1.0 against 2.4.0 on `pricing` after merging (user's choice),** three sessions per arm.
-- **D7 · `docs.files` is `docs/how-it-works.md`:** the default zone (`README.md`, `docs/`) overlaps WP-03; the doc-updater may only mention the review fields in the bench part of How it works, if at all.
-- **D8 · `verify` runs `bench`, `qa` and `acceptance`:** `qa/test_qa_bench.py` checks `_record` and `acceptance/test_docs.py` checks `bench.md`'s headings; `bench/acceptance` (about a minute) runs in each WP's validation and in QA, not in `verify` (four slots).
+- **D1 · Prompts only (user's choice):** the fix prompt and `implementer.md`. A deterministic marker and a reviewer or plan-reviewer change were not chosen.
+- **D2 · "Unless section 6 explicitly forbids it":** a plan that deliberately removes the old signature keeps `BLOCKED` as the right answer; a silent plan does not.
+- **D3 · 2.4.1 (user's choice):** a prompt fix. Projects with a customised `implementer.md` keep their copy (install leaves edited files alone); the note tells them to merge.
+- **D4 · Executed by hand:** every file is under `.claude/` or pins the version; acceptance tests first and red, one commit per WP.
 
 ## 11. Risks and open questions
-- **The trap may never fire:** the common rules both arms install (`.claude/rules/agentic/common.md`, "Shared code: before editing a function other files call, grep every caller ... keep the callers your change breaks working", roadmap 4.1, shipped in 2.0.0) tell the implementers of 2.1.0 and 2.4.0 alike to find `receipt.py` and keep it working. If they do, both arms pass and the A/B shows no difference: then what it measures is that the reviewer's callers add nothing on top of that rule for this kind of break. If no implementer does, the reviewer's callers are what remains. The session records (`review_callers`, `review_confirmed`, `fix_cycles`, the `test_ctx_*` results) say which.
-- **The callers cap is not a concern:** `callers` leaves out every changed file, and the pipeline never commits, so in a run the edited `cart.py`, the old test files and the agents' `acceptance/` files are excluded; `shop/receipt.py` is the only caller left.
-- **The contract may stop the fix:** the fixture plan's section 6 writes `currency` without a default, and the common rules put section 6 first. A reviewer or a fix-cycle implementer may treat a default as a contract change and refuse it; then the trap measures the precedence rule, not the callers. Section 6 says nothing against a default (section 6 above) to keep the compatible fix open.
-- **A finding the reviewer confirms cannot be fixed by deleting the caller:** `shop/receipt.py` is outside every zone, so the fix must happen in `money.py`; the hook blocks writes to `receipt.py`.
-- **Three sessions per arm:** a difference on one fixture is a signal, not proof.
+- **Not measured:** a prompt sentence may not change what an agent does. Without the A/B, 2.4.1 is a reasoned fix, not a proven one.
+- **Over-reach:** an implementer could read the rule as permission to add compatibility shims everywhere. The sentence limits it to a caller the change broke, and the reviewer still reviews the fix.
