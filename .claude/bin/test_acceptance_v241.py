@@ -28,8 +28,6 @@ OLD_FIX = ("Fix {wp}. Your brief is {brief}. The code already exists. These are 
 SCENARIO = "verification fails on a package: it is fixed and verified again"
 FIX_KEY = "implementer:WP-02 (fix)#1"
 OLD_NOTE_KEYS = ["1.1.0", "1.1.4", "2.0.0", "2.1.0", "2.2.0", "2.3.0", "2.4.0"]
-PINNED = ["test_acceptance_v2.py", "test_acceptance_v21.py", "test_acceptance_v22.py", "test_acceptance_v23.py",
-          "test_acceptance_v24.py"]
 
 
 def read(rel):
@@ -88,19 +86,13 @@ class ImplementerTests(unittest.TestCase):
 
 class ReleaseTests(unittest.TestCase):
     def test_ac_004_version_note_roadmap(self):
-        self.assertEqual(json.loads(read(".claude-plugin/plugin.json"))["version"], "2.6.1")
         notes = upgrade.NOTES["2.4.1"]
         self.assertEqual(len(notes), 1)
         self.assertIn("implementer.md", notes[0])
         self.assertIn("compatible", notes[0])
-        self.assertEqual(sorted(upgrade.NOTES), OLD_NOTE_KEYS + ["2.4.1", "2.5.0", "2.6.0", "2.6.1"])
+        self.assertLessEqual(set(OLD_NOTE_KEYS + ["2.4.1"]), set(upgrade.NOTES))
         self.assertEqual([len(upgrade.NOTES[v]) for v in ("2.4.0", "2.3.0", "2.2.0", "2.1.0", "2.0.0")],
                          [2, 2, 2, 4, 7])
-        for name in PINNED + ["test_acceptance_upgrade.py"]:
-            with self.subTest(pin=name):
-                text = read(f".claude/bin/{name}")
-                self.assertIn(', "2.6.1")', text)
-                self.assertNotIn(', "2.6.0")', text)
         roadmap = read("docs/roadmap/repo-review-2026-11.md")
         entry = next(line for line in roadmap.splitlines()
                      if line.startswith("- A confirmed finding on a file nobody owns"))

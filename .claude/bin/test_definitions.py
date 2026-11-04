@@ -8,6 +8,7 @@ Run: python3 -m unittest discover -s .claude/bin -p "test_*.py"
 import json
 import re
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -396,6 +397,14 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(entry["name"], self.plugin["name"])
         self.assertEqual(entry["source"], "./")
         self.assertNotIn("version", entry, "the version lives in plugin.json; two copies end up out of sync")
+
+    def test_the_version_has_its_upgrade_note(self):
+        # One check for every release, instead of a version pinned in each release's acceptance tests.
+        sys.path.insert(0, str(AGENTIC.parent))
+        import upgrade
+        newest = max(upgrade.NOTES, key=lambda v: tuple(int(x) for x in v.split(".")))
+        self.assertEqual(self.plugin["version"], newest, "a release adds its note to upgrade.NOTES")
+        self.assertTrue(upgrade.NOTES[newest])
 
     def test_init_uses_the_installer(self):
         fm, body = frontmatter(ROOT / "plugin" / "commands" / "init.md")

@@ -138,7 +138,6 @@ class HubTests(DocCase):
         self.assertIn("Windows", headings(secs["Requirements"], 3))
         self.assertIn("Two ways to run", headings(secs["The working cycle"], 3))
         rows = self.table_rows(secs["Pick your environment"])
-        self.assertEqual(len(rows), 10)
         linked = set()
         for row in rows:
             for target in re.findall(r"\]\(([^)\s#]+)(?:#[^)\s]*)?\)", row):

@@ -45,9 +45,11 @@ class HubVsGuides(unittest.TestCase):
                 else:
                     self.assertTrue(hub.startswith("not"), hub)
 
-    def test_hub_has_ten_environment_rows(self):
+    def test_hub_links_every_guide_from_its_table(self):
         rows = [l for l in read(HOW / "README.md").split("## Requirements")[0].splitlines() if re.match(r"\| .*\]\(", l)]
-        self.assertEqual(len(rows), 10)
+        for name in ENV + TASK:
+            with self.subTest(guide=name):
+                self.assertTrue(any(f"({name}.md" in row for row in rows), f"{name}.md has no row")
 
 
 class Sizes(unittest.TestCase):
@@ -92,8 +94,20 @@ class Conventions(unittest.TestCase):
         pieces = t.split("## What's inside")[1].split("## Guardrails")[0]
         guard = t.split("## Guardrails")[1].split("## Documentation")[0]
         rows = lambda s: [l for l in s.splitlines() if l.startswith("|") and not l.startswith("|---")][1:]
-        self.assertEqual(len(rows(pieces)), 13)  # 2.6.0 adds /red-green-proof
-        self.assertEqual(len(rows(guard)), 17)
+        # Every piece the flow ships has a row, whatever the number of pieces.
+        claude = ROOT / ".claude"
+        pieces_rows = "\n".join(rows(pieces))
+        names = ([f"`{p.stem}`" for p in (claude / "agents").glob("*.md")]
+                 + [f"`/{p.stem}`" for p in (claude / "commands").glob("*.md")]
+                 + [f"`/{p.parent.name}`" for p in (claude / "skills").glob("*/SKILL.md")])
+        for name in names:
+            with self.subTest(piece=name):
+                self.assertIn(name, pieces_rows)
+        # Every guardrail row names a risk and its protection.
+        self.assertTrue(rows(guard))
+        for row in rows(guard):
+            with self.subTest(row=row[:40]):
+                self.assertEqual([c.strip() != "" for c in row.strip("|").split("|")], [True, True])
 
     def test_hub_does_not_repeat_pieces_table(self):
         t = read(HOW / "README.md")
