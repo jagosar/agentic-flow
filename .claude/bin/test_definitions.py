@@ -413,6 +413,8 @@ class PluginTests(unittest.TestCase):
                 self.assertTrue(list(ROOT.glob(pattern)), "the installer would copy nothing")
 
 
+    @unittest.skipUnless((ROOT / "README.md").read_text(encoding="utf-8").startswith("<!-- agentic-flow-template -->"),
+                         "the flow's own repo: a project's README and its own skills are not the flow's to check")
     def test_shipped_skills_are_valid_and_credited(self):
         skills = sorted((CLAUDE / "skills").glob("*/SKILL.md"))
         self.assertTrue(skills)
