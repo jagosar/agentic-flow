@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s .claude/bin -p "test_quality.py"
 Pure functions on inline sources; the files test uses a temporary folder.
 """
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import quality  # noqa: E402
+
+SCAN_TIMEOUT_S = 20  # a scan of three lines takes milliseconds; a hang must fail, not stall the suite
 
 
 def fn(name, lines):
@@ -75,6 +78,14 @@ class JavaScriptTests(unittest.TestCase):
     def test_escaped_quotes_and_regex_free_strings(self):
         src = "function f() {\n  const s = 'a \\' { b'\n  const t = \"}\"\n  return s + t\n}\n"
         self.assertEqual(quality.measure_file("a.js", src)["functions"]["f"]["lines"], 5)
+
+    def test_unclosed_comments_and_strings_end_the_scan(self):
+        # An unclosed /* (or a regex literal such as /\/\*/ read as one) once sent the scanner backwards forever.
+        code = ("import sys; sys.path.insert(0, sys.argv[1]); import quality; "
+                "print(quality.measure_file('a.js', 'function f() {\\n}\\n/* never closed')['lines'])")
+        r = subprocess.run([sys.executable, "-c", code, str(Path(__file__).resolve().parent)],
+                           capture_output=True, text=True, timeout=SCAN_TIMEOUT_S)
+        self.assertEqual(r.stdout.strip(), "3", r.stderr)
 
     def test_an_unclosed_brace_does_not_raise(self):
         self.assertEqual(quality.measure_file("a.js", "function f() {\n  if (x) {\n")["functions"], {})

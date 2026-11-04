@@ -111,8 +111,9 @@ def _blank(text):
     while i < n:
         c = text[i]
         if c == "/" and text[i + 1:i + 2] in ("/", "*"):
-            end = text.find("\n", i) if text[i + 1] == "/" else text.find("*/", i + 2) + 2
-            end = n if end <= 0 else end
+            closer = "\n" if text[i + 1] == "/" else "*/"
+            found = text.find(closer, i + 2)
+            end = n if found < 0 else found + len(closer)  # unclosed: it runs to the end, never backwards
         elif c in "'\"`":
             end = i + 1
             while end < n and text[end] != c and (c == "`" or text[end] != "\n"):
