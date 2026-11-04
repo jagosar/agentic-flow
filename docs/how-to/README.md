@@ -41,7 +41,7 @@ You should see a Claude Code version, `claude doctor` without errors, `"authMeth
 
 ### Windows
 
-Native Windows runs the flow's own code, and its test suite runs on Windows, macOS and Linux in CI. Nobody has run a full `/implement` on Windows yet: if you are the first, tell us what happened.
+Native Windows runs the flow's own code, and its test suite runs on Windows and Linux in CI. Nobody has run a full `/implement` on Windows yet: if you are the first, tell us what happened.
 
 1. **Git for Windows.** Claude Code runs hooks and its Bash tool in Git Bash when Git for Windows is installed. Without it, the flow's guardrail hook never runs, so do not use the flow there.
 2. **A `python3` command.** The hook and the agents still call `python3`. The python.org installer only creates `python` and `py`; the Microsoft Store Python creates `python3`. Check it in Git Bash: `python3 --version` must print 3.9 or later. If it prints `Python was not found` instead, that is Windows' Store shortcut: install Python from the Store, or turn the shortcut off in **Settings → Apps → Advanced app settings → App execution aliases** and use WSL.
@@ -245,7 +245,7 @@ python3 -m unittest discover -s bench -p "test_*.py"
 python3 -m unittest discover -s bench/acceptance
 ```
 
-The suites cover the guardrails and the commands, and the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. CI runs them on Linux, macOS and Windows. Change a prompt and break one of those rules, and a test fails. To compare two versions of the flow on the same fixtures, use the [A/B comparison](bench.md#compare-two-versions-ab).
+The suites cover the guardrails and the commands, and the definitions themselves: each agent's model and tools; required sections (injection defence, `claim`, report format); that the workflow only uses agents and commands that exist; that the documentation cites no missing command and has no broken link; no personal paths in the repo; SHA-pinned actions and npm without install scripts in CI; one rule file per detectable language, with the same skeleton; and a plugin that exposes no agents or hooks of its own. CI runs them on Linux and Windows. Change a prompt and break one of those rules, and a test fails. To compare two versions of the flow on the same fixtures, use the [A/B comparison](bench.md#compare-two-versions-ab).
 The animation and the screenshots are generated from the repo: `python3 docs/assets/make_flow_gif.py` and `python3 docs/assets/make_screens.py` (Pillow and the IBM Plex fonts).
 
 ## Official references

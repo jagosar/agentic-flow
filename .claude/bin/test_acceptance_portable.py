@@ -1,6 +1,6 @@
 """Acceptance tests of delivery A of the Windows design (portable internals, no visible change), AC-001..AC-012.
 
-They run on every system of the CI matrix (Linux, macOS, Windows with Git for Windows); locally, on Linux.
+They run on every system of the CI matrix (Linux, Windows with Git for Windows); locally, on Linux.
 Run: python3 -m unittest discover -s .claude/bin -p test_acceptance_portable.py
 """
 import ast
@@ -271,7 +271,8 @@ class CiTests(unittest.TestCase):
     def test_ac_011_ci_matrix(self):
         ci = (ROOT / ".github/workflows/agentic-flow-ci.yml").read_text(encoding="utf-8")
         self.assertRegex(ci, r"runs-on:\s*\$\{\{\s*matrix\.os\s*\}\}")
-        for os_name in ("ubuntu-latest", "windows-latest", "macos-latest"):
+        # 2.7.1 dropped macOS from the matrix: nobody uses it, and its scarce runners queued past the time limit.
+        for os_name in ("ubuntu-latest", "windows-latest"):
             self.assertIn(os_name, ci)
         for version in ('"3.9"', '"3.12"', '"3.14"'):
             self.assertIn(version, ci)
