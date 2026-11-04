@@ -101,6 +101,14 @@ NOTES = {
         "(unittest's). Maintainer mode (2.5.0) works for runs by hand only: Claude Code protects .claude/ from agents "
         "started with claude -p, and allow rules do not lift it.",
     ],
+    "2.7.1": [
+        "The shipped tests no longer fail in a project: test_agentic.py's check that the flow measures its own "
+        "scripts, and test_definitions.py's check of the shipped skills, hold only in the flow's repo and now run "
+        "only there (the latter also broke the import of its whole file in a project with no README).",
+        "The shipped CI workflow (.github/workflows/agentic-flow-ci.yml, refreshed where yours is intact) drops macOS "
+        "from its matrix and gains a job that installs the flow into an empty project and runs the shipped tests "
+        "there; that job runs only in the agentic-flow repository.",
+    ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
         "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "

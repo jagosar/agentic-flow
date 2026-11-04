@@ -18,6 +18,12 @@ AGENTS_DIR = CLAUDE / "agents"
 COMMANDS_DIR = CLAUDE / "commands"
 WORKFLOW = CLAUDE / "workflows" / "agentic-implement.js"
 AGENTIC = CLAUDE / "bin" / "agentic.py"
+sys.path.insert(0, str(AGENTIC.parent))
+import agentic  # noqa: E402
+
+# Tests that hold only in the flow's own repository. The guard tolerates a project with no README (is_flow_repo does),
+# and a guard that raised at import time would stop every test in this file from loading there.
+FLOW_REPO_ONLY = unittest.skipUnless(agentic.is_flow_repo(ROOT), "the flow's own repo")
 
 # Every agent run-pipeline starts with --json-schema lists StructuredOutput: with a `tools:` list that leaves it out,
 # `claude -p --agent` (seen with CLI 2.1.316) returns no structured_output and the run stops with NO REPORT.
@@ -342,8 +348,10 @@ class CIHardeningTests(unittest.TestCase):
 
     def sources(self):
         yield ".github/workflows/agentic-flow-ci.yml", (ROOT / ".github/workflows/agentic-flow-ci.yml").read_text(encoding="utf-8")
-        guide = (ROOT / "docs/how-to/ci-github-actions.md").read_text(encoding="utf-8")
-        yield "docs/how-to/ci-github-actions.md", "\n".join(re.findall(r"```yaml\n(.*?)```", guide, re.S))
+        guide_path = ROOT / "docs/how-to/ci-github-actions.md"
+        if guide_path.exists():  # a project may not carry the flow's guides; its copy of the CI file is still checked
+            guide = guide_path.read_text(encoding="utf-8")
+            yield "docs/how-to/ci-github-actions.md", "\n".join(re.findall(r"```yaml\n(.*?)```", guide, re.S))
 
     def test_actions_pinned_by_sha(self):
         for name, text in self.sources():
@@ -400,7 +408,6 @@ class PluginTests(unittest.TestCase):
 
     def test_the_version_has_its_upgrade_note(self):
         # One check for every release, instead of a version pinned in each release's acceptance tests.
-        sys.path.insert(0, str(AGENTIC.parent))
         import upgrade
         newest = max(upgrade.NOTES, key=lambda v: tuple(int(x) for x in v.split(".")))
         self.assertEqual(self.plugin["version"], newest, "a release adds its note to upgrade.NOTES")
@@ -422,8 +429,7 @@ class PluginTests(unittest.TestCase):
                 self.assertTrue(list(ROOT.glob(pattern)), "the installer would copy nothing")
 
 
-    @unittest.skipUnless((ROOT / "README.md").read_text(encoding="utf-8").startswith("<!-- agentic-flow-template -->"),
-                         "the flow's own repo: a project's README and its own skills are not the flow's to check")
+    @FLOW_REPO_ONLY  # a project's README and its own skills are not the flow's to check
     def test_shipped_skills_are_valid_and_credited(self):
         skills = sorted((CLAUDE / "skills").glob("*/SKILL.md"))
         self.assertTrue(skills)

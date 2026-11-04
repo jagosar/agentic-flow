@@ -1836,6 +1836,7 @@ class QualityCommandTests(Base):
         r = self.repo.run("quality")
         self.assertEqual(r.returncode, 0, r.stdout)
 
+    @unittest.skipUnless(agentic.is_flow_repo(agentic.ROOT), "the flow's own repo: a project does not measure the flow")
     def test_the_flow_repo_measures_its_own_scripts(self):
         files = agentic.quality_files()
         self.assertIn(".claude/bin/quality.py", files)
