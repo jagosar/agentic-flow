@@ -167,7 +167,8 @@ class InstallTests(unittest.TestCase):
         self.assertIn("hook PreToolUse (StructuredOutput)", added)
         pre = settings["hooks"]["PreToolUse"]
         self.assertEqual(pre[0], own)
-        agentic_entries = [e for e in pre if "agentic.py" in e["hooks"][0]["command"]]
+        # 2.5.0 also rewrites the old command to the launcher hook.py.
+        agentic_entries = [e for e in pre if any(n in e["hooks"][0]["command"] for n in ("agentic.py", "hook.py"))]
         self.assertEqual(len(agentic_entries), 1)
         self.assertEqual(agentic_entries[0]["matcher"], "Write|Edit|Bash|StructuredOutput")
         self.assertEqual(agentic_entries[0]["hooks"][0]["timeout"], 900)
@@ -280,7 +281,7 @@ class PromptTests(unittest.TestCase):
 class ReleaseTests(unittest.TestCase):
     def test_ac_007_version_and_notes(self):
         version = json.loads(text(ROOT / ".claude-plugin" / "plugin.json"))["version"]
-        self.assertEqual(version, "2.4.1")
+        self.assertEqual(version, "2.5.0")
         notes = upgrade.NOTES["2.1.0"]
         self.assertGreaterEqual(len(notes), 3)
         joined = " ".join(notes)
