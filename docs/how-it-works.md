@@ -190,7 +190,7 @@ The ledger is written by `agentic.py`, not by the model, so it survives context 
 
 ## 4. Guardrails: the hook's decision
 
-The `PreToolUse` hook (`agentic.py hook`) runs before every Write, Edit, MultiEdit, NotebookEdit and Bash call, and before the `StructuredOutput` call that delivers an agent's report. It **fails closed**: inside an agent of the flow, any error blocks. The one exception is the stop gate, which fails open: a gate that could not run its check lets the report through and says so on stderr, so a broken manifest never stalls a run with no cap.
+The `PreToolUse` hook (`hook.py`, a launcher that runs `agentic.py hook`) runs before every Write, Edit, MultiEdit, NotebookEdit and Bash call, and before the `StructuredOutput` call that delivers an agent's report. It **fails closed**: inside an agent of the flow, any error blocks. The one exception is the stop gate, which fails open: a gate that could not run its check lets the report through and says so on stderr, so a broken manifest never stalls a run with no cap.
 
 The hook only guards a session where Claude Code loads it, and it cannot report its own absence. So it leaves a **heartbeat** on every call (`.claude/state/hook-seen.json`, with the last call from an agent of the flow apart). `hooks-check` reads it: run by `/implement` first and by both engines before any agent, it stops a session where the hook does not fire (a cloud session with several repositories, a thread inside a Claude project, `disableAllHooks`). The fallback engine checks the settings instead, because its agents are `claude -p` processes, which load the repository's hooks. Then `close-stage` ends in REVIEW any stage whose files changed while the hook saw no call from an agent of the flow: the case where the hook runs for the main session but not for the subagents.
 
@@ -231,6 +231,8 @@ The hook's Bash rules are regular expressions: they stop mistakes, not a determi
 - a change outside the stage's zones, or to `architecture.md`, `.claude/`, the decision archive or the code map even inside a zone that covers them by prefix;
 - a commit or ref change, or a change to git's own `config`, hooks or excludes, or to the baseline;
 - a secret, an unconditional test skip or a relaxed quality configuration added during the stage (compared with each file's content when the stage opened, so a fixture that was already there is not blamed).
+
+**Maintainer mode** lets the flow change itself, in the agentic-flow repository only. A plan with `"maintainer": true` may give packages files under `.claude/`, except the settings, `.claude/state/` and the two hook scripts. `pipeline-plan` then copies the guard (the non-test scripts and the pipeline spec) into `.claude/state/guard/`, and until the run ends the hook, `close-stage` and every other gate call run that frozen copy, so a package that edits `agentic.py` is still judged by the guard the run started with. A resumed run keeps the copy; both engines call `guard-release` on the way out, and any normal run releases a copy left behind.
 
 Tracked files are always compared, even in a folder named like an artefact (`coverage/`, `build/`). Each agent may claim only its own kind of ID: an implementer its packages, QA `QA`, the test-author `AT`, the doc-updater `DOCS`, the read-only judges `REVIEW`.
 

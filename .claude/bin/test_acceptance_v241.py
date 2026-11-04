@@ -88,19 +88,19 @@ class ImplementerTests(unittest.TestCase):
 
 class ReleaseTests(unittest.TestCase):
     def test_ac_004_version_note_roadmap(self):
-        self.assertEqual(json.loads(read(".claude-plugin/plugin.json"))["version"], "2.4.1")
+        self.assertEqual(json.loads(read(".claude-plugin/plugin.json"))["version"], "2.5.0")
         notes = upgrade.NOTES["2.4.1"]
         self.assertEqual(len(notes), 1)
         self.assertIn("implementer.md", notes[0])
         self.assertIn("compatible", notes[0])
-        self.assertEqual(sorted(upgrade.NOTES), OLD_NOTE_KEYS + ["2.4.1"])
+        self.assertEqual(sorted(upgrade.NOTES), OLD_NOTE_KEYS + ["2.4.1", "2.5.0"])
         self.assertEqual([len(upgrade.NOTES[v]) for v in ("2.4.0", "2.3.0", "2.2.0", "2.1.0", "2.0.0")],
                          [2, 2, 2, 4, 7])
         for name in PINNED + ["test_acceptance_upgrade.py"]:
             with self.subTest(pin=name):
                 text = read(f".claude/bin/{name}")
-                self.assertIn(', "2.4.1")', text)
-                self.assertNotIn(', "2.4.0")', text)
+                self.assertIn(', "2.5.0")', text)
+                self.assertNotIn(', "2.4.1")', text)
         roadmap = read("docs/roadmap/repo-review-2026-11.md")
         entry = next(line for line in roadmap.splitlines()
                      if line.startswith("- A confirmed finding on a file nobody owns"))
