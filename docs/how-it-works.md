@@ -309,8 +309,16 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 ├── rules-library/          common rules and 10 languages (source)
 ├── rules/agentic/          installed by rules-sync; Claude Code loads .claude/rules/
 ├── bin/
-│   ├── agentic.py          validate · pipeline-plan · open/close-stage · seq · verify · stack · rules-sync · codemap ·
-│   │                       docs-check · install · run-pipeline · run-* · status · stop · hook (guardrails and the stop gate)
+│   ├── agentic.py          the entry point: the command table (validate, pipeline-plan, open/close-stage, seq, verify,
+│   │                       install, run-pipeline, run-*, status, hook…) and the names tests read; the code is below
+│   ├── core.py             paths, constants, manifest access, the ledger, locked state files, the flow-repo tests
+│   ├── manifest_check.py   validate and its families of checks, require_valid
+│   ├── repo_scan.py        stack detection, rules-sync, the code map, callers, docs-check
+│   ├── verification.py     commands without a shell, acceptance, baseline/verify with attribution, the ratchet
+│   ├── stage.py            snapshots, stage checks, open/close-stage, fix diffs, the stop gate
+│   ├── installer.py        install with its intact-file rule, settings, sync-permissions, flow-history
+│   ├── launch.py           the claude -p launchers, run-*, seq, run-pipeline, pipeline-plan and the frozen guard
+│   ├── guardrail.py        the PreToolUse hook: guard, claims, content checks, the heartbeat, hooks-check
 │   ├── brief.py            slices architecture.md into the briefs the agents read
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer
 │   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
