@@ -85,6 +85,7 @@ Requirements in one line: a Pro, Max, Team or Enterprise plan, Dynamic workflows
 | `doc-updater` | latest Sonnet | Updates README, CHANGELOG and guides, only inside its zone |
 | `gatekeeper` | latest Haiku | Runs the deterministic steps of `agentic.py` for the workflow, several per call |
 | `agentic.py` | script | The guardrail hook, the deterministic steps, the ledger and the installer |
+| `/red-green-proof` | your session | A bug fix you can trust: a test red before the fix, green after it, and red again when the fix is reverted |
 
 Models are set by alias (`opus`, `sonnet`, and `haiku` for the gatekeeper only), which always resolve to the newest version your Claude Code knows. `validate` fails if anyone pins another model. Language rules for ten language families are installed by `rules-sync` for the languages `agentic.py stack` detects; see [Language rules](docs/how-to/README.md#language-rules).
 
@@ -129,3 +130,5 @@ Several ideas are adapted from [ECC](https://github.com/affaan-m/ECC) (MIT, © 2
 - confidence-filtered review and phased verification;
 - config protection, the `--no-verify` block and the prompt-injection defence;
 - the language rules and the documentation agent with its code map.
+
+The `red-green-proof` skill is by RooAGI (MIT, © 2026 RooAGI), from [claude-skills](https://github.com/alirezarezvani/claude-skills) (MIT, © 2025 Alireza Rezvani).

@@ -413,6 +413,19 @@ class PluginTests(unittest.TestCase):
                 self.assertTrue(list(ROOT.glob(pattern)), "the installer would copy nothing")
 
 
+    def test_shipped_skills_are_valid_and_credited(self):
+        skills = sorted((CLAUDE / "skills").glob("*/SKILL.md"))
+        self.assertTrue(skills)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for path in skills:
+            with self.subTest(skill=path.parent.name):
+                fm, body = frontmatter(path)
+                self.assertEqual(fm.get("name"), path.parent.name, "the name must match the folder")
+                self.assertTrue(fm.get("description"))
+                self.assertIn(f"`/{path.parent.name}`", readme, "listed in What's inside")
+                self.assertIn("MIT", body, "third-party skills keep their licence notice")
+
+
 class DocumentationDriftTests(unittest.TestCase):
     def docs(self):
         return [p for p in tracked_files() if p.suffix == ".md"]

@@ -81,6 +81,11 @@ NOTES = {
         "waiting.py). The run is judged by a frozen copy of the guard, and the gatekeeper accepts its command. "
         "Projects are not affected: the flag is refused anywhere else.",
     ],
+    "2.6.0": [
+        "A skill for the main session: /red-green-proof (.claude/skills/red-green-proof/SKILL.md, by RooAGI, MIT). "
+        "For a bug: verify the cause, write a test that fails on the current code, fix it, then revert the fix and "
+        "watch the test fail again before restoring it. Nothing in the flow's stages changes.",
+    ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
         "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "
