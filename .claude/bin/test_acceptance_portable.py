@@ -255,7 +255,8 @@ class NoVisibleChangeTests(unittest.TestCase):
     def test_ac_010_no_visible_change(self):
         settings = json.loads((ROOT / ".claude/settings.json").read_text(encoding="utf-8"))
         hooks = [(e.get("matcher"), h.get("command")) for e in settings["hooks"]["PreToolUse"] for h in e["hooks"]]
-        self.assertIn(("Write|Edit|MultiEdit|NotebookEdit|Bash|StructuredOutput", 'python3 "$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py" hook'),
+        # 2.5.0 moved the hook behind the launcher hook.py (maintainer mode); the matcher and python3 stay.
+        self.assertIn(("Write|Edit|MultiEdit|NotebookEdit|Bash|StructuredOutput", 'python3 "$CLAUDE_PROJECT_DIR/.claude/bin/hook.py"'),
                       hooks)
         self.assertIn("Bash(python3 .claude/bin/agentic.py:*)", settings["permissions"]["allow"])
         workflow = (ROOT / ".claude/workflows/agentic-implement.js").read_text(encoding="utf-8")

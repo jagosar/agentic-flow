@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(python3 .claude/bin/agentic.py:*)",
+      "Bash(python3 .claude/state/guard/bin/agentic.py:*)",
       "Workflow(agentic-implement)"
     ],
     "deny": [
@@ -17,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py\" hook",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/bin/hook.py\"",
             "timeout": 900
           }
         ]
