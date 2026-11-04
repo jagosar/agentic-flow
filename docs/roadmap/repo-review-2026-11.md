@@ -86,7 +86,7 @@ Without this, every prompt or agent change is decided by reasoning.
 
 ## Later (high cost or low return now)
 
-- Visual QA with a headless browser for plans whose stack has a UI. (anatomy, taste)
+- Visual QA with a headless browser for plans whose stack has a UI. (anatomy, taste) A reference for the checks: heydamir/unslop (CC BY 4.0, a skill that audits AI-looking UI); several of its signs can be checked without a model (emoji in the interface, gradient text, spacing off a 4px scale, uppercase tracked labels, trailing periods on short strings). Not adopted as a skill of the flow: it stops to ask the user for a design direction, which the flow's agents cannot do.
 - An optional security stage on the diff, and a clean environment (allowlisted env, scratch HOME, no network) when agents run project code. (cloudflare)
 - A coverage ledger with a coverage critic for QA. (cloudflare)
 - Rulings instead of stalls when a plan is ambiguous: a policy change to handle with care. (superpowers)
