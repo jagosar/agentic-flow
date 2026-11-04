@@ -1,262 +1,448 @@
-# Architecture: a maintainer mode, so the flow can implement changes to its own repository (issue 71, agentic-flow 2.5.0)
-Type: feature · Size: large
+# Architecture: clean-code ratchet (`agentic.py quality`)
+Type: feature · Size: standard
 
 ## 1. Goal
-`validate` refuses a work package that owns a path under `.claude/`, and the hook and `close-stage` block writes there. That protects every project's flow from its own agents, and it is why every plan that changed the flow (designs 0002 to 0011) was executed by hand. This change adds a maintainer mode for the agentic-flow repository only: a plan with `"maintainer": true` may give its packages named paths under `.claude/`, except a fixed list that stays nobody's. Because most flow changes touch `agentic.py`, which holds the guard itself, the run is watched by a frozen copy of the guard taken when the run starts: the hook goes through a fixed launcher that uses that copy, and both engines run every deterministic step with it. What the agents write takes effect on the next run, never on the one watching them.
+The code is growing coarser: `agentic.py` grew from 2,145 to 2,652 lines between 1.1.4 and 2.6.1, five functions exceed 60 lines, and no check stops it. This design adds a deterministic, stdlib-only command, `agentic.py quality`, that measures function length, nesting depth, file size and long lines (Python with `ast`, JavaScript/TypeScript with a heuristic scanner) and compares them with a committed baseline. It works as a ratchet: nothing may get worse, a new function or file must respect the limits, and improvements lower the baseline. It runs in agentic-flow's CI, and in projects as an extra phase of `verify`, so the flow sends back a package that makes the code worse. The same pull request carries the already-written `claude/less-brittle-tests` changes.
 
 ## 2. Scope
 ### Included
-- `"maintainer": true` in the manifest, accepted only in the flow's own repo.
-- Ownership of named `.claude/` paths in maintainer mode, in `validate`, the hook and `close-stage`; a never-ownable list.
-- The frozen guard: `pipeline-plan` copies the guard to `.claude/state/guard/` and reports the command to use; `guard-release` ends it.
-- `.claude/bin/hook.py`, a fixed launcher for the `PreToolUse` hook, in every project (projects never activate the guard, so for them it just runs `agentic.py hook`).
-- Both engines use the frozen command after `prepare` and release the guard at the end, in maintainer mode only.
-- `settings.json`: the hook command and the gatekeeper's permission for the frozen path; `install` migrates projects' old hook command.
-- Version 2.5.0, notes, docs.
+- `.claude/bin/quality.py`: measurement and ratchet comparison, pure functions.
+- `agentic.py quality [--init | --update]`.
+- A `quality` phase in `baseline`/`verify` when the repo has a baseline.
+- Guardrails so that agents cannot loosen the baseline:
+  - never owned, even in maintainer mode;
+  - `quality --init/--update` blocked for flow agents.
+- `install`:
+  - ships `quality.py`;
+  - creates the baseline when it is missing, or when it was copied from the template.
+- agentic-flow's own baseline, a CI step, docs and version 2.7.0.
+- The `claude/less-brittle-tests` changes, already in the working tree:
+  - version pins removed from 8 frozen acceptance files, replaced by `test_definitions.PluginTests.test_the_version_has_its_upgrade_note`;
+  - exact doc-table row counts replaced by meaning checks.
+
+  They are not a work package; section 4 lists their files as "done".
+
 ### Excluded (non-goals)
-- Freezing agent definitions (`.claude/agents/*.md`): Claude Code reads them live; section 11.
-- Using maintainer mode in any repo other than agentic-flow.
-- Executing this plan with the mode it creates: it is executed by hand.
+- Test-hygiene, dead-code and duplication checks (the user chose size and complexity only).
+- Refactoring the five long functions (`main`, `install`, `judge`, `validate`, `guard`); the ratchet freezes them.
+- Languages other than Python and JS/TS for function and nesting metrics. Other code files get only the file-size and long-line checks.
+- Formatting and lint (ruff, eslint): projects keep their own `verify.lint`.
 
 ## 3. Stack
-Python 3.9+ standard library (no type annotations in `agentic.py`, which must import on 3.9), Node 20 for the workflow.
-- Tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"`, `node .claude/bin/test_workflow.mjs`, `python3 -m unittest discover -s acceptance`, `python3 -m unittest discover -s qa`.
+- Python ≥ 3.9, standard library only (`ast`, `json`, `re`, `pathlib`, `fnmatch`). No type annotations in `quality.py` or `agentic.py` (Python 3.9, and both are frozen into the maintainer guard).
+- Node 22 only for the existing `test_workflow.mjs`; nothing new in JS.
+- Commands:
+  - compile: `python3 -m compileall -q .claude/bin` (run by hand: the four `verify` slots hold the suites below)
+  - tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"`
+  - workflow: `node .claude/bin/test_workflow.mjs`
+  - docs: `python3 -m unittest discover -s acceptance`
+  - qa: `python3 -m unittest discover -s qa` (the manifest's `verify.build` slot)
+  - bench: `python3 -m unittest discover -s bench -p "test_*.py"` and `python3 -m unittest discover -s bench/acceptance`: not in `verify`, because `run_command` has no shell and the four slots are taken. They are part of WP-03's validation and of the final check before the pull request.
 
 ## 4. Repository structure
 ```
-.claude/bin/agentic.py             WP-01
-.claude/bin/test_agentic.py        WP-01
-.claude/bin/hook.py                WP-01 (new)
-.claude/settings.json              WP-02
-.claude/bin/test_definitions.py    WP-02 (the settings test)
-.claude/agents/gatekeeper.md       WP-02 (accept the frozen path)
-.claude/workflows/agentic-implement.js   WP-03
-.claude/bin/pipeline.py            WP-03
-.claude/bin/conformance.json       WP-03
-.claude/bin/test_pipeline.py       WP-03
-.claude/bin/test_workflow.mjs      WP-03
-.claude-plugin/plugin.json         WP-04 (2.5.0)
-.claude/bin/upgrade.py             WP-04
-.claude/bin/test_acceptance_upgrade.py, test_acceptance_v2.py, test_acceptance_v21.py, test_acceptance_v22.py, test_acceptance_v23.py, test_acceptance_v24.py, test_acceptance_v241.py   WP-04 (version pins)
-docs/how-it-works.md, docs/how-to/README.md, docs/roadmap/repo-review-2026-11.md   WP-04
-.claude/bin/test_acceptance_v25.py AT (new)
+.claude/bin/quality.py                      WP-01  (new)
+.claude/bin/test_quality.py                 WP-01  (new)
+.claude/bin/agentic.py                      WP-02
+.claude/bin/test_agentic.py                 WP-02
+.claude/bin/test_acceptance_v27.py          AT     (new)
+.claude/quality-baseline.json               nobody: created by the maintainer with `agentic.py quality --init` after WP-02 (never owned)
+.github/workflows/agentic-flow-ci.yml       WP-03
+.claude-plugin/plugin.json                  WP-03
+.claude/bin/upgrade.py                      WP-03
+README.md                                   WP-03
+docs/how-to/README.md                       WP-03
+docs/how-it-works.md                        WP-03
+(done, already on the branch: test_acceptance_{v2,v21,v22,v23,v24,v241,v25,upgrade}.py, test_definitions.py,
+ acceptance/test_docs.py, qa/test_qa_docs.py)
 ```
 
 ## 4b. Existing code context
 | What an implementer needs to know | Where it is | Pattern or rule |
 |---|---|---|
-| `validate` refuses `.claude/` paths | `agentic.py:408-416` (`cannot own`) | Maintainer mode relaxes this one test, for named paths outside `NEVER_OWNED` |
-| `close-stage` treats `.claude/` as nobody's | `agentic.py:683-687` (`check_stage`) | Same relaxation |
-| The hook refuses `.claude/` writes | `agentic.py:2262-2270` (`guard`) | Same relaxation |
-| The code map refuses `.claude/` | `agentic.py:471`, `:2484` | Unchanged: the map is never under `.claude/` |
-| How `agentic.py` finds the repo and its spec | `agentic.py:72-75` (`sys.path`, `ROOT` from `CLAUDE_PROJECT_DIR` or `parents[2]`), `:100` (`SOURCE_ROOT`), `:1526` (`PIPELINE_SPEC`), `:735-738` (`load_spec`), `:1585-1594` (`sibling` imports from the script's own folder) | A frozen copy lives four levels below the root: it needs its own `ROOT` and `PIPELINE_SPEC` |
-| The plan the engines follow | `agentic.py:1657-1667` (`pipeline_plan` prints one JSON line) | Gains `"maintainer"` and `"agentic"` |
-| Gate steps of the fallback engine | `agentic.py:1487-1501` (`run_steps` runs `Path(__file__)`), the pipeline's `gate` | In maintainer mode they run the frozen copy |
-| The native workflow's command | `agentic-implement.js:25` (`const AGENTIC = 'python3 .claude/bin/agentic.py'`), `:142` (the gatekeeper prompt) | After `prepare`, the command comes from `plan.agentic` |
-| The gatekeeper accepts one prefix | `.claude/agents/gatekeeper.md:16` ("Only commands starting with `python3 .claude/bin/agentic.py`") | Also `python3 .claude/state/guard/bin/agentic.py` |
-| The hook entry and its settings | `agentic.py:2371-2384` (`hook`); `.claude/settings.json:13-25` (PreToolUse command `python3 "$CLAUDE_PROJECT_DIR/.claude/bin/agentic.py" hook`), permissions `Bash(python3 .claude/bin/agentic.py:*)` | The command becomes `python3 "$CLAUDE_PROJECT_DIR/.claude/bin/hook.py"`; a permission for the frozen path is added |
-| Finding the flow's hook in settings | `agentic.py:2288-2291` (`flow_hooks`: `"agentic.py" in command and endswith("hook")`), used by `merge_settings` (`install`) and `hooks_static_problem` | Recognises both commands; `install` rewrites the old one to the new |
-| What install ships | `agentic.py:131-132` (`INSTALL_GLOBS`) | Gains `.claude/bin/hook.py` |
-| Settings test | `test_definitions.py:305-316` (`test_hook_registered`) | Accepts the launcher command |
-| The flow's own repo | `.claude-plugin/plugin.json` (`"name": "agentic-flow"`), `README.md:1` (`<!-- agentic-flow-template -->`, removed by `reset-readme.yml` in template copies) | Both must hold for maintainer mode |
-| Version pins | `test_acceptance_upgrade.py:258`, `_v2.py:177`, `_v21.py:283`, `_v22.py:171`, `_v23.py:256`, `_v24.py:270`, `_v241.py` (ReleaseTests) | Become `"2.5.0"`; `_v241.py` keeps checking `NOTES["2.4.1"]` |
+| Sibling modules are imported from the script's own folder, so a frozen copy imports frozen siblings | `agentic.py:1618-1629` (`sibling`, `brief_module`) | `quality_module()` = `sibling("quality")`, same as `brief_module` |
+| A pure sibling module's style: module docstring, compiled regexes as constants, small functions, no I/O beyond what is passed | `brief.py:1-40` | Mirror it in `quality.py` |
+| Code files the flow looks at: git's tracked and untracked-not-ignored files, without `SKIP_DIRS` (which contains `.claude`) | `agentic.py:986-995` (`source_files`), `:129` (`SKIP_DIRS`) | Quality scans `source_files()`; in the flow's own repo it also scans `.claude/bin/*.py` and `.claude/workflows/*.js` |
+| Code extensions | `agentic.py:132-142` (`SYMBOL_RES`), `:1061-1062` (`symbol_re`) | A file is code when `symbol_re(rel)` is not None |
+| The flow's own repo | `agentic.py:1711-1720` (`is_flow_repo`) | Decides whether `.claude/bin` is scanned and whether a baseline is foreign |
+| Never-owned paths | `agentic.py:110-111` (`NEVER_OWNED`), `:1728-1738` (`never_owned_problem`) | Add `.claude/quality-baseline.json` |
+| Bash rules for flow agents | `agentic.py:192-201` (`FORBIDDEN_BASH`, `(regex, reason)` pairs) | Add a rule for `agentic.py quality --init/--update` |
+| Verify phases run in order and are compared with the baseline line by line | `agentic.py:1866-1876` (`run_phases`), `:1858-1863` (`normal_failure`, `failure_lines`), `:1899-1918` (`baseline`), `:1920-1964` (`verify`) | The quality phase is appended in `run_phases`, so baseline and verify treat it like any phase |
+| Failure lines are found with `FAILURE_LINE_RE` and attributed by file path | `agentic.py:152` (`FAILURE_LINE_RE`), `:1879-1896` (`attribute`) | Each quality failure line starts with `FAIL` and contains the repo-relative path, with no line numbers (so a moved function reads the same) |
+| `baseline` does nothing without `verify` commands | `agentic.py:1902-1905` | Change: it also runs when the quality baseline exists |
+| `install` creates `.claude/agentic.json` only when missing | `agentic.py:1397-1406`, `:1417-1418` | Same pattern for the quality baseline, after the files are copied (it measures the target) |
+| What install ships | `agentic.py:144` (`INSTALL_GLOBS`) | Add `.claude/bin/quality.py` |
+| CLI dispatch, one `elif` per command; usage in the module docstring | `agentic.py:2498-2620` (`main`), `:20-56` (docstring) | Add `quality`; `test_cited_commands_exist` needs it in the docstring |
+| Test helpers: a temporary git repo with `architecture.md`, the agents, workflows and settings copied in; commands run the **live** `agentic.py` with `CLAUDE_PROJECT_DIR` set to the temp repo | `test_agentic.py:43-74` (`Repo`) | Use it for CLI, verify and hook tests; `quality.py` is then imported from the live `.claude/bin` |
+| Hook Bash tests | `test_agentic.py:1267-1290` (`HookBashTests.BLOCKED/ALLOWED`) | Add the quality commands |
+| `pipeline_plan` exposes `"baseline": bool(verify)` | `agentic.py:1703` | Unchanged: the engines always call `baseline` and it decides; do not touch the plan |
+| Docs size caps and README table checks | `qa/test_qa_docs.py` (`Sizes.test_line_caps`: README 150 lines, hub 260), `test_readme_table_rows` (every guardrail row has two non-empty cells) | The hub is at its cap: merge, do not add lines |
 
 ## 5. Data model
-`.claude/state/guard/` (git-ignored with the rest of `.claude/state/`):
+`.claude/quality-baseline.json`, committed, written only by `quality --init/--update` or by a person:
+```json
+{
+  "version": 1,
+  "flow_repo": true,
+  "limits": {"function_lines": 60, "test_function_lines": 100, "nesting": 4,
+             "file_lines": 800, "file_growth": 30, "line_chars": 120},
+  "exclude": [],
+  "files": {".claude/bin/agentic.py": {"lines": 2652, "long_lines": 50}},
+  "functions": {".claude/bin/agentic.py::main": {"lines": 151, "nesting": 2}}
+}
 ```
-.claude/state/guard/bin/*.py                    copies of the non-test .claude/bin/*.py
-.claude/state/guard/workflows/pipeline-spec.json
-.claude/state/guard/active.json                 {"root": "<abs path>", "frozen_at": "<iso>", "files": {"bin/agentic.py": "<sha256>", ...}}
-```
-Manifest key: `"maintainer": true` (optional, boolean).
+- `files`: only files with `lines > file_lines` or `long_lines > 0`.
+- `functions`: only functions over a limit, by key `path::qualname`.
+- `exclude`: path prefixes or `fnmatch` globs that are not measured.
+- Limit keys missing from `limits` fall back to `DEFAULT_LIMITS`.
+- An `exclude` entry with a glob character (`*?[`) is matched with `fnmatch`. Otherwise it is a path prefix that matches only whole segments: `vendor` excludes `vendor/x.py` and `vendor`, not `vendor2/x.py`.
+- An entry always stores **both** of its metrics (a file: `lines` and `long_lines`; a function: `lines` and `nesting`), even when only one is over its limit.
+
+**The ratchet, per metric** (`L` = the limit for that kind of file, `b` = the stored value, absent entry = no `b`):
+
+| Metric | Allowed now |
+|---|---|
+| function `lines` | `max(L_function, b)` (test files: `L_test_function`) |
+| function `nesting` (not for test files) | `max(L_nesting, b)` |
+| file `lines` | `b + file_growth` if `b > L_file`, else `L_file` |
+| file `long_lines` | `b`, or 0 without an entry |
+
+A value above "allowed now" is a violation. Functions and files that no longer exist are ignored by `check` and dropped by `tighten`.
+
+Python qualnames:
+- `Class.method`;
+- nested functions as `outer.inner`;
+- a repeated qualname in one file gets ` #2`, ` #3`… in source order.
+
+A **test file** is a file whose name matches `test_*.py`, `*_test.py`, `*.test.*` or `*.spec.*`, or whose path has a segment `tests`, `test` or `__tests__`. Test files:
+- use `test_function_lines`;
+- have no nesting check;
+- use the same file and line limits.
 
 ## 6. Contracts between modules
 ```python
-# .claude/bin/agentic.py
-NEVER_OWNED = (".claude/settings.json", ".claude/settings.local.json", ".claude/state/", ".claude/bin/hook.py",
-               ".claude/bin/waiting.py")  # the two live hook scripts: an agent must not reroute or replace a hook
-GUARD_DIR = ".claude/state/guard"
-GUARD_CMD = "python3 .claude/state/guard/bin/agentic.py"
-LIVE_CMD = "python3 .claude/bin/agentic.py"
-FROZEN  # True when this file runs from GUARD_DIR/bin (its folder is "bin", its parent "guard", then "state");
-        # computed before ROOT. Then ROOT = SOURCE_ROOT = parents[4] unless CLAUDE_PROJECT_DIR is set, and
-        # PIPELINE_SPEC = GUARD_DIR/workflows/pipeline-spec.json
-
-def is_flow_repo(root) -> bool
-    # .claude-plugin/plugin.json has "name": "agentic-flow" and README.md's first line is the template marker.
-def maintainer_mode(manifest) -> bool
-    # manifest.get("maintainer") is True AND is_flow_repo(ROOT): the hook and close-stage never run validate, so a
-    # stray flag in a project must not relax anything.
-def never_owned_problem(path) -> str | None
-    # A message when `path` owns, or is owned by, an entry of NEVER_OWNED (prefix match either way); else None.
-def freeze_guard() -> dict
-    # Copies every ROOT/.claude/bin/*.py except test_*.py and testutil.py, and ROOT/.claude/workflows/pipeline-spec.json
-    # (always the live tree, also when the running script is FROZEN), into GUARD_DIR, replacing any earlier copy, and
-    # writes active.json. Returns its content.
-def release_guard() -> None
-    # Removes GUARD_DIR/active.json (the copies may stay). CLI `guard-release`; exit 0 even when nothing is active.
+# .claude/bin/quality.py — stdlib only, no annotations
+DEFAULT_LIMITS = {"function_lines": 60, "test_function_lines": 100, "nesting": 4,
+                  "file_lines": 800, "file_growth": 30, "line_chars": 120}
+def is_test_file(rel) -> bool
+def measure_file(rel, text, limits=None) -> dict
+    # limits defaults to DEFAULT_LIMITS (only line_chars is used here).
+    # {"lines": int, "long_lines": int,
+    #  "functions": {qualname: {"lines": int, "nesting": int}}}. Python via ast (a SyntaxError gives no functions,
+    #  never raises); .js/.mjs/.cjs/.ts/.tsx/.jsx via the heuristic scanner; other extensions: no functions.
+    # text comes from Path.read_text(encoding="utf-8", errors="replace"), which translates CRLF, so "\r" never
+    # counts toward line_chars.
+def measure(root, files, limits) -> dict
+    # {"files": {rel: {"lines", "long_lines"}}, "functions": {"rel::qualname": {"lines", "nesting", "test": bool}}}
+    # Every file, every function (the baseline keeps only offenders; the check needs all of them).
+def check(baseline, current) -> dict
+    # {"ok": bool, "violations": [str], "details": [str], "improvable": [str]}. Rules: the table in section 5.
+    # A violation is one line "FAIL <kind> <path or path::qualname> exceeds its <metric> allowance": no values and no
+    # line numbers, so the same problem reads the same in every run (the baseline/verify comparison is textual).
+    # details holds the values, one line each, without the words fail/error: "  <key> <metric>: now 160, allowed 151".
+    # improvable lists the keys whose stored value is above the current one.
+def tighten(baseline, current) -> dict
+    # The new baseline: every entry lowered to the current value (never raised), entries now within limits dropped,
+    # no entry added. limits, exclude and flow_repo are kept.
+def initial(current, limits, flow_repo) -> dict
+    # A baseline that records every current offender (so `check(initial(c), c)` is ok).
 ```
-- `validate`: `"maintainer"` must be a boolean; `true` outside `is_flow_repo(ROOT)` is the error "maintainer mode is only for the agentic-flow repository". With it, a `.claude/` path is accepted unless `never_owned_problem` returns a message; `architecture.md` and `docs/architecture/` stay refused in both modes. Without it, nothing changes.
-- `pipeline_plan` (CLI `pipeline-plan [--keep-guard]`): adds `"maintainer": bool` and `"agentic": GUARD_CMD if maintainer else LIVE_CMD`. In maintainer mode it calls `freeze_guard()` first, unless `--keep-guard` is given and `GUARD_DIR/active.json` exists (then the existing copy stays: a resumed run keeps watching with the guard of its first start, not with code the agents have since changed). Outside maintainer mode it calls `release_guard()`, so a guard left active by a crashed maintainer run never watches a normal run. Stdout stays one JSON line.
-- `guard`, `check_stage`: in maintainer mode, a path under `.claude/` that an entity owns is that entity's unless `never_owned_problem(path)`; outside it, unchanged.
-- `run_steps(groups, env=None, script=None)`: runs `script` (a path) when given, else `Path(__file__)` as today. `run_pipeline`'s `gate` closure becomes `gate(cmds, label, agentic=LIVE_CMD)`: it runs `ROOT / ".claude/state/guard/bin/agentic.py"` when `agentic == GUARD_CMD`, else the live script. `seq` keeps calling `run_steps` without `script`.
-- `flow_hooks`: recognises `.claude/bin/hook.py` and the old `agentic.py ... hook`; `merge_settings` replaces an old command with the new one, keeping the project's matcher and timeout.
-- `INSTALL_GLOBS` gains `.claude/bin/hook.py`. CLI gains `guard-release`; `SEQ_COMMANDS` gains it.
+- Nesting: `if/for/while/try/with/match` (and `async for/with`) add one level. Rules:
+  - An `elif`, which is an `If` alone in the `orelse` of an `If`, is the same level, so a 30-branch `elif` chain has nesting 1.
+  - Nested `def`/`lambda` bodies are measured as their own functions and do not add to the parent's nesting.
+  - Their lines do count in the parent's `lines` (= `end_lineno - lineno + 1`).
+- The JS/TS scanner:
+  - Blanks comments, strings and template literals, so braces inside them never count.
+  - Recognises named functions: `function name(`, `async function name(`, `name(…) {` as a class or object method, and `const|let|var name = (…) => {`, `name = async (…) => {`, `name: function (`.
+  - `name(…) {` is never a function when `name` is a keyword: `if`, `for`, `while`, `switch`, `catch`, `with`, `function` or `return`.
+  - Keys: a class method is `Class.method`; an object-literal method is `objname.method` when the object is `const|let|var objname = {`, and `method` otherwise.
+  - `.pyi` files go through `ast`, like `.py`.
+  - Anonymous callbacks are part of the enclosing named function.
+  - Length runs from the function's line to its closing brace.
+  - Nesting counts blocks opened by `if/for/while/switch/try`. `else`, `else if`, `catch` and `finally` stay at the same level.
 
 ```python
-# .claude/bin/hook.py — never ownable; tiny, standard library only, no type annotations (Python 3.9)
-# <root> = CLAUDE_PROJECT_DIR or this file's parents[2]. If <root>/.claude/state/guard/active.json and
-# <root>/.claude/state/guard/bin/agentic.py both exist, target = the frozen agentic.py; else <root>/.claude/bin/agentic.py.
-# sys.argv = [str(target), "hook"]; runpy.run_path(str(target), run_name="__main__")  (run_name is required: the CLI
-# runs under `if __name__ == "__main__"`). It never imports agentic.py at module level. If resolving the target
-# raises, it prints the error on stderr and exits 2 (fails closed, as agentic.py's hook does inside an agent).
+# .claude/bin/agentic.py
+QUALITY_BASELINE = ".claude/quality-baseline.json"     # also appended to NEVER_OWNED
+def quality_module()                                    # sibling("quality")
+def quality_files() -> list                             # source_files() code files (symbol_re), minus the baseline's
+                                                        # exclude; plus .claude/bin/*.py and .claude/workflows/*.js when
+                                                        # is_flow_repo(ROOT). Repo-relative, "/" separators, sorted.
+def quality_state() -> dict | None                      # the baseline; None when missing or foreign
+                                                        # (flow_repo true while not is_flow_repo(ROOT));
+                                                        # {"unreadable": True} when it is not a JSON object
+def quality_phase() -> dict | None                      # None without a baseline; else {"name": "quality",
+                                                        # "command": "agentic.py quality", "exit": 0|3, "passed": bool,
+                                                        # "tail": last 8 lines, "_scan": the violation lines}
+def quality(args) -> int                                # CLI; see AC-004
 ```
-Engines: the first call stays `seq hooks-check + pipeline-plan + briefs` with the live command; a resumed run (`start_wave` set, `--resume`) sends `pipeline-plan --keep-guard` instead. After it, the engine keeps `plan.agentic` and passes it on every later gate call: in `pipeline.py`, `self._gate(cmds, label, self.agentic)` (the Pipeline's `gate` callable gains a third argument, default `"python3 .claude/bin/agentic.py"`); in the JS workflow, `AGENTIC` becomes a variable set from `plan.agentic`. When `plan.maintainer`, the last gate call of the run is `guard-release`, on every exit path once `pipeline-plan` has returned a plan: that includes `briefs` failing in the same first call, and every stop of a later stage. Conformance: both simulated worlds record the command prefix of every gate call after the first (the JS world reads it from the prompt, the Python world from the third argument) as the summary key `gate_prefixes` (the distinct prefixes, in order), compared between engines; existing scenarios have `["python3 .claude/bin/agentic.py"]` and do not otherwise change.
+- `run_phases(manifest)` appends `quality_phase()` when it is not None, after the manifest's phases. It runs in-process, so a frozen guard measures with its frozen `quality.py`.
+- `baseline(manifest)` skips only when there are no `verify` commands **and** `quality_state()` is None.
+- CLI output of `quality`: each violation line followed by its detail line, then one JSON line `{"ok", "files", "functions", "violations", "improvable"}`. `files` and `functions` are the numbers of files and functions measured, `violations` is a number, and `improvable` is a list of strings. Exit codes:
+  - 0: ok;
+  - 3: violations;
+  - with no baseline: prints `{"ok": true, "skipped": "no quality baseline: run agentic.py quality --init"}` and exits 0.
+- `--init`:
+  - writes `initial(...)` and exits 0;
+  - when a non-foreign baseline already exists, it refuses with exit 1, without writing;
+  - a foreign one is replaced.
+- `--update`:
+  - writes `tighten(...)`;
+  - then runs the check and exits with its code;
+  - without a baseline it exits 1.
+- An unreadable baseline (invalid JSON or not an object):
+  - `quality` prints `FAIL quality baseline unreadable: .claude/quality-baseline.json` and exits 3;
+  - `--update` exits 1;
+  - `--init` replaces it;
+  - the verify phase fails with that line.
+- Install prints exactly one of these lines:
+  - `quality baseline: created`;
+  - `quality baseline: kept`;
+  - `quality baseline: replaced (copied from the template)`;
+  - `quality baseline: would be created` (with `--dry-run`, which writes nothing);
+  - `quality baseline: could not be created (<first line of stderr>)`, if the `--init` subprocess fails. This one does not fail the install, mirroring the rules-sync branch at `agentic.py:1420-1427`.
 
 ## 7. Conventions
-- English; no type annotations in `agentic.py` or `hook.py` (they must import on Python 3.9), which contradicts `.claude/rules/agentic/python.md` (annotations on public signatures): the plan wins; messages name the key or the path.
-- `qa/` is not in `verify` (four slots, all taken): WP-04's validation runs it.
-- The frozen copy is never edited: it is replaced by the next `freeze_guard`.
+- English. No type annotations in `agentic.py` or `quality.py`. This contradicts `.claude/rules/agentic/python.md`; the plan wins, for Python 3.9 and the frozen guard.
+- Messages name the path and the metric, with values only on the detail line:
+  - violation: `FAIL function .claude/bin/agentic.py::main exceeds its lines allowance`;
+  - detail: `  .claude/bin/agentic.py::main lines: now 160, allowed 151`.
+- No magic numbers: limits only in `DEFAULT_LIMITS` and the baseline file.
+- The baseline is never edited by an agent. A person loosens it by editing the JSON, which shows in the diff.
 - One commit per WP; no model names.
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-- AC-001 · Maintainer mode exists only in the flow's repo
-  - Scenario: two temp repos with the flow and a plan whose WP owns `.claude/bin/x.py` and has `"maintainer": true`: one with `.claude-plugin/plugin.json` named `agentic-flow` and the template marker on README line 1, one without the marker.
-  - Action: `validate` in each; then the same plan without `"maintainer"`.
-  - Expected: valid in the first; in the second, an error containing "only for the agentic-flow repository"; without the flag, `cannot own '.claude/bin/x.py'` in both.
-  - Must not: accept `"maintainer": "yes"` (non-boolean).
-  - Check: `test_acceptance_v25.py::ValidateTests`
+- AC-001 · Python measurement
+  - Scenario: the source below is measured with `quality.measure_file("m.py", src)`. Its parts:
+    - `def f():` with 3 body lines;
+    - `class C:` containing `def g(self):` with an `if` that holds a `for` that holds a `while`;
+    - `def chain(x):` with `if … elif … elif … else`;
+    - `def outer():` containing `def inner():` with one `if`;
+    - one 130-character line.
+  - Action: `measure_file`.
+  - Expected:
+    - `functions["f"]["lines"] == 4`;
+    - `functions["C.g"]["nesting"] == 3`;
+    - `functions["chain"]["nesting"] == 1`;
+    - `functions["outer"]["nesting"] == 0`;
+    - `functions["outer.inner"]["nesting"] == 1`;
+    - `long_lines == 1`;
+    - `lines` equals the source's line count.
+  - Must not: an `elif` chain must not count as nesting; a nested def must not add to its parent's nesting; a file with a syntax error must not raise (it returns `functions == {}`).
+  - Check: `test_acceptance_v27.MeasureTests`.
   - WP: WP-01
-- AC-002 · Never-owned paths stay nobody's
-  - Scenario: the flow repo, maintainer plan.
-  - Action: `validate` with a WP owning, in turn, `.claude/settings.json`, `.claude/settings.local.json`, `.claude/state/x`, `.claude/bin/hook.py`, `.claude/bin/waiting.py`, `.claude/` and `.claude/bin/`.
-  - Expected: each is refused with a message naming the never-owned path; `architecture.md` and `docs/architecture/x.md` are refused too.
-  - Must not: accept a prefix that contains a never-owned path.
-  - Check: `test_acceptance_v25.py::NeverOwnedTests`
+- AC-002 · JavaScript/TypeScript measurement
+  - Scenario: the JS source below is measured with `measure_file("w.js", src)`. Its parts:
+    - `function a() {` with an `if (x) { … } else if (y) { … } else { … }`;
+    - `const b = async (p) => {` containing a `for` that holds a `try` that holds an `if`;
+    - a class `C` with a method `m() {`;
+    - a template literal and a comment, both containing `{` and `}`;
+    - an anonymous callback `items.map(i => { … })` inside `b`.
+  - Action: `measure_file`.
+  - Expected:
+    - `a`, `b` and `C.m` are present (a method is keyed `Class.method`, as in Python);
+    - `functions["a"]["nesting"] == 1`;
+    - `functions["b"]["nesting"] == 3`;
+    - each function's `lines` runs from its line to its closing brace;
+    - no function named after the callback.
+  - Must not: braces inside strings, template literals or comments must not change any count; `else if` must not add a level.
+  - Check: `test_acceptance_v27.MeasureTests`.
   - WP: WP-01
-- AC-003 · `pipeline-plan` freezes the guard in maintainer mode
-  - Scenario: the flow repo, maintainer plan; then a non-maintainer plan.
-  - Action: `pipeline-plan`.
-  - Expected: maintainer: `"maintainer": true`, `"agentic": "python3 .claude/state/guard/bin/agentic.py"`, the copies and `active.json` exist with the sha256 of each copied file, and no `test_*.py` or `testutil.py` was copied; non-maintainer, run after that: `"maintainer": false`, `"agentic": "python3 .claude/bin/agentic.py"`, and `active.json` is gone.
-  - Must not: print anything but one JSON line on stdout; re-freeze on `pipeline-plan --keep-guard` when a guard is active (after changing the live `agentic.py`, the frozen copy's sha256 in `active.json` is unchanged).
-  - Check: `test_acceptance_v25.py::FreezeTests`
+- AC-003 · Ratchet rules
+  - Scenario: a baseline with the default limits, one baselined function `p.py::big` (90 lines, nesting 5) and one baselined file `p.py` (900 lines, 2 long lines).
+  - Action: `quality.check(baseline, current)` with variations of `current`.
+  - Expected:
+    - **Fails** with one `FAIL …` line naming the path, when any of these happens:
+      - `big` grows to 91 lines or nesting 6;
+      - a new function has 61 lines, or nesting 5;
+      - a new test function (in `test_x.py`) has 101 lines;
+      - `p.py` reaches 931 lines (900 + 30 + 1);
+      - `p.py` has 3 long lines;
+      - a new file has 801 lines or 1 long line.
+    - **Passes** when any of these happens:
+      - `big` stays at 90, or shrinks to 50 lines and nesting 3 (then `improvable` names it);
+      - `p.py` reaches 930 lines;
+      - a new test function has 100 lines and nesting 9.
+    - `tighten` lowers `big` to its current values and never raises any value; it drops an entry once it is within the limits and never adds a new one.
+    - For files, `tighten` lowers the stored `lines` to `min(old, current)`. The +30 margin therefore stays anchored to the lowest size reached.
+  - Must not:
+    - a violation line must not contain a line number or any measured value;
+    - shrinking a function that still violates must not change its violation line;
+    - `tighten` must not raise any value or add an entry.
+  - Check: `test_acceptance_v27.RatchetTests`.
   - WP: WP-01
-- AC-004 · The hook is decided by the frozen guard while it is active
-  - Scenario: the flow repo, maintainer plan, `pipeline-plan` run; then the live `.claude/bin/agentic.py` replaced by a version whose `hook` allows everything.
-  - Action: `python3 .claude/bin/hook.py` with a write payload for a path WP-01 does not own, `AGENTIC_WP=WP-01`; then `guard-release` and the same call.
-  - Expected: while active, exit 2 (blocked) by the frozen copy; after release, the live (permissive) script decides.
-  - Must not: read the live script while the guard is active.
-  - Check: `test_acceptance_v25.py::HookTests`
-  - WP: WP-01
-- AC-005 · Owned `.claude/` paths are writable in maintainer mode only
-  - Scenario: the flow repo; WP-01 owns `.claude/bin/x.py`.
-  - Action: the hook with a write to `.claude/bin/x.py` as WP-01 and to `.claude/settings.json` as WP-01, with and without the flag; `open-stage 1`, edit `.claude/bin/x.py`, one hook call as WP-01, `close-stage 1 WP-01=done`.
-  - Expected: with the flag, the first write passes, the second is blocked naming the never-owned path, and the stage closes OK; without it, both are blocked as today.
-  - Must not: let a write to a never-owned path through.
-  - Check: `test_acceptance_v25.py::OwnershipTests`
-  - WP: WP-01
-- AC-006 · The frozen copy uses its own root and spec
-  - Scenario: a frozen copy; the live `pipeline-spec.json` then changed (its `fix` prompt).
-  - Action: run the frozen `agentic.py` as a subprocess with `CLAUDE_PROJECT_DIR` unset, from the repo root: `validate` (it never freezes); and import it with `importlib.util.spec_from_file_location` (in a subprocess with `CLAUDE_PROJECT_DIR` unset) and call `load_spec()["prompts"]["fix"]`.
-  - Expected: `validate` finds the repo's `architecture.md` (exit 0); `load_spec` returns the frozen prompt, not the changed one.
-  - Must not: resolve `ROOT` to `.claude/state`.
-  - Check: `test_acceptance_v25.py::FrozenCopyTests`
-  - WP: WP-01
-- AC-007 · Both engines use the frozen command and release it
-  - Scenario: the conformance scenarios "maintainer run uses the frozen guard" (plan with `"maintainer": true`, `"agentic"` the frozen command), "maintainer run whose briefs fail still releases the guard" (same plan, `gate_fail` on `briefs`), "a resumed maintainer run keeps the guard" (`start_wave` 1), and the happy path.
-  - Action: run both through the Python and the Node runners.
-  - Expected: in the maintainer scenario `gate_prefixes` is `["python3 .claude/state/guard/bin/agentic.py"]` and the last gate is `guard-release`; when briefs fail, the gates are the first `seq` and then `guard-release`; the resumed run's first gate contains `pipeline-plan --keep-guard`; in the happy path `gate_prefixes` is `["python3 .claude/bin/agentic.py"]` and the gates are unchanged; both engines' summaries agree on `gates` and `gate_prefixes`.
-  - Must not: freeze or release in a non-maintainer run.
-  - Check: `test_acceptance_v25.py::EnginesTests`
-  - WP: WP-03
-- AC-008 · Install ships the launcher and migrates the hook
-  - Scenario: a project installed with 2.4.1 (old hook command).
-  - Action: `install` from this tree.
-  - Expected: `.claude/bin/hook.py` exists; `settings.json` has one flow PreToolUse entry whose command is `python3 "$CLAUDE_PROJECT_DIR/.claude/bin/hook.py"`, with the project's matcher and timeout kept; `hooks-check` (static) passes; the permission `Bash(python3 .claude/state/guard/bin/agentic.py:*)` is present; `gatekeeper.md` accepts both prefixes.
-  - Must not: leave two flow hook entries.
-  - Check: `test_acceptance_v25.py::InstallTests`
+- AC-004 · The `quality` command
+  - Scenario: a temporary git repo (the `Repo` helper of `test_agentic.py`; it is not the flow's repo) with `src/a.py`, which holds `def big():` of 80 lines and `def small():` of 5.
+  - Action: run `agentic.py quality`, then `quality --init`, then `quality` again, then grow `big` to 90 lines and run `quality`, then shrink it to 70 and run `quality --update`.
+  - Expected:
+    - The first `quality` exits 0 and its JSON has `"skipped"`.
+    - `--init` exits 0 and writes `.claude/quality-baseline.json` with `"flow_repo": false` and `src/a.py::big` at 80 lines. A second `--init` exits 1 and leaves the file byte-identical.
+    - After the growth, `quality` exits 3 and prints `FAIL` lines containing `src/a.py`. Its last line is JSON with `"ok": false`.
+    - After the shrink, `--update` exits 0 and the baseline records `src/a.py::big` with `lines == 70`.
+    - A baseline with `"flow_repo": true` in this non-flow repo is treated as absent: `quality` reports `"skipped"`.
+  - Must not:
+    - `quality` without flags must not write the baseline;
+    - `--update` must not raise a value;
+    - `.claude/` files of an installed project must not be measured outside the flow's repo.
+  - Check: `test_acceptance_v27.CommandTests`.
   - WP: WP-02
-- AC-009 · Release 2.5.0
-  - Scenario: the repository after the change.
-  - Action: read `plugin.json`, `upgrade.NOTES`, the docs and the roadmap.
-  - Expected: version `2.5.0`; `NOTES["2.5.0"]` has at least two notes, one naming `hook.py` and `settings.json`, one naming `maintainer`; `docs/how-it-works.md` §4 mentions the frozen guard; the hub's script reference lists `guard-release`; the roadmap line starting "- The flow cannot implement itself" contains "Shipped in 2.5.0"; earlier note counts unchanged.
-  - Must not: hard-code a version in the hub or README.
-  - Check: `test_acceptance_v25.py::ReleaseTests`
-  - WP: WP-04
+- AC-005 · Quality as a verify phase
+  - Scenario: a temporary repo with a manifest whose WP-01 owns `src/a.py`, verify `tests` = a passing command, and a committed quality baseline.
+  - Action:
+    1. Run `baseline`.
+    2. Make a function in `src/a.py` exceed 60 lines.
+    3. Run `verify`.
+    4. Separately: a repo whose code already violated the baseline before `baseline` ran, then `verify` with nothing changed.
+    5. Separately: a manifest with no `verify` key but a quality baseline, then `baseline`.
+  - Expected:
+    - After step 3, `verify` exits 3. Its JSON has a phase `quality` with status `regression` (or `fails`), `blocking` includes `"quality"`, and `suspects` has `WP-01` with `src/a.py`.
+    - In the pre-existing case the quality phase has status `pre-existing failure` and does not block.
+    - With no `verify` key, `baseline` runs the quality phase instead of printing `"skipped": true`.
+  - Must not: a repo without a quality baseline must not get a quality phase (the phase list is unchanged from today).
+  - Check: `test_acceptance_v27.VerifyTests`.
+  - WP: WP-02
+- AC-006 · Agents cannot loosen the ratchet
+  - Scenario: the flow's guardrails.
+  - Action:
+    - `never_owned_problem(".claude/quality-baseline.json")`;
+    - the hook with an agent (`AGENTIC_WP=WP-01`) running `python3 .claude/bin/agentic.py quality --update`, `… quality --init` and `… quality`;
+    - the same three from the main session.
+  - Expected:
+    - `never_owned_problem` returns a message;
+    - the agent's `--update` and `--init` exit 2;
+    - the agent's plain `quality` exits 0;
+    - the main session's three all exit 0.
+  - Must not: a maintainer-mode manifest that owns `.claude/quality-baseline.json` must not validate.
+  - Check: `test_acceptance_v27.GuardTests`.
+  - WP: WP-02
+- AC-007 · Install ships it and starts the ratchet
+  - Scenario: `agentic.py install <target>` into a clean git repo with one code file `main.py`. Also run it into a repo that already has a non-foreign baseline, and into one whose baseline has `"flow_repo": true`.
+  - Action: install.
+  - Expected:
+    - `.claude/bin/quality.py` exists in the target.
+    - A missing baseline is created (`"flow_repo": false`, and `quality` on the target exits 0), and the output says `quality baseline: created`.
+    - An existing non-foreign baseline is kept byte-identical.
+    - A foreign one is replaced by a fresh one with `"flow_repo": false`.
+  - Must not: install must not overwrite a project's own baseline; `--dry-run` must not write one.
+  - Check: `test_acceptance_v27.InstallTests`.
+  - WP: WP-02
+- AC-008 · CI and release
+  - Scenario: this repository after all WPs.
+  - Action: read the files.
+  - Expected:
+    - `.github/workflows/agentic-flow-ci.yml` has a step whose `run` contains `python .claude/bin/agentic.py quality`. That is `python`, like the file's other steps: `python3` may be missing on the Windows runner.
+    - `upgrade.NOTES["2.7.0"]` exists, has at least one note, and its text mentions `quality-baseline.json` and `verify`.
+    - The README's Guardrails table has a row whose text contains `quality`.
+    - The hub's script reference contains `quality --init` and stays ≤ 260 lines.
+  - Must not:
+    - the hub must not exceed 260 lines;
+    - no test may assert the plugin's version (the single version check is `test_definitions.PluginTests.test_the_version_has_its_upgrade_note`).
+  - Check: `test_acceptance_v27.ReleaseTests`.
+  - WP: WP-03
 
 ### Work packages
-#### WP-01 · Maintainer mode and the frozen guard in `agentic.py`
+#### WP-01 · `quality.py`: measurement and ratchet
 - Wave: 1.
-- Files: `.claude/bin/agentic.py`, `.claude/bin/test_agentic.py`, `.claude/bin/hook.py` (it ships in `INSTALL_GLOBS` in the same wave, so `test_definitions.py:397-402` stays green).
-- ACs: AC-001, AC-002, AC-003, AC-004, AC-005, AC-006.
-- **Patterns to mirror:** `agentic.py:408-416`, `:683-687`, `:2262-2270`, `:1657-1667`, `:1620-1626` (the pipeline's `gate` closure), `test_agentic.py:1087-1130` (install tests), the `Repo` helper (`test_agentic.py:42-70`), `.claude/bin/waiting.py` (a small hook script).
-- **Gotchas:** `FROZEN` must be computed before `ROOT`; `sibling()` already imports from the script's folder, so a frozen copy imports frozen siblings. `pipeline_plan` must keep stdout one JSON line (freeze silently). `run_steps` is also used by `seq`, which never passes `script`. `guard-release` goes into the CLI dispatch, `SEQ_COMMANDS` and the module docstring (`agentic.py:20-51`), so `test_cited_commands_exist` accepts it in the docs. Never write into `GUARD_DIR` from a WP context (the hook already blocks `.claude/state/`).
-- **WP validation:** `python3 -m unittest discover -s .claude/bin -p "test_agentic.py"`, `python3 -m unittest discover -s .claude/bin -p "test_definitions.py"`, and from `.claude/bin`: `python3 -m unittest test_acceptance_v25.ValidateTests test_acceptance_v25.NeverOwnedTests test_acceptance_v25.FreezeTests test_acceptance_v25.HookTests test_acceptance_v25.OwnershipTests test_acceptance_v25.FrozenCopyTests`.
+- Files: `.claude/bin/quality.py`, `.claude/bin/test_quality.py`.
+- Contracts: implements `quality.py` of section 6; consumes nothing.
+- ACs: AC-001, AC-002, AC-003.
+- **Patterns to mirror:** `brief.py:1-40` (module docstring, constants, small pure functions); `agentic.py:1061-1062` (how extensions map to languages).
+- **Gotchas:**
+  - Use `getattr(ast, "Match", ())`, because `ast.Match` does not exist on 3.9.
+  - `end_lineno` exists from 3.8.
+  - Decode files with `errors="replace"`.
+  - The JS scanner must handle `\` escapes and `${…}` inside templates, at least by skipping the whole template. A regex literal containing `{` is a known heuristic limit: document it in the module docstring rather than parsing regexes.
+  - Keep every function in `quality.py` within its own limits (≤ 60 lines, nesting ≤ 4): the flow's baseline will measure this file.
+  - The violation/detail split exists so that a pre-existing violation whose value changes is not read as a new failure by `verify`'s textual comparison. Keep values out of `FAIL` lines.
+- **Exact imports:** `ast`, `fnmatch`, `json`, `re`, `pathlib.Path`.
+- **WP validation:** `python3 -m unittest discover -s .claude/bin -p "test_quality.py"`; from `.claude/bin`: `python3 -m unittest test_acceptance_v27.MeasureTests test_acceptance_v27.RatchetTests`.
 
-#### WP-02 · Settings and the gatekeeper
-- Wave: 2 (it needs WP-01's `hook.py`, `flow_hooks` and `merge_settings`).
-- Files: `.claude/settings.json`, `.claude/bin/test_definitions.py`, `.claude/agents/gatekeeper.md`.
+#### WP-02 · Wire it into `agentic.py`
+- Wave: 2, after WP-01. Its acceptance and unit tests run the real `quality.py`, so it consumes WP-01 by implementation.
+- Files: `.claude/bin/agentic.py`, `.claude/bin/test_agentic.py`.
+- Contracts: implements `agentic.py` of section 6; consumes `quality.py` by signature.
+- ACs: AC-004, AC-005, AC-006, AC-007.
+- **Patterns to mirror:**
+  - `agentic.py:1618-1629` (`sibling`);
+  - `agentic.py:1866-1876` (`run_phases`);
+  - `agentic.py:1899-1918` (`baseline`);
+  - `agentic.py:1397-1418` (install's create-if-missing);
+  - `agentic.py:192-201` (`FORBIDDEN_BASH`);
+  - `agentic.py:110-111` (`NEVER_OWNED`);
+  - `test_agentic.py:43-74` (`Repo`);
+  - `test_agentic.py:1267-1290` (hook Bash tests).
+- **Gotchas:**
+  - `install` must measure the **target**: run `quality --init` through a subprocess of this version's `agentic.py` with `CLAUDE_PROJECT_DIR=<target>`, as `rules-sync` already does at `agentic.py:1420-1425`. Do not reuse this process's `ROOT`.
+  - In `--dry-run` nothing is written.
+  - The `FORBIDDEN_BASH` regex must match `quality` followed by `--init` or `--update` anywhere in the arguments, and must not match plain `quality`.
+  - `quality_phase` must not raise: an unreadable baseline gives a failing phase with one `FAIL quality baseline unreadable` line.
+  - Add `quality` to the module docstring and to `INSTALL_GLOBS`.
+  - `main()` and `install()` are already over 60 lines and baselined. Keep the added dispatch to one `elif` that calls `quality(args)`, and put the install logic in a helper. Otherwise the flow's own ratchet fails when the baseline is created after this WP.
+- **Exact imports:** none new beyond `quality_module()`.
+- **WP validation:** `python3 -m unittest discover -s .claude/bin -p "test_agentic.py"`; from `.claude/bin`: `python3 -m unittest test_acceptance_v27.CommandTests test_acceptance_v27.VerifyTests test_acceptance_v27.GuardTests test_acceptance_v27.InstallTests`.
+
+#### WP-03 · CI, release and docs
+- Wave: 3 (it needs the command to exist: the docs cite `quality --init`, which `test_cited_commands_exist` checks).
+- Files: `.github/workflows/agentic-flow-ci.yml`, `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, `README.md`, `docs/how-to/README.md`, `docs/how-it-works.md`.
+- Contracts: none.
 - ACs: AC-008.
-- **Patterns to mirror:** `test_definitions.py:305-316`, `.claude/agents/gatekeeper.md:16`.
-- **Gotchas:** keep the matcher and the 900 s timeout of the PreToolUse entry; only the command changes.
-- **WP validation:** `python3 -m unittest discover -s .claude/bin -p "test_definitions.py"`, the AC-008 class.
-
-#### WP-03 · Both engines
-- Wave: 1 (it consumes `plan.agentic` and `plan.maintainer` by signature; the simulated worlds fake them).
-- Files: `.claude/workflows/agentic-implement.js`, `.claude/bin/pipeline.py`, `.claude/bin/conformance.json`, `.claude/bin/test_pipeline.py`, `.claude/bin/test_workflow.mjs`.
-- ACs: AC-007.
-- **Patterns to mirror:** `agentic-implement.js:139-160` (`gate`, `seq`), `pipeline.py:232-245` (`prepare`), the conformance scenario format (`conformance.json`, any scenario with a `plan` override).
-- **Gotchas:** `AGENTIC` becomes a variable set after `prepare`; the `guard-release` call must run on every exit path after `prepare` (wrap the rest of the run). The simulated worlds return exit 0 for unknown commands, so `guard-release` needs no stub. The Python world's `gate` (`test_pipeline.py:28-60`) gains the third argument and records it; the JS world (`test_workflow.mjs:40-60`) reads the prefix before `agentic.py ` in the prompt.
-- **WP validation:** `node .claude/bin/test_workflow.mjs`, `python3 -m unittest discover -s .claude/bin -p "test_pipeline.py"`, the AC-007 class.
-
-#### WP-04 · Version, notes and docs
-- Wave: 2 (the docs cite `guard-release`, which must exist: `test_cited_commands_exist`).
-- Files: `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, the seven version-pin test files, `docs/how-it-works.md`, `docs/how-to/README.md`, `docs/roadmap/repo-review-2026-11.md`.
-- ACs: AC-009.
-- **Gotchas:** the hub is capped at 260 lines: add `guard-release` by merging with an existing line if it is at the cap.
-- **WP validation:** `python3 -m unittest discover -s .claude/bin -p "test_acceptance_*.py"`, `python3 -m unittest discover -s acceptance`, `python3 -m unittest discover -s qa`.
+- **Patterns to mirror:** `upgrade.py:58-75` (a release's notes); the CI file's existing `- name:` / `run:` steps.
+- **Gotchas:**
+  - The hub is at its 260-line cap: merge the new script-reference line into an existing one.
+  - `docs/how-it-works.md:312` lists the files of `.claude/bin`: add `quality.py` there.
+  - `bench/acceptance/test_acceptance_bench.py:400-411` (`CiTests.test_ac_007_ci`) asserts on the CI file's content: run the bench suites after editing it.
+  - `qa/test_qa_docs.py` requires every Guardrails row to have two non-empty cells.
+  - The version is `2.7.0`, and `upgrade.NOTES["2.7.0"]` must exist: `test_the_version_has_its_upgrade_note`.
+  - The CI step goes after the guardrails tests, on every matrix entry, and uses `python`, like the existing steps.
+  - The baseline file is not this WP's: the maintainer creates it (section 9).
+- **WP validation:** `python3 -m unittest discover -s .claude/bin -p "test_*.py"`, `python3 -m unittest discover -s acceptance`, `python3 -m unittest discover -s qa`, `python3 -m unittest discover -s bench -p "test_*.py"`, `python3 -m unittest discover -s bench/acceptance`.
 
 ```json wp-manifest
 {
+  "maintainer": true,
   "stack": ["python", "typescript"],
   "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(node .claude/bin/test_workflow.mjs)"],
-  "acceptance": {"files": [".claude/bin/test_acceptance_v25.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v25.py"},
-  "verify": {"build": "python3 -m compileall -q .claude/bin", "lint": "node .claude/bin/test_workflow.mjs", "types": "python3 -m unittest discover -s acceptance", "tests": "python3 -m unittest discover -s .claude/bin -p \"test_*.py\""},
+  "acceptance": {"files": [".claude/bin/test_acceptance_v27.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v27.py"},
+  "verify": {"build": "python3 -m unittest discover -s qa", "lint": "node .claude/bin/test_workflow.mjs", "types": "python3 -m unittest discover -s acceptance", "tests": "python3 -m unittest discover -s .claude/bin -p \"test_*.py\""},
   "docs": {"files": ["docs/assets/"], "codemap": null},
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/agentic.py", ".claude/bin/test_agentic.py", ".claude/bin/hook.py"],
-     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006"], "mirror": [".claude/bin/agentic.py:408-416", ".claude/bin/agentic.py:683-687", ".claude/bin/agentic.py:2262-2270", ".claude/bin/agentic.py:1657-1667", ".claude/bin/agentic.py:1620-1626", ".claude/bin/waiting.py"]},
-    {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/settings.json", ".claude/bin/test_definitions.py", ".claude/agents/gatekeeper.md"],
-     "acs": ["AC-008"], "mirror": [".claude/bin/test_definitions.py:305-316", ".claude/agents/gatekeeper.md:16"]},
-    {"id": "WP-03", "wave": 1, "depends_on": [], "files": [".claude/workflows/agentic-implement.js", ".claude/bin/pipeline.py", ".claude/bin/conformance.json", ".claude/bin/test_pipeline.py", ".claude/bin/test_workflow.mjs"],
-     "acs": ["AC-007"], "mirror": [".claude/workflows/agentic-implement.js:139-160", ".claude/bin/pipeline.py:232-245"]},
-    {"id": "WP-04", "wave": 2, "depends_on": ["WP-01"], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", ".claude/bin/test_acceptance_upgrade.py", ".claude/bin/test_acceptance_v2.py", ".claude/bin/test_acceptance_v21.py", ".claude/bin/test_acceptance_v22.py", ".claude/bin/test_acceptance_v23.py", ".claude/bin/test_acceptance_v24.py", ".claude/bin/test_acceptance_v241.py", "docs/how-it-works.md", "docs/how-to/README.md", "docs/roadmap/repo-review-2026-11.md"],
-     "acs": ["AC-009"], "mirror": [".claude/bin/upgrade.py:58-75"]}
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/quality.py", ".claude/bin/test_quality.py"],
+     "acs": ["AC-001", "AC-002", "AC-003"], "mirror": [".claude/bin/brief.py:1-40", ".claude/bin/agentic.py:1061-1062"]},
+    {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/agentic.py", ".claude/bin/test_agentic.py"],
+     "acs": ["AC-004", "AC-005", "AC-006", "AC-007"], "mirror": [".claude/bin/agentic.py:1618-1629", ".claude/bin/agentic.py:1866-1876", ".claude/bin/agentic.py:1899-1918", ".claude/bin/agentic.py:1397-1418", ".claude/bin/agentic.py:192-201", ".claude/bin/test_agentic.py:43-74", ".claude/bin/test_agentic.py:1267-1290"]},
+    {"id": "WP-03", "wave": 3, "depends_on": ["WP-02"], "files": [".github/workflows/agentic-flow-ci.yml", ".claude-plugin/plugin.json", ".claude/bin/upgrade.py", "README.md", "docs/how-to/README.md", "docs/how-it-works.md"],
+     "acs": ["AC-008"], "mirror": [".claude/bin/upgrade.py:58-75"]}
   ]
 }
 ```
 
 ## 9. Test strategy
-- Acceptance: `.claude/bin/test_acceptance_v25.py`, AC-001…AC-009, written first and red. Temp repos built like `test_agentic.Repo`, with `plugin.json` and the README marker written by the test; the hook driven through `hook.py` with payloads; the engines through `test_pipeline.run_scenario` and the Node dump.
-- Regression: every suite; the existing conformance scenarios must not change.
-- After merging, by hand: `flow-history`, release 2.5.0, `install` in the projects (their `settings.json` changes: the hook command).
-- First real use: the next plan that changes the flow, with `"maintainer": true`, through `/implement` (fallback in a cloud session).
-- This plan itself owns `.claude/` paths without the mode: today's `validate`, `briefs`, `pipeline-plan` and `verify` refuse its manifest, so it runs entirely by hand.
+- Unit: WP-01 in `test_quality.py` (pure functions, inline sources); WP-02 in `test_agentic.py` (the `Repo` helper, real subprocesses, no network).
+- Acceptance: `.claude/bin/test_acceptance_v27.py`, written before the code, red today (the module and the command do not exist). Test names start with `test_ac_00N_`, so failures are attributed by criterion.
+- The flow's own ratchet, a maintainer step outside the WPs: after WP-02 the maintainer runs `python3 .claude/bin/agentic.py quality --init`, reviews the baseline, and checks that it has an entry for `.claude/bin/agentic.py::main` and that `quality` exits 0. It is committed in the same pull request. Until it exists, CI's `quality` reports `skipped` and exits 0. This plan is executed by hand, so no pause between waves is needed.
+- Existing suites must stay green: `.claude/bin`, `test_workflow.mjs`, `acceptance`, `qa`, `bench`, `bench/acceptance`.
 
 ## 10. Decisions
-- **D1 · Frozen guard (user's choice):** the agents may change the guard; the run is watched by the copy taken at its start. Discarded: never-ownable `agentic.py` (most changes touch it).
-- **D2 · Flag plus the flow's own repo (user's choice):** `plugin.json` named agentic-flow and the README template marker, which template copies lose on their first push.
-- **D3 · Named paths except a fixed list (user's choice):** `settings.json`, `settings.local.json`, `.claude/state/` and the launcher stay nobody's even in maintainer mode, so an agent can neither reroute the hook nor touch the frozen copy.
-- **D4 · A launcher in every project:** the hook command must point at a file the run never lets an agent edit. Shipping it everywhere keeps one settings layout; for projects it only runs `agentic.py hook`.
-- **D5 · Release on every exit:** a leftover `active.json` would keep using a stale guard; `pipeline-plan` re-freezes at the next run anyway, and `guard-release` can be run by hand.
-- **D7 · `docs.files` is `docs/assets/`:** a placeholder zone outside every WP (the default would overlap WP-04, which owns the docs this change needs); the doc-updater has nothing to do in a by-hand run.
-- **D6 · 2.5.0:** projects' `settings.json` changes (the hook command) and a new file ships.
+- **Ratchet with a committed baseline** (user's choice), not hard limits now (that would force refactoring five functions first) and not advisory only (it does not stop anything).
+- **Scope:** this repo and projects (user's choice). In projects it is a `verify` phase, so attribution and fix cycles work as for any failing phase. The alternative was a manifest `verify.quality` command, but the four phase slots are fixed and a command could point at an unfrozen script.
+- **Oversized files:** they may grow at most 30 lines over their **lowest** recorded size (user's choice). The alternatives were "no growth" and "no file check".
+- **Tests count, with their own limits** (user's choice): function length 100, no nesting check, same file and line limits.
+- **Limits 60 / 4 / 800 / 120** (user's choice); per-repo in the baseline file.
+- **In-process phase**, not a subprocess command: a maintainer run's frozen guard then measures with its frozen `quality.py` (the 0012 design), and the phase cannot be redirected by editing a command string.
+- **The baseline is never owned, and its writing commands are blocked for agents.** Loosening is a person editing JSON, visible in review. The stage fingerprint check would also catch an agent writing it.
+- **Foreign baselines** (`flow_repo: true` outside the flow's repo) are ignored and replaced by install. Template copies inherit the flow's file, which describes the flow's code, not theirs.
+- **The flow's own `.claude/` code** is measured only in the flow's repo. In projects it is installed code, not theirs to keep clean.
+- **No line numbers in failure lines**, so moving a function does not read as a new failure in the baseline comparison.
+- **Reuse:** `source_files`, `symbol_re`, `sibling`, `attribute`, the baseline/verify comparison and the install pattern. No new dependency (ruff/radon/eslint rejected: projects may not have them, and the flow is stdlib-only).
+- **The JS/TS metric is a heuristic** (no stdlib JS parser). Accepted limits are documented in `quality.py`.
 
 ## 11. Risks and open questions
-- **Agent definitions are read live:** a package that edits `reviewer.md` changes the reviewer of the same run. The frozen guard does not cover `.claude/agents/`. The commit gate (a person) is the control; a plan that changes agent files should say so in its section 11.
-- **Regex Bash rules:** a determined agent could delete `active.json` through Bash; the hook's Bash rules stop mistakes, not intent (as documented today), and `close-stage` does not watch `.claude/state/`.
-- **The native workflow's prompts are fixed at launch** (the Workflow tool loads the script then), and the fallback loads the spec into memory before the freeze (`agentic.py:1611`): both runs keep their starting prompts either way.
-- **A resumed maintainer run** executes the live (possibly agent-edited) `pipeline-plan --keep-guard` once, in its first call, before the engines switch to the frozen command. An edited `pipeline_plan` could ignore the flag. Residual risk, accepted: the commit gate is the control, and a fresh run (not a resume) avoids it.
-- **A crash between freeze and release** leaves the guard active: the next `pipeline-plan` replaces it; `hooks-check` should not be affected (it does not read the guard).
-- **Settings migration:** projects that edited their hook entry keep their matcher and timeout; only the command changes.
+- The JS heuristic may misread unusual syntax: regex literals with braces, or JSX with braces in text. The effect is a wrong count on such a function; the ratchet then compares like with like, so a stable misreading does not cause false failures.
+- `main()` grows by one `elif` per new CLI command. Once frozen in the baseline, the next command will fail the ratchet unless something shrinks first. This is intended (it pushes the dispatch to a table), but the next feature pays for it.
+- First run in a project: `install` creates the baseline from the current code, so nothing fails until someone makes it worse.
+- Rollback: delete `.claude/quality-baseline.json`. Without it there is no phase and the command reports `skipped`.
+- This run is a maintainer run, so it is judged by the frozen pre-change guard: neither the quality phase nor the new Bash rule protects this run itself. They protect the next ones.
+- The manifest's `stack` keeps `typescript` for the rules of `agentic-implement.js`, although no WP writes JS. The `docs` zone (`docs/assets/`) holds no file this plan changes; WP-03 owns the README and docs it edits.
+- `quality.py` is not added to `FLOW_MODULES` in the frozen `test_acceptance_portable.py`. `test_quality.py` covers reading with `errors="replace"` instead, so no frozen acceptance file is edited.
+- Not measured: run time on large repos. `ast` parsing is fast for this repo (not timed), but a monorepo with thousands of files is untested.
