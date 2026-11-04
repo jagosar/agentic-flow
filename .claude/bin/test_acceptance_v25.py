@@ -341,7 +341,7 @@ class InstallTests(Case):
 class ReleaseTests(unittest.TestCase):
     def test_ac_009_version_notes_docs(self):
         read = lambda rel: (ROOT / rel).read_text(encoding="utf-8")  # noqa: E731
-        self.assertEqual(json.loads(read(".claude-plugin/plugin.json"))["version"], "2.5.0")
+        self.assertEqual(json.loads(read(".claude-plugin/plugin.json"))["version"], "2.6.0")
         notes = upgrade.NOTES["2.5.0"]
         self.assertGreaterEqual(len(notes), 2)
         joined = " ".join(notes)

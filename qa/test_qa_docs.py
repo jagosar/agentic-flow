@@ -92,7 +92,7 @@ class Conventions(unittest.TestCase):
         pieces = t.split("## What's inside")[1].split("## Guardrails")[0]
         guard = t.split("## Guardrails")[1].split("## Documentation")[0]
         rows = lambda s: [l for l in s.splitlines() if l.startswith("|") and not l.startswith("|---")][1:]
-        self.assertEqual(len(rows(pieces)), 12)
+        self.assertEqual(len(rows(pieces)), 13)  # 2.6.0 adds /red-green-proof
         self.assertEqual(len(rows(guard)), 17)
 
     def test_hub_does_not_repeat_pieces_table(self):
