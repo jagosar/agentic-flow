@@ -86,6 +86,10 @@ NOTES = {
         "For a bug: verify the cause, write a test that fails on the current code, fix it, then revert the fix and "
         "watch the test fail again before restoring it. Nothing in the flow's stages changes.",
     ],
+    "2.6.1": [
+        "test_definitions.py no longer fails in a project: its check that every skill is listed and credited in the "
+        "README ran against the project's README and the project's own skills; it now runs only in the flow's repo.",
+    ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
         "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "
