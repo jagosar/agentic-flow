@@ -1,6 +1,6 @@
 """Acceptance tests of delivery A of the Windows design (portable internals, no visible change), AC-001..AC-012.
 
-They run on every system of the CI matrix (Linux, macOS, Windows with Git for Windows); locally, on Linux.
+They run on every system of the CI matrix (Linux, Windows with Git for Windows); locally, on Linux.
 Run: python3 -m unittest discover -s .claude/bin -p test_acceptance_portable.py
 """
 import ast
