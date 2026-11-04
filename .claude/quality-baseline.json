@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "flow_repo": true,
+  "limits": {
+    "function_lines": 60,
+    "test_function_lines": 100,
+    "nesting": 4,
+    "file_lines": 800,
+    "file_growth": 30,
+    "line_chars": 120
+  },
+  "exclude": [],
+  "files": {
+    ".claude/bin/agentic.py": {
+      "lines": 2790,
+      "long_lines": 51
+    },
+    ".claude/bin/hook.py": {
+      "lines": 34,
+      "long_lines": 1
+    },
+    ".claude/bin/pipeline.py": {
+      "lines": 567,
+      "long_lines": 30
+    },
+    ".claude/bin/test_acceptance.py": {
+      "lines": 311,
+      "long_lines": 10
+    },
+    ".claude/bin/test_acceptance_portable.py": {
+      "lines": 282,
+      "long_lines": 1
+    },
+    ".claude/bin/test_acceptance_upgrade.py": {
+      "lines": 261,
+      "long_lines": 7
+    },
+    ".claude/bin/test_acceptance_v2.py": {
+      "lines": 189,
+      "long_lines": 4
+    },
+    ".claude/bin/test_acceptance_v21.py": {
+      "lines": 298,
+      "long_lines": 4
+    },
+    ".claude/bin/test_acceptance_v22.py": {
+      "lines": 183,
+      "long_lines": 1
+    },
+    ".claude/bin/test_acceptance_v23.py": {
+      "lines": 280,
+      "long_lines": 3
+    },
+    ".claude/bin/test_acceptance_v24.py": {
+      "lines": 302,
+      "long_lines": 1
+    },
+    ".claude/bin/test_acceptance_v241.py": {
+      "lines": 103,
+      "long_lines": 1
+    },
+    ".claude/bin/test_acceptance_waiting.py": {
+      "lines": 192,
+      "long_lines": 3
+    },
+    ".claude/bin/test_agentic.py": {
+      "lines": 1849,
+      "long_lines": 48
+    },
+    ".claude/bin/test_definitions.py": {
+      "lines": 492,
+      "long_lines": 7
+    },
+    ".claude/bin/test_pipeline.py": {
+      "lines": 366,
+      "long_lines": 18
+    },
+    ".claude/bin/test_upgrade.py": {
+      "lines": 196,
+      "long_lines": 4
+    },
+    ".claude/bin/test_waiting.py": {
+      "lines": 119,
+      "long_lines": 2
+    },
+    ".claude/bin/testutil.py": {
+      "lines": 132,
+      "long_lines": 1
+    },
+    ".claude/bin/upgrade.py": {
+      "lines": 242,
+      "long_lines": 7
+    },
+    ".claude/workflows/agentic-implement.js": {
+      "lines": 562,
+      "long_lines": 69
+    },
+    "acceptance/test_docs_ab.py": {
+      "lines": 102,
+      "long_lines": 1
+    },
+    "bench/acceptance/test_acceptance_bench.py": {
+      "lines": 460,
+      "long_lines": 1
+    },
+    "bench/bench.py": {
+      "lines": 983,
+      "long_lines": 11
+    },
+    "bench/fixtures/vault/reference/bad/vault/catalogue.py": {
+      "lines": 22,
+      "long_lines": 1
+    },
+    "bench/fixtures/vault/reference/good/vault/catalogue.py": {
+      "lines": 23,
+      "long_lines": 1
+    },
+    "bench/test_bench.py": {
+      "lines": 449,
+      "long_lines": 3
+    },
+    "docs/assets/make_flow_gif.py": {
+      "lines": 413,
+      "long_lines": 2
+    },
+    "docs/assets/make_screens.py": {
+      "lines": 235,
+      "long_lines": 6
+    },
+    "qa/test_qa_docs.py": {
+      "lines": 215,
+      "long_lines": 4
+    },
+    "qa/test_qa_fixtures.py": {
+      "lines": 225,
+      "long_lines": 7
+    },
+    "qa/test_qa_quality.py": {
+      "lines": 139,
+      "long_lines": 1
+    }
+  },
+  "functions": {
+    ".claude/bin/agentic.py::guard": {
+      "lines": 70,
+      "nesting": 3
+    },
+    ".claude/bin/agentic.py::install": {
+      "lines": 116,
+      "nesting": 3
+    },
+    ".claude/bin/agentic.py::main": {
+      "lines": 153,
+      "nesting": 3
+    },
+    ".claude/bin/agentic.py::validate": {
+      "lines": 93,
+      "nesting": 4
+    },
+    ".claude/bin/pipeline.py::Pipeline.judge": {
+      "lines": 96,
+      "nesting": 4
+    },
+    ".claude/workflows/agentic-implement.js::runAfterPlan": {
+      "lines": 150,
+      "nesting": 3
+    }
+  }
+}

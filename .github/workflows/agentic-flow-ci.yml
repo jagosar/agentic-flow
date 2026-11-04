@@ -67,6 +67,9 @@ jobs:
           suite bench/acceptance python -m unittest discover -s bench/acceptance -v
           suite acceptance python -m unittest discover -s acceptance -v
           suite qa python -m unittest discover -s qa -v
+      # The clean-code ratchet: nothing may get worse than .claude/quality-baseline.json (skipped without one).
+      - name: Clean-code ratchet
+        run: python .claude/bin/agentic.py quality
       # The failures as one annotation, readable on the pull request and through the API without the full log.
       - name: Failures as an annotation
         if: failure()

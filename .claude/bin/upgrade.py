@@ -90,6 +90,17 @@ NOTES = {
         "test_definitions.py no longer fails in a project: its check that every skill is listed and credited in the "
         "README ran against the project's README and the project's own skills; it now runs only in the flow's repo.",
     ],
+    "2.7.0": [
+        "A clean-code ratchet: install creates .claude/quality-baseline.json from your code as it is (commit it), and "
+        "verify gains a quality phase that fails when a function gets longer or deeper, a file grows, or long lines "
+        "are added, against that baseline (limits: 60-line functions, 100 in tests, nesting 4, 800-line files, "
+        "120 characters). A package that makes the code worse is sent back. Lower the baseline with "
+        "`agentic.py quality --update`; to accept something worse on purpose, edit the JSON by hand. "
+        "Agents cannot write it.",
+        "The hook no longer blocks commands that only mention a path such as .claude/bin next to a -p flag "
+        "(unittest's). Maintainer mode (2.5.0) works for runs by hand only: Claude Code protects .claude/ from agents "
+        "started with claude -p, and allow rules do not lift it.",
+    ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
         "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "

@@ -232,7 +232,9 @@ The hook's Bash rules are regular expressions: they stop mistakes, not a determi
 - a commit or ref change, or a change to git's own `config`, hooks or excludes, or to the baseline;
 - a secret, an unconditional test skip or a relaxed quality configuration added during the stage (compared with each file's content when the stage opened, so a fixture that was already there is not blamed).
 
-**Maintainer mode** lets the flow change itself, in the agentic-flow repository only. A plan with `"maintainer": true` may give packages files under `.claude/`, except the settings, `.claude/state/` and the two hook scripts. `pipeline-plan` then copies the guard (the non-test scripts and the pipeline spec) into `.claude/state/guard/`, and until the run ends the hook, `close-stage` and every other gate call run that frozen copy, so a package that edits `agentic.py` is still judged by the guard the run started with. A resumed run keeps the copy; both engines call `guard-release` on the way out, and any normal run releases a copy left behind.
+**Maintainer mode** lets the flow change itself, in the agentic-flow repository only. A plan with `"maintainer": true` may give packages files under `.claude/`, except the settings, `.claude/state/` and the two hook scripts. `pipeline-plan` then copies the guard (the non-test scripts and the pipeline spec) into `.claude/state/guard/`, and until the run ends the hook, `close-stage` and every other gate call run that frozen copy, so a package that edits `agentic.py` is still judged by the guard the run started with. A resumed run keeps the copy; both engines call `guard-release` on the way out, and any normal run releases a copy left behind. Today a maintainer plan runs by hand: Claude Code itself protects `.claude/` from agents started with `claude -p` (a write there needs a person's approval, and allow rules do not lift it), so a package that owns a flow file cannot write it.
+
+**The clean-code ratchet.** With `.claude/quality-baseline.json` in the repo (install creates it from the code as it is), `baseline` and `verify` add a `quality` phase: function length and nesting (Python through `ast`, JavaScript/TypeScript through a heuristic scanner), file size and long lines may not get worse than the baseline, and new code must respect the limits. A failure names the file, so the package that owns it goes to a fix cycle. Only a person writes the baseline: `quality --update` lowers it, and agents can run neither `--init` nor `--update`.
 
 Tracked files are always compared, even in a folder named like an artefact (`coverage/`, `build/`). Each agent may claim only its own kind of ID: an implementer its packages, QA `QA`, the test-author `AT`, the doc-updater `DOCS`, the read-only judges `REVIEW`.
 
@@ -312,6 +314,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── brief.py            slices architecture.md into the briefs the agents read
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer
 │   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
+│   ├── quality.py          the clean-code ratchet: function length, nesting, file size and long lines
 │   ├── conformance.json    scenarios that both engines must resolve identically
 │   ├── test_agentic.py     tests of agentic.py, the hook and the installer
 │   ├── test_definitions.py tests of the definitions: agents, rules, plugin, CI and documentation

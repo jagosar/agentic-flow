@@ -50,6 +50,9 @@ Subcommands:
   hook                PreToolUse hook (reads JSON from stdin).
   hooks-check         JSON: whether the guardrail hook runs in this session (exit 3 if it does not).
   guard-release       Maintainer mode: the hook goes back to the live agentic.py (the engines call it at the end).
+  quality [--init|--update]
+                      The clean-code ratchet: function length, nesting, file size and long lines against
+                      .claude/quality-baseline.json (exit 3 if something got worse). --init creates it, --update lowers it.
 
 The ledger (.claude/state/ledger.md) is written by this script, not by the model: it survives context
 compaction and is the source for answering "how is it going?".
@@ -108,7 +111,8 @@ ARCHIVE_DIR = "docs/architecture/"  # decision archive: written by /architect, n
 # Never owned, not even in maintainer mode: the settings that register the hooks, the flow's state (the frozen guard
 # included) and the two live hook scripts. An agent that could change them could reroute or replace the guard.
 NEVER_OWNED = (".claude/settings.json", ".claude/settings.local.json", ".claude/state/", ".claude/bin/hook.py",
-               ".claude/bin/waiting.py")
+               ".claude/bin/waiting.py", ".claude/quality-baseline.json")
+QUALITY_BASELINE = ".claude/quality-baseline.json"  # the clean-code ratchet: only a person writes it
 FLOW_NAME = "agentic-flow"
 TEMPLATE_MARKER = "<!-- agentic-flow-template -->"  # README.md's first line in the flow's own repo
 RULES_LIBRARY = ROOT / ".claude" / "rules-library"
@@ -141,7 +145,7 @@ SYMBOL_RES = {
     (".rb",): re.compile(r"^(?:class|module)\s+([A-Z][\w:]*)"),
 }
 # What `install` puts in another repo: the flow, without the flow's own tests.
-INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/hook.py", ".claude/bin/compat.py", ".claude/bin/waiting.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md", ".claude/skills/*/SKILL.md",
+INSTALL_GLOBS = [".claude/bin/agentic.py", ".claude/bin/hook.py", ".claude/bin/quality.py", ".claude/bin/compat.py", ".claude/bin/waiting.py", ".claude/bin/pipeline.py", ".claude/bin/brief.py", ".claude/bin/upgrade.py", ".claude/agents/*.md", ".claude/commands/*.md", ".claude/skills/*/SKILL.md",
                  ".claude/workflows/*.js", ".claude/workflows/*.json", ".claude/rules-library/*.md"]
 INSTALL_RECORD = ".claude/agentic-install.json"
 RESULT_FILE = ".agentic-result.json"  # where the workflow leaves its result for save-result
@@ -196,7 +200,11 @@ FORBIDDEN_BASH = [
     (re.compile(r"\b(pip[\d.]*|uv\s+pip)\s+install\b|\buv\s+(add|sync)\b|\bpoetry\s+(add|install)\b|\bcargo\s+add\b|\bgo\s+get\b"),
      "dependencies cannot be changed (section 3)"),
     (re.compile(r"(?:^|[\s\"'=])\.git[/\\]"), "git's own files (.git/) are not touched"),
-    (re.compile(r"\bclaude\b(?=.*(\s-p\b|\s--print\b))", re.S),
+    (re.compile(r"\bagentic\.py\b[^;&|\n]*\bquality\b[^;&|\n]*\s--(?:init|update)\b"),
+     "the quality baseline is written only by a person (agentic.py quality --init/--update)"),
+    # `claude` as the command (alone, or at the end of a path like /usr/bin/claude), never inside a path such as
+    # .claude/bin or docs/claude-notes.md, which a -p flag later on the line (unittest's) does not make a session.
+    (re.compile(r"(?<![\w.-])claude(?:-code)?(?![\w./-])(?=.*(\s-p\b|\s--print\b))", re.S),
      "other Claude sessions cannot be launched"),
 ]
 # ---- Content guardrails (adapted from ECC: config-protection, block-no-verify, governance-capture) ----
@@ -1425,6 +1433,7 @@ def install(target, force=False, dry_run=False, allow_dirty=False):
             print(f"  rules: {', '.join(json.loads(r.stdout)['rules'])}")
         else:
             print(f"  rules: could not be installed ({(r.stderr.strip().splitlines() or ['no detail'])[-1]})")
+    print(f"  quality baseline: {install_quality_baseline(target, dry_run)}")
     if report["modified by you (left alone)"]:
         print("kept files: " + ("run without --dry-run to get their new versions in .claude/state/upgrade/" if dry_run else
               "new versions in .claude/state/upgrade/ (compare with: diff -ru .claude/state/upgrade/.claude .claude)"))
@@ -1759,6 +1768,130 @@ def freeze_guard():
     return active
 
 
+# ---------- the clean-code ratchet (quality.py) ----------
+
+def quality_module():
+    return sibling("quality")
+
+
+def quality_state():
+    """The quality baseline; None when missing or foreign (copied from the template into another repo);
+    {"unreadable": True} when it is not a JSON object."""
+    path = ROOT / QUALITY_BASELINE
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"unreadable": True}
+    if not isinstance(data, dict):
+        return {"unreadable": True}
+    if data.get("flow_repo") is True and not is_flow_repo(ROOT):
+        return None
+    return data
+
+
+def quality_files(state=None):
+    """The code files the ratchet measures. The flow's own scripts only count in the flow's repo: in a project they
+    are installed code, not the project's to keep clean."""
+    files = [f for f in source_files() if symbol_re(f) is not None]
+    if is_flow_repo(ROOT):
+        own = [(".claude/bin", "*.py"), (".claude/workflows", "*.js")]
+        files += [p.relative_to(ROOT).as_posix() for folder, pattern in own for p in (ROOT / folder).glob(pattern)]
+    exclude = (state or {}).get("exclude") or []
+    return sorted({f for f in files if not quality_module().excluded(f, exclude)})
+
+
+def quality_measure(state=None):
+    q = quality_module()
+    return q.measure(ROOT, quality_files(state), q.limits_of(state))
+
+
+def quality_check(state):
+    """(ok, output lines, summary): each violation followed by its detail line."""
+    if state.get("unreadable"):
+        line = f"FAIL quality baseline unreadable: {QUALITY_BASELINE}"
+        return False, [line], {"ok": False, "files": 0, "functions": 0, "violations": 1, "improvable": []}
+    current = quality_measure(state)
+    result = quality_module().check(state, current)
+    lines = [row for pair in zip(result["violations"], result["details"]) for row in pair]
+    summary = {"ok": result["ok"], "files": len(current["files"]), "functions": len(current["functions"]),
+               "violations": len(result["violations"]), "improvable": result["improvable"]}
+    return result["ok"], lines, summary
+
+
+def quality_phase():
+    """The `quality` phase of baseline and verify, run in this process (a frozen guard measures with its frozen
+    quality.py); None without a baseline."""
+    state = quality_state()
+    if state is None:
+        return None
+    ok, lines, _ = quality_check(state)
+    return {"name": "quality", "command": "agentic.py quality", "exit": 0 if ok else 3, "passed": ok,
+            "tail": [row[:MAX_TAIL_LINE] for row in lines[-8:]], "_scan": lines[-200:]}
+
+
+def write_quality_baseline(data):
+    (ROOT / QUALITY_BASELINE).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def quality_init(state):
+    if state is not None and not state.get("unreadable"):
+        print(f"{QUALITY_BASELINE} already exists: lower it with --update, or edit it by hand.", file=sys.stderr)
+        return 1
+    data = quality_module().initial(quality_measure(), None, is_flow_repo(ROOT))
+    write_quality_baseline(data)
+    print(json.dumps({"ok": True, "created": QUALITY_BASELINE, "functions": len(data["functions"]),
+                      "files": len(data["files"])}))
+    return 0
+
+
+def quality(args):
+    """quality [--init | --update]: the ratchet's check (exit 0 or 3), its creation, or its lowering."""
+    if args not in ([], ["--init"], ["--update"]):
+        die("Uso: quality [--init | --update]")
+    state = quality_state()
+    if args == ["--init"]:
+        return quality_init(state)
+    if state is None and not args:
+        print(json.dumps({"ok": True, "skipped": "no quality baseline: run agentic.py quality --init"}))
+        return 0
+    if args == ["--update"]:
+        if state is None or state.get("unreadable"):
+            print(f"{QUALITY_BASELINE} is missing or unreadable: create it with --init.", file=sys.stderr)
+            return 1
+        write_quality_baseline(quality_module().tighten(state, quality_measure(state)))
+        state = quality_state()
+    ok, lines, summary = quality_check(state)
+    for row in lines:
+        print(row)
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0 if ok else 3
+
+
+def install_quality_baseline(target, dry_run):
+    """Creates the target's ratchet when it has none, or has the template's; keeps a project's own. Returns what
+    happened, for install's report."""
+    path = target / QUALITY_BASELINE
+    foreign = False
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            foreign = isinstance(data, dict) and data.get("flow_repo") is True and not is_flow_repo(target)
+        except (OSError, ValueError):
+            pass
+        if not foreign:
+            return "kept"
+    if dry_run:
+        return "would be replaced (copied from the template)" if foreign else "would be created"
+    r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "quality", "--init"], cwd=target,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=dict(os.environ, CLAUDE_PROJECT_DIR=str(target)))
+    if r.returncode != 0:
+        return f"could not be created ({(r.stderr.strip().splitlines() or ['no detail'])[-1]})"
+    return "replaced (copied from the template)" if foreign else "created"
+
+
 def release_guard():
     """The hook goes back to the live agentic.py. The copies stay until the next freeze replaces them."""
     try:
@@ -1873,6 +2006,9 @@ def run_phases(manifest):
         scan = []
         code, tail = run_command(cfg[name], scan=scan)
         phases.append({"name": name, "command": cfg[name], "exit": code, "passed": code == 0, "tail": tail, "_scan": scan})
+    extra = quality_phase()
+    if extra:
+        phases.append(extra)
     return phases
 
 
@@ -1899,7 +2035,7 @@ def attribute(manifest, lines):
 def baseline(manifest):
     """Baseline: the state of the verify phases BEFORE touching anything. Separates regressions from existing failures.
     Without verify commands there is nothing to measure: it does nothing (the workflow always asks for it)."""
-    if not manifest.get("verify"):
+    if not manifest.get("verify") and quality_state() is None:
         BASELINE.unlink(missing_ok=True)
         print(json.dumps({"phases": [], "preexisting_failures": [], "skipped": True}))
         sys.exit(0)
@@ -2536,6 +2672,8 @@ def main():
         if args not in ([], ["--keep-guard"]):
             die("Uso: pipeline-plan [--keep-guard]")
         pipeline_plan(require_valid(), keep_guard=bool(args))
+    elif cmd == "quality":
+        sys.exit(quality(args))
     elif cmd == "guard-release":
         release_guard()
         print("Guard released.")

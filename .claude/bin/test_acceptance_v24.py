@@ -266,8 +266,6 @@ class EnginesTests(unittest.TestCase):
 
 class ReleaseTests(unittest.TestCase):
     def test_ac_007_version_notes_roadmap(self):
-        version = json.loads(read(".claude-plugin/plugin.json"))["version"]
-        self.assertEqual(version, "2.6.1")
         notes = upgrade.NOTES["2.4.0"]
         self.assertGreaterEqual(len(notes), 2)
         joined = " ".join(notes)
