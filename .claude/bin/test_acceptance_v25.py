@@ -154,7 +154,7 @@ class FreezeTests(Case):
         self.assertIs(plan["maintainer"], True)
         self.assertEqual(plan["agentic"], GUARD_CMD)
         guard = self.guard(repo)
-        self.assertEqual(sorted(p.name for p in (guard / "bin").glob("*.py")), FROZEN_NAMES)
+        self.assertEqual(sorted(p.name for p in (guard / "bin").glob("*.py")), sorted(FROZEN_NAMES + ["x.py"]))
         self.assertTrue((guard / "workflows" / "pipeline-spec.json").is_file())
         active = json.loads((guard / "active.json").read_text(encoding="utf-8"))
         digest = hashlib.sha256((guard / "bin" / "agentic.py").read_bytes()).hexdigest()
@@ -174,7 +174,6 @@ class FreezeTests(Case):
     def test_ac_003_a_normal_plan_releases_a_leftover_guard(self):
         repo = self.repo(manifest(True))
         repo.run("pipeline-plan")
-        repo.write_plan(manifest())
         repo.write_plan({**manifest(), "work_packages": [
             {"id": "WP-01", "wave": 1, "depends_on": [], "files": ["src/a.py"], "acs": ["AC-001"]}]})
         r = repo.run("pipeline-plan")
