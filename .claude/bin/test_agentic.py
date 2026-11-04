@@ -20,6 +20,8 @@ from unittest import mock
 SCRIPT = Path(__file__).resolve().parent / "agentic.py"
 sys.path.insert(0, str(SCRIPT.parent))
 import agentic  # noqa: E402
+import core  # noqa: E402
+import launch  # noqa: E402
 import testutil  # noqa: E402
 
 # The manifests' commands run this interpreter: on Windows `python3` may be missing or the Store stub.
@@ -148,7 +150,7 @@ class UsageLockTests(unittest.TestCase):
             locked_paths.append(Path(fh.name).name)
             return real_locked(fh)
 
-        with mock.patch.object(agentic, "USAGE", usage), mock.patch.object(agentic.compat, "locked", spy):
+        with mock.patch.object(core, "USAGE", usage), mock.patch.object(agentic.compat, "locked", spy):
             self.assertEqual(agentic.usage_records(), [{"id": "WP-01"}])
         self.assertIn("usage.jsonl", locked_paths)
 
@@ -1735,9 +1737,9 @@ class MaintainerModeTests(unittest.TestCase):
         self.assertFalse(agentic.is_flow_repo(d))
 
     def test_the_flag_only_counts_in_the_flow_repo(self):
-        with mock.patch.object(agentic, "is_flow_repo", return_value=False):
+        with mock.patch.object(core, "is_flow_repo", return_value=False):
             self.assertFalse(agentic.maintainer_mode({"maintainer": True}))
-        with mock.patch.object(agentic, "is_flow_repo", return_value=True):
+        with mock.patch.object(core, "is_flow_repo", return_value=True):
             self.assertTrue(agentic.maintainer_mode({"maintainer": True}))
             self.assertFalse(agentic.maintainer_mode({"maintainer": "true"}))
             self.assertFalse(agentic.maintainer_mode({}))
@@ -1767,7 +1769,7 @@ class MaintainerModeTests(unittest.TestCase):
 
     def test_releasing_with_nothing_active_is_fine(self):
         d = self.flow_dir()
-        with mock.patch.object(agentic, "ROOT", d):
+        with mock.patch.object(launch, "ROOT", d):
             agentic.release_guard()
         self.assertFalse((d / agentic.GUARD_DIR / "active.json").exists())
 

@@ -19,7 +19,8 @@ BIN = Path(__file__).resolve().parent
 ROOT = BIN.parents[1]
 SCRIPT = BIN / "agentic.py"
 GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false"]
-FLOW_MODULES = ["agentic.py", "upgrade.py", "pipeline.py", "brief.py", "compat.py"]
+FLOW_MODULES = ["agentic.py", "upgrade.py", "pipeline.py", "brief.py", "compat.py", "core.py", "manifest_check.py",
+                "repo_scan.py", "verification.py", "stage.py", "installer.py", "launch.py", "guardrail.py"]
 
 def testutil():
     sys.path.insert(0, str(BIN))
