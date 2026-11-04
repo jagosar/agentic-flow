@@ -337,15 +337,15 @@ Expand-contract: waves 1-4 create modules beside the monolith (duplicate code, e
   "docs": {"files": ["docs/assets/"], "codemap": null},
   "_docs_note": "the docs zone is a placeholder that overlaps nothing: WP-10 owns the documentation this change touches",
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/core.py"], "acs": ["AC-001", "AC-002"], "mirror": [".claude/bin/waiting.py:1-16", ".claude/bin/agentic.py:76-119", ".claude/bin/brief.py:1-6"]},
-    {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/manifest_check.py"], "acs": ["AC-002"], "mirror": [".claude/bin/agentic.py:482-506", ".claude/bin/agentic.py:549-570"]},
-    {"id": "WP-03", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/repo_scan.py"], "acs": ["AC-002"], "mirror": [".claude/bin/agentic.py:1108-1116"]},
-    {"id": "WP-04", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/verification.py"], "acs": ["AC-002"], "mirror": [".claude/bin/agentic.py:1771-1774"]},
-    {"id": "WP-05", "wave": 3, "depends_on": ["WP-04"], "files": [".claude/bin/stage.py"], "acs": ["AC-002"], "mirror": [".claude/bin/agentic.py:584-607"]},
-    {"id": "WP-06", "wave": 3, "depends_on": ["WP-04"], "files": [".claude/bin/installer.py"], "acs": ["AC-002", "AC-005"], "mirror": [".claude/bin/agentic.py:1338-1453", ".claude/bin/agentic.py:2751-2762"]},
-    {"id": "WP-07", "wave": 4, "depends_on": ["WP-03", "WP-05"], "files": [".claude/bin/launch.py"], "acs": ["AC-002"], "mirror": [".claude/bin/agentic.py:1507-1512", ".claude/bin/agentic.py:1627-1637"]},
-    {"id": "WP-08", "wave": 4, "depends_on": ["WP-05"], "files": [".claude/bin/guardrail.py"], "acs": ["AC-002"], "mirror": [".claude/bin/agentic.py:2446-2515", ".claude/bin/agentic.py:2615-2629"]},
-    {"id": "WP-09", "wave": 5, "depends_on": ["WP-06", "WP-07", "WP-08", "WP-10"], "files": [".claude/bin/agentic.py", ".claude/bin/test_agentic.py", ".claude/bin/test_definitions.py", ".claude/bin/test_acceptance_portable.py"], "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006"], "mirror": [".claude/bin/agentic.py:2634-2786", ".claude/bin/test_definitions.py:380-392"]},
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/core.py"], "acs": ["AC-001", "AC-002"], "mirror": [".claude/bin/waiting.py:1-16", ".claude/bin/core.py", ".claude/bin/brief.py:1-6"]},
+    {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/manifest_check.py"], "acs": ["AC-002"], "mirror": [".claude/bin/manifest_check.py"]},
+    {"id": "WP-03", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/repo_scan.py"], "acs": ["AC-002"], "mirror": [".claude/bin/repo_scan.py"]},
+    {"id": "WP-04", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/verification.py"], "acs": ["AC-002"], "mirror": [".claude/bin/verification.py"]},
+    {"id": "WP-05", "wave": 3, "depends_on": ["WP-04"], "files": [".claude/bin/stage.py"], "acs": ["AC-002"], "mirror": [".claude/bin/stage.py"]},
+    {"id": "WP-06", "wave": 3, "depends_on": ["WP-04"], "files": [".claude/bin/installer.py"], "acs": ["AC-002", "AC-005"], "mirror": [".claude/bin/installer.py"]},
+    {"id": "WP-07", "wave": 4, "depends_on": ["WP-03", "WP-05"], "files": [".claude/bin/launch.py"], "acs": ["AC-002"], "mirror": [".claude/bin/launch.py"]},
+    {"id": "WP-08", "wave": 4, "depends_on": ["WP-05"], "files": [".claude/bin/guardrail.py"], "acs": ["AC-002"], "mirror": [".claude/bin/guardrail.py"]},
+    {"id": "WP-09", "wave": 5, "depends_on": ["WP-06", "WP-07", "WP-08", "WP-10"], "files": [".claude/bin/agentic.py", ".claude/bin/test_agentic.py", ".claude/bin/test_definitions.py", ".claude/bin/test_acceptance_portable.py"], "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006"], "mirror": [".claude/bin/agentic.py", ".claude/bin/test_definitions.py:380-392"]},
     {"id": "WP-10", "wave": 1, "depends_on": [], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", "docs/how-it-works.md"], "acs": ["AC-006"], "mirror": [".claude/bin/upgrade.py:99-112"]}
   ]
 }
@@ -380,4 +380,6 @@ Expand-contract: waves 1-4 create modules beside the monolith (duplicate code, e
 - **Patch targets.** A future test that patches `agentic.X` for a moved function will silently patch a re-export and test nothing. Section 7 states the rule; `StructureTests.test_reexports_are_the_modules_objects` makes the aliasing visible.
 - **The maintainer guard during this run** is the pre-refactor copy and executes the monolith; fine, since the run is by hand.
 - **Line counts are estimates** from today's inventory, not measured; `quality` (AC-002) is the measurement. If a module lands over 800 lines, split it along its section comments before WP-09.
+- **The manifest's `mirror` references named line ranges of the pre-refactor `agentic.py`** (section 4b keeps them for reading). Once WP-09 shrank the file, `validate` rejected them as out of range, so the manifest now names the module each pattern moved to; the WP texts keep the original ranges.
+- **One more frozen-file edit, found at the end:** `test_acceptance_v25.HookTests.test_ac_004` loosens the live `guard` by editing `agentic.py`; after the split it edits `guardrail.py` (one line). AC-001's list did not foresee it.
 - **Rollback:** revert the pull request; projects on 2.7.x are unaffected until they install 2.8.0.
