@@ -1269,7 +1269,8 @@ class HookBashTests(Base):
         "git commit -am x", "git -C . commit -am x", "git -c user.name=x commit -m y", "command git push",
         "sh -c 'git commit -m x'", 'bash -c "git checkout main"', "cd src && git add .", "git stash",
         "npm install lodash", "cd x && pnpm add zod", "pip install requests", "uv add httpx",
-        "claude -p hola", "claude --print hola",
+        "claude -p hola", "claude --print hola", "cd x && claude -p hola", "/usr/local/bin/claude -p hola",
+        "npx @anthropic-ai/claude-code -p hola",
         "pip3.12 install requests", "yarn", "python3 -m pip install x", "echo 'src/' >> .git/info/exclude",
         "cp hook .git/hooks/pre-commit", "printf '[core]' >> .git/config",
     ]
@@ -1277,6 +1278,9 @@ class HookBashTests(Base):
         "git status", "git diff src/add.py", "git log --oneline -5", "git show HEAD:src/a.py",
         "python3 -m unittest tests.test_a", "npm test", "npm run build", "grep -r commit src",
         "claude --version",
+        # A path that contains "claude" is not a Claude session, even with a -p flag later on the line.
+        "python3 -m unittest discover -s .claude/bin -p test_acceptance_v27.py",
+        "ls ~/.claude/projects -p", "cat docs/claude-notes.md | grep -p x",
     ]
 
     def test_blocked(self):

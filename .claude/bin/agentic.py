@@ -196,7 +196,9 @@ FORBIDDEN_BASH = [
     (re.compile(r"\b(pip[\d.]*|uv\s+pip)\s+install\b|\buv\s+(add|sync)\b|\bpoetry\s+(add|install)\b|\bcargo\s+add\b|\bgo\s+get\b"),
      "dependencies cannot be changed (section 3)"),
     (re.compile(r"(?:^|[\s\"'=])\.git[/\\]"), "git's own files (.git/) are not touched"),
-    (re.compile(r"\bclaude\b(?=.*(\s-p\b|\s--print\b))", re.S),
+    # `claude` as the command (alone, or at the end of a path like /usr/bin/claude), never inside a path such as
+    # .claude/bin or docs/claude-notes.md, which a -p flag later on the line (unittest's) does not make a session.
+    (re.compile(r"(?<![\w.-])claude(?:-code)?(?![\w./-])(?=.*(\s-p\b|\s--print\b))", re.S),
      "other Claude sessions cannot be launched"),
 ]
 # ---- Content guardrails (adapted from ECC: config-protection, block-no-verify, governance-capture) ----
