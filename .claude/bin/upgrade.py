@@ -109,6 +109,13 @@ NOTES = {
         "from its matrix and gains a job that installs the flow into an empty project and runs the shipped tests "
         "there; that job runs only in the agentic-flow repository.",
     ],
+    "2.8.0": [
+        "agentic.py is split into modules by domain, installed beside it: core.py, manifest_check.py, repo_scan.py, "
+        "verification.py, stage.py, installer.py, launch.py and guardrail.py. Every command, argument, message and "
+        "exit code is the same; agentic.py keeps the command table and the names tests read. If install kept an "
+        "edited agentic.py of yours, it is the old self-contained file and keeps working alone; the new modules sit "
+        "beside it unused until you take the new agentic.py from .claude/state/upgrade/.",
+    ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "
         "in a changed file (the code map's regexes, ten languages), the lines of tracked code outside the diff that "

@@ -191,7 +191,8 @@ class HookTests(Case):
     def test_ac_004_the_frozen_guard_decides_while_active(self):
         repo = self.repo(manifest(True))
         self.assertEqual(repo.run("pipeline-plan").returncode, 0)
-        live = repo.dir / ".claude" / "bin" / "agentic.py"
+        # 2.8.0 split agentic.py: the live guard to loosen is guardrail.py's (the frozen copy has its own).
+        live = repo.dir / ".claude" / "bin" / "guardrail.py"
         text = live.read_text(encoding="utf-8")
         self.assertIn("def guard(data):\n", text)
         live.write_text(text.replace("def guard(data):\n", PERMISSIVE + "\n\ndef _old_guard(data):\n", 1),

@@ -12,8 +12,8 @@
   "exclude": [],
   "files": {
     ".claude/bin/agentic.py": {
-      "lines": 2790,
-      "long_lines": 51
+      "lines": 334,
+      "long_lines": 4
     },
     ".claude/bin/hook.py": {
       "lines": 34,
@@ -141,22 +141,6 @@
     }
   },
   "functions": {
-    ".claude/bin/agentic.py::guard": {
-      "lines": 70,
-      "nesting": 3
-    },
-    ".claude/bin/agentic.py::install": {
-      "lines": 116,
-      "nesting": 3
-    },
-    ".claude/bin/agentic.py::main": {
-      "lines": 153,
-      "nesting": 3
-    },
-    ".claude/bin/agentic.py::validate": {
-      "lines": 93,
-      "nesting": 4
-    },
     ".claude/bin/pipeline.py::Pipeline.judge": {
       "lines": 96,
       "nesting": 4
