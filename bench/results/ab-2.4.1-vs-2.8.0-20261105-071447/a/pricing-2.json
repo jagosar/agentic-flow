@@ -1,0 +1,275 @@
+{
+  "result": "REVIEW",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_ac_001_prefix_and_plain"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_ac_002_mismatch"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_ac_003_unknown_currency"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_ac_004_old_errors"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_ac_005_cart_in_usd"
+            ]
+          },
+          {
+            "ac": "AC-006",
+            "tests": [
+              "test_ac_006_cart_refuses_other_currency"
+            ]
+          },
+          {
+            "ac": "AC-007",
+            "tests": [
+              "test_ac_007_unknown_cart_currency"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Both modules are red from ImportError (CurrencyMismatch missing in shop.money), as expected. Individual tests have not run yet, so assertion-level failures are unchecked.",
+          "Cart.total() and lines() return types assumed to match the existing code (lines as a list of tuples)."
+        ]
+      },
+      "check": "AT: 2 file(s) changed: acceptance/test_cart_currency.py, acceptance/test_money_currency.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": false,
+      "check": "WP-01: 2 file(s) changed: shop/money.py, tests/test_money.py\nWP-02: 2 file(s) changed: shop/cart.py, tests/test_cart.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0 WP-02=2\nRESULT: REVIEW"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "........",
+          "----------------------------------------------------------------------",
+          "Ran 8 tests in 0.001s",
+          "",
+          "OK"
+        ]
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "shop/money.py",
+        "tests/test_money.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "15 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "7 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Prefix regex is three uppercase letters plus one space; lowercase prefixes fall through to the generic 'not a price' ValueError.",
+        "The currency argument is checked before the text."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "BLOCKED",
+      "wp": "WP-02",
+      "files": [
+        "shop/cart.py",
+        "tests/test_cart.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": false,
+          "detail": "ImportError: shop.money has no CURRENCIES (WP-01 not in repo)"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": false,
+          "detail": "ImportError: CurrencyMismatch missing from shop.money"
+        }
+      ],
+      "internal_decisions": [
+        "Unknown-currency error message: 'unknown currency: X'",
+        "Tests import CurrencyMismatch from shop.money directly"
+      ],
+      "blocker": {
+        "missing": "shop/money.py still has the old one-argument parse_price and lacks CURRENCIES and CurrencyMismatch. WP-01 owns it and is in the same wave, so the acceptance gate can't pass from my files alone. Cart and its tests are implemented to the section 6 contract.",
+        "section": "8 (WP-01 / WP-02 wave 1, depends_on empty)",
+        "options": [
+          "Rerun the acceptance command once WP-01 lands; no change to my files is expected",
+          "Move WP-02 to wave 2 with depends_on WP-01"
+        ]
+      },
+      "not_checked": [
+        "Neither the unit tests nor AC-005..007 have run green, because they need WP-01."
+      ],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": null,
+  "review": null,
+  "qa": null,
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_money_currency.py",
+        "line": 26,
+        "problem": "AC-004 only asserts ValueError, so a CurrencyMismatch (a subclass) would also pass. The brief says old errors are unchanged, so the exact type could be asserted.",
+        "evidence": "An implementation that raises CurrencyMismatch for 'abc' or '' passes AC-004. Other tests (AC-001, AC-002) still block the trivial cases."
+      },
+      {
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_cart_currency.py",
+        "line": 25,
+        "problem": "AC-007 does not check that the ValueError is exactly ValueError. It also does not test that the cart's default currency still works after the check. This is weak but acceptable.",
+        "evidence": "Cart.__init__ raising CurrencyMismatch for 'JPY' would pass."
+      }
+    ]
+  },
+  "docs": null,
+  "fix_cycles": 0,
+  "pending": [],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Both modules are red from ImportError (CurrencyMismatch missing in shop.money), as expected. Individual tests have not run yet, so assertion-level failures are unchecked.",
+        "Cart.total() and lines() return types assumed to match the existing code (lines as a list of tuples)."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "Did not run the tests against an implementation; the shop package may not exist yet.",
+        "Did not check that a failed add leaves the cart total unchanged; AC-006 checks only lines().",
+        "Did not check the unit tests in tests/."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-02",
+      "items": [
+        "Neither the unit tests nor AC-005..007 have run green, because they need WP-01."
+      ]
+    }
+  ],
+  "gate_denials": {
+    "WP-02": 2
+  },
+  "verification_failures": [],
+  "failed_stage": "wave 1",
+  "detail": "the wave ended with blockers, missing reports or writes outside ownership",
+  "usage": {
+    "total": {
+      "input": 32604,
+      "cache_read": 246002,
+      "output": 11391,
+      "turns": 41,
+      "cost_usd": 0.26883819999999997
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 9783,
+        "cache_read": 70757,
+        "output": 3085,
+        "cost_usd": 0.0770337,
+        "turns": 11
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 5308,
+        "cache_read": 19123,
+        "output": 1084,
+        "cost_usd": 0.0339723,
+        "turns": 6
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 8338,
+        "cache_read": 99446,
+        "output": 3605,
+        "cost_usd": 0.0793146,
+        "turns": 14
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 9175,
+        "cache_read": 56676,
+        "output": 3617,
+        "cost_usd": 0.07851759999999999,
+        "turns": 10
+      }
+    ]
+  }
+}
