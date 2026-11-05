@@ -140,6 +140,9 @@ NOTES = {
         "agentic-implement.js that still calls guard-release must be merged with the new one (.claude/state/upgrade/).",
         "install removes the permission for the frozen guard's command from settings.json; a leftover "
         ".claude/state/guard/ folder can be deleted.",
+        "The per-release acceptance test files in .claude/bin are retired; their remaining checks live in the unit "
+        "suites (new: test_install, test_guardrail, test_launcher, test_ci, test_manifest_check, test_repo_scan, "
+        "test_layout). install removes intact copies from projects and keeps edited ones.",
     ],
     "2.2.0": [
         "The reviewer reads beyond the diff: a deterministic `callers` step lists, for every public symbol defined "

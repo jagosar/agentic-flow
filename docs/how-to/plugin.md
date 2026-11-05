@@ -105,7 +105,7 @@ claude --plugin-dir /path/to/agentic-flow
 
 A version is published by merging the pull request that bumps it: no second pull request, no release made by hand.
 
-1. In the pull request, bump `version` in `.claude-plugin/plugin.json` (the version lives only there; the marketplace entry does not repeat it) and add its entry to `NOTES` in `.claude/bin/upgrade.py`: what changed for projects, one sentence per change. Those notes become the release's description; preview them with:
+1. In the pull request, bump `version` in `.claude-plugin/plugin.json` (the version lives only there; the marketplace entry does not repeat it) and add its entry to `NOTES` in `.claude/bin/upgrade.py`: what changed for projects, one sentence per change. Those notes become the release's description. If the release adds its own `.claude/bin/test_acceptance_*.py`, move the previous release's unique checks into the unit suites and delete that file: only the current release's acceptance file may stay. Preview the notes with:
 
    ```bash
    python3 .claude/bin/agentic.py release-notes

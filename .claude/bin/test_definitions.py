@@ -535,5 +535,40 @@ class DocumentationDriftTests(unittest.TestCase):
                 self.assertIsNone(PERSONAL_PATH_RE.search(text), "personal path in a tracked file")
 
 
+
+class MovedDefinitionTests(unittest.TestCase):
+    """Moved from the retired per-release acceptance files (design 0017): test_acceptance ac_009 and ac_012,
+    test_acceptance_portable ac_010 and test_acceptance_v24 ac_006."""
+
+    def test_an_unknown_command_prints_the_usage(self):
+        r = subprocess.run([sys.executable, str(AGENTIC), "no-such-command"], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Subcommands", r.stderr)
+
+    def test_the_plan_templates_use_the_headings_the_slicer_reads(self):
+        architect = (COMMANDS_DIR / "architect.md").read_text(encoding="utf-8")
+        self.assertIn("#### WP-NN · ", architect)
+        self.assertIn("`acs`", architect)
+        reviewer = (CLAUDE / "agents" / "plan-reviewer.md").read_text(encoding="utf-8")
+        self.assertIn("#### WP-", reviewer)
+        self.assertIn("- AC-NNN ·", reviewer)
+
+    def test_agents_and_settings_call_agentic_py_through_python3(self):
+        settings = (CLAUDE / "settings.json").read_text(encoding="utf-8")
+        self.assertIn("Bash(python3 .claude/bin/agentic.py:*)", json.loads(settings)["permissions"]["allow"])
+        workflow = (CLAUDE / "workflows" / "agentic-implement.js").read_text(encoding="utf-8")
+        self.assertIn("python3 .claude/bin/agentic.py", workflow)
+        implementer = (CLAUDE / "agents" / "implementer.md").read_text(encoding="utf-8")
+        for text in (settings, workflow, implementer):
+            self.assertNotIn("sh .claude/bin/agentic", text)
+
+    def test_implement_checks_the_hook_before_anything_else(self):
+        text = (COMMANDS_DIR / "implement.md").read_text(encoding="utf-8")
+        pre = text.split("# 1. Pre-flight validation")[1].split("# 2.")[0]
+        steps = [line for line in pre.splitlines() if re.match(r"\d+\. ", line)]
+        self.assertIn("agentic.py hooks-check", steps[0])
+        self.assertTrue(any("agentic.py validate" in s for s in steps[1:]))
+
 if __name__ == "__main__":
     unittest.main()

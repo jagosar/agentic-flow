@@ -263,6 +263,23 @@ def ab_run(arm, fixture="fx", result="OK", cost=1.0, seconds=60.0, output=100, k
 
 
 class StatisticsTests(TempCase):
+    def test_bootstrap_is_seeded_and_exact_for_a_constant_ratio(self):
+        """From test_acceptance_v23 ac_004."""
+        import random
+        doubled = {"f1": ([1, 1, 1], [2, 2, 2]), "f2": ([1, 1, 1], [2, 2, 2])}
+        first = bench.bootstrap_interval(doubled, seed=0)
+        random.seed(99)
+        self.assertEqual(bench.bootstrap_interval(doubled, seed=0), first, "the global random state does not matter")
+        self.assertEqual(tuple(first), (2.0, 2.0))
+        self.assertEqual(tuple(bench.bootstrap_interval(doubled, seed=1)), (2.0, 2.0))
+        low, high = bench.bootstrap_interval({"f": ([1.0, 1.1, 0.9], [1.0, 1.1, 0.9])}, seed=0)
+        self.assertLessEqual(low, 1.0)
+        self.assertGreaterEqual(high, 1.0)
+
+    def test_sign_test_without_enough_data_is_one(self):
+        """From test_acceptance_v23 ac_004."""
+        self.assertEqual((bench.sign_test(0, 0), bench.sign_test(1, 0)), (1.0, 1.0))
+
     def test_geometric_mean_rejects_empty_and_non_positive(self):
         self.assertAlmostEqual(bench.geometric_mean([2.0, 8.0]), 4.0)
         for bad in ([], [1.0, -1.0], [0.0], [None]):
