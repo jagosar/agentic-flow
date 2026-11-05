@@ -1,0 +1,65 @@
+# Publishes a version of agentic-flow from the merge that bumps it: when .claude-plugin/plugin.json on main carries a
+# version with no agentic-flow--v<version> tag, it checks that the flow history recognises every published version and
+# this one, takes the release notes from upgrade.NOTES and creates the tag and the GitHub release on the checked commit.
+# A push that does not change the version finds its tag and does nothing. "Run workflow" retries a failed release.
+#
+# Hardened: actions pinned by SHA, write permission only on the job, no credentials persisted in the checkout, no
+# third-party release action (gh is on the runner), and values reach scripts through env, never through ${{ }}.
+name: agentic-flow-release
+on:
+  push:
+    branches: [main]
+    paths: [".claude-plugin/plugin.json"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentic-flow-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Only main: a manual run from another branch must not tag a commit outside it.
+    if: github.repository == 'jagosar/agentic-flow' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Version and tag
+        id: tag
+        run: |
+          version=$(python -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+          tag="agentic-flow--v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists: nothing to release."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: The flow history covers every published version and this one
+        if: steps.tag.outputs.exists != 'true'
+        run: python .claude/bin/agentic.py flow-history --check
+      - name: Release notes from upgrade.NOTES
+        if: steps.tag.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: python .claude/bin/agentic.py release-notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+      - name: Create the tag and the release
+        if: steps.tag.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: >-
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+          --title "agentic-flow $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

@@ -316,7 +316,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── repo_scan.py        stack detection, rules-sync, the code map, callers, docs-check
 │   ├── verification.py     commands without a shell, acceptance, baseline/verify with attribution, the ratchet
 │   ├── stage.py            snapshots, stage checks, open/close-stage, fix diffs, the stop gate
-│   ├── installer.py        install with its intact-file rule, settings, sync-permissions, flow-history
+│   ├── installer.py        install with its intact-file rule, settings, sync-permissions, flow-history and its check
 │   ├── launch.py           the claude -p launchers, run-*, seq, run-pipeline, pipeline-plan and the frozen guard
 │   ├── guardrail.py        the PreToolUse hook: guard, claims, content checks, the heartbeat, hooks-check
 │   ├── brief.py            slices architecture.md into the briefs the agents read

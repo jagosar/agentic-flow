@@ -1,385 +1,352 @@
-# Architecture: split `agentic.py` into modules by domain
-Type: refactor · Size: large
+# Architecture: release from the merge, with the flow history checked in CI (issue 101, agentic-flow 2.9.0)
+Type: feature · Size: standard
 
 ## 1. Goal
-`.claude/bin/agentic.py` is 2,790 lines with 144 functions, and 34 CLI commands dispatched by an `elif` chain inside a 153-line `main()`. The clean-code ratchet (design 0013) froze that file at 2,790 lines (+30) and `main` at 153, so the next command cannot be added without loosening the baseline by hand. This refactor moves the code into eight modules by domain, replaces the chain with a dispatch table, and splits the three other functions over the 60-line limit (`install` 116, `validate` 93, `guard` 70) into pieces that respect it. Behaviour does not change: every suite stays green, every CLI command keeps its arguments, output and exit codes, `agentic.py` keeps re-exporting the names tests and frozen acceptance files use, and the frozen guard of a maintainer run keeps working because it copies the whole folder.
+Today a release of agentic-flow takes the feature pull request, a second pull request that regenerates `.claude/flow-history.json`, a release created by hand in the GitHub UI, and one pull request per project. This design removes the second pull request and the hand-made release. The feature pull request regenerates the history as its last commit; a new CI job, `history`, checks with `agentic.py flow-history --check` that the committed history recognises every published version and, when `plugin.json` carries a version that has no tag yet, the pull request's own content. Merging a pull request that bumps the version runs a new workflow that checks the same thing, takes the notes from `upgrade.NOTES[<version>]` (`agentic.py release-notes`) and creates the tag `agentic-flow--v<version>` and the GitHub release. The release ceremony in `docs/how-to/plugin.md` is rewritten to match.
 
 ## 2. Scope
 ### Included
-- Eight new modules in `.claude/bin/`: `core`, `manifest_check`, `repo_scan`, `verification`, `stage`, `installer`, `launch`, `guardrail`.
-- `agentic.py` reduced to the entry point: docstring, re-exports, one `cmd_*` handler per command, the `COMMANDS` table, `main()`.
-- `install`, `validate` and `guard` split into functions of at most 60 lines and nesting 4.
-- `INSTALL_GLOBS`, the four `mock.patch` targets in `test_agentic.py`, `agentic_subcommands()` in `test_definitions.py` and `FLOW_MODULES` in `test_acceptance_portable.py` updated.
-- Version 2.8.0, its upgrade note, and the file list in `docs/how-it-works.md`.
-- After the last WP, the maintainer runs `agentic.py quality --update` so the baseline drops the entries that vanished.
+- `upgrade.py`: `TAG_PREFIX`, `release_tags()`, `history_gaps()`, `release_notes()`, a private hashing helper shared with `build_history()`, and `NOTES["2.9.0"]`.
+- `installer.py`: `flow_history_check()`.
+- `agentic.py`: `flow-history --check` (read-only, exit 3 on a gap) and a new subcommand `release-notes [VERSION]`; both exempt from the root-drift refusal.
+- `.github/workflows/agentic-flow-ci.yml`: a `history` job (full clone) and the release workflow's path in both `paths` filters.
+- `.github/workflows/agentic-flow-release.yml` (new): on a push to `main` that touches `.claude-plugin/plugin.json`, and on `workflow_dispatch`.
+- `.claude-plugin/plugin.json`: version `2.9.0`.
+- `docs/how-to/plugin.md`: "Publish a version (maintainers)" rewritten; one line of `docs/how-it-works.md`.
+- Unit tests in `test_upgrade.py`, a new `test_release.py`, and the command count and CI hardening in `test_definitions.py`.
 
 ### Excluded (non-goals)
-- Splitting `test_agentic.py` (1,849 lines): tests keep importing `agentic` and run through its re-exports. A follow-up.
-- Any change of behaviour, message text, argument parsing or exit code.
-- `pipeline.py`, `brief.py`, `upgrade.py`, `quality.py`, `compat.py`, `waiting.py`, `hook.py`: untouched.
-- Shrinking `Pipeline.judge` (96 lines, in `pipeline.py`): it does not move, so the ratchet does not see it as new.
+- The per-project update pull requests and the GitLab script: unchanged.
+- Changing what `flow-history` writes or how `install` reads it: `build_history()`'s output and `load_history()` stay byte-for-byte the same.
+- Making `history` a required check in the branch ruleset: the maintainer does it after the merge (section 11), not a package.
+- Pushing tags or creating releases from a session: the workflow does it with `GITHUB_TOKEN`.
+- Retiring the frozen acceptance files (issue 99) and maintainer mode (issue 100).
+- Shipping the release workflow to projects: it is not added to `upgrade.EXTRA_GLOBS`.
 
 ## 3. Stack
-- Python ≥ 3.9, standard library only; no type annotations in any `.claude/bin/*.py` that ships (they are frozen into the maintainer guard and must import on 3.9).
-- Node 22 for `test_workflow.mjs` only.
-- Commands:
-  - compile: `python3 -m compileall -q .claude/bin` (run by hand; the manifest's `build` slot runs `qa`, whose `test_qa_docs.py:16,190-198` reads text in `agentic.py`)
-  - tests: `python3 -m unittest discover -s .claude/bin -p "test_*.py"`
-  - workflow: `node .claude/bin/test_workflow.mjs`
-  - docs: `python3 -m unittest discover -s acceptance`
-  - qa: `python3 -m unittest discover -s qa`
-  - bench: `python3 -m unittest discover -s bench -p "test_*.py"` and `python3 -m unittest discover -s bench/acceptance`
-  - ratchet: `python3 .claude/bin/agentic.py quality`
+- Python 3.9+ standard library only (CI runs 3.9, 3.12 and 3.14 on Linux, 3.12 on Windows). Node 22 for `test_workflow.mjs` (unchanged).
+- GitHub Actions, with actions pinned by full SHA, the same SHAs `agentic-flow-ci.yml` already uses:
+  - `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`
+  - `actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0`
+- `gh` CLI, preinstalled on `ubuntu-latest`, with `GH_TOKEN: ${{ github.token }}`. No third-party release action.
+- Tests: `unittest`.
+  - Acceptance: `python3 -m unittest discover -s .claude/bin -p test_acceptance_v29.py`
+  - Everything: `python3 -m unittest discover -s .claude/bin -p "test_*.py"`, plus `node .claude/bin/test_workflow.mjs`
+  - Ratchet: `python3 .claude/bin/agentic.py quality`
 
 ## 4. Repository structure
 ```
-.claude/bin/core.py                 WP-01 (new)  paths, constants shared by ≥2 domains, manifest access, ledger, locks, flow-repo tests
-.claude/bin/manifest_check.py       WP-02 (new)  validate and its error families, require_valid
-.claude/bin/repo_scan.py            WP-03 (new)  stack detection, rules-sync, codemap, callers, docs-check
-.claude/bin/verification.py         WP-04 (new)  run_command, acceptance, baseline/verify phases, attribution, quality_*
-.claude/bin/stage.py                WP-05 (new)  snapshots, stage checks, open/close-stage, fix diffs, the stop gate
-.claude/bin/installer.py            WP-06 (new)  install (split), merge_settings, sync-permissions, flow-history
-.claude/bin/launch.py               WP-07 (new)  claude -p launchers, run-* commands, seq, run-pipeline, pipeline-plan, the frozen guard
-.claude/bin/guardrail.py            WP-08 (new)  the PreToolUse hook: guard (split), claims, content checks, hooks-check
-.claude/bin/agentic.py              WP-09        entry point: docstring, re-exports, cmd_* handlers, COMMANDS, main
-.claude/bin/test_agentic.py         WP-09        four patch targets
-.claude/bin/test_definitions.py     WP-09        agentic_subcommands reads COMMANDS; a structure test
-.claude/bin/test_acceptance_portable.py  WP-09   FLOW_MODULES gains the eight modules
-.claude-plugin/plugin.json          WP-10        2.8.0
-.claude/bin/upgrade.py              WP-10        NOTES["2.8.0"]
-docs/how-it-works.md                WP-10        the .claude/bin file list
-.claude/quality-baseline.json       nobody: the maintainer runs `quality --update` after WP-09 (never owned)
+.claude-plugin/plugin.json                      WP-01  version 2.9.0 (with its NOTES entry)
+.claude/bin/upgrade.py                          WP-01  TAG_PREFIX, release_tags, history_gaps, release_notes, NOTES["2.9.0"]
+.claude/bin/test_upgrade.py                     WP-01  unit tests of the above
+.claude/bin/installer.py                        WP-02  flow_history_check()
+.claude/bin/agentic.py                          WP-02  flow-history --check, release-notes, ROOT_FREE_COMMANDS, docstring
+.claude/bin/test_release.py                     WP-02  new: unit tests of the two commands
+.claude/bin/test_definitions.py                 WP-02  COMMANDS count 35; CI hardening also reads the release workflow
+.github/workflows/agentic-flow-ci.yml           WP-03  history job; release workflow in both paths filters
+.github/workflows/agentic-flow-release.yml      WP-03  new
+docs/how-to/plugin.md                           WP-04  "Publish a version (maintainers)"
+docs/how-it-works.md                            WP-04  one line of the module tree (:319)
+.claude/bin/test_acceptance_v29.py              AT     acceptance tests
+.claude/flow-history.json                       nobody: regenerated by hand as the last commit of the pull request
 ```
 
 ## 4b. Existing code context
-Line numbers are those of `agentic.py` today (2,790 lines, commit `bf7c36d`). The inventory below is the authority on what moves where; a function not listed stays in `agentic.py`.
-
-| What an implementer needs to know | Where it is | Pattern or rule |
+| What an implementer needs to know | Where it is (`file:lines`) | Pattern or rule |
 |---|---|---|
-| How a sibling module sets itself up: docstring, `sys.path.insert(0, <own folder>)`, `import compat` | `waiting.py:1-16` | Every new module starts the same way; `core` is imported with explicit names, never `*` |
-| Paths are computed from the script's own folder, frozen copy included | `agentic.py:76-86` (`HERE`, `FROZEN`, `SOURCE_ROOT`, `ROOT`) | Move verbatim to `core.py`; the frozen copy's `core.py` sits in the same folder as its `agentic.py`, so the values are identical |
-| Every `Path(__file__)` in `agentic.py` means "this folder" or "the entry script" | `:76, :79` (folder); `:1429, :1449, :1532, :1887` (`agentic.py` as a subprocess); `:1628` (`sibling`) | In a module, `__file__` would name the module. Use `core.HERE` and the new `core.ENTRY = HERE / "agentic.py"` |
-| `sibling(name)` imports a module from the script's folder | `:1627-1629` | Moves to `core`; `pipeline_module`, `brief_module` (`:1632-1637`) to `launch`; `quality_module` (`:1773-1774`) to `verification` |
-| The frozen guard copies every non-test `.claude/bin/*.py` and the spec | `:1750-1768` (`freeze_guard`, filter at `:1761`) | New modules are copied automatically; `test_acceptance_v25.FrozenCopyTests` runs `validate` from the frozen copy and must stay green |
-| What `install` ships | `:148-149` (`INSTALL_GLOBS`) | Gains the eight modules; `test_definitions.test_what_is_installed_exists` checks each glob matches a file |
-| The hook launcher runs `agentic.py` through `runpy` with `run_name="__main__"` | `hook.py:16-30` | `agentic.py` keeps `if __name__ == "__main__": main()` at the end; `hook.py` is not edited |
-| Names other files use as `agentic.X` | `test_agentic.py`, `test_definitions.py`, frozen `test_acceptance_v21.py`, `test_acceptance_v241.py`, `acceptance/test_docs.py`; `test_acceptance_v25.py:249-256` calls `load_spec()` on the frozen copy loaded under another name | listed in section 6; `agentic.py` re-exports exactly those |
-| Tests that patch `agentic` attributes | `test_agentic.py:151` (`USAGE`), `:1738, :1740` (`is_flow_repo`), `:1770` (`ROOT`) | A patch must target the module where the function under test looks the name up (section 7) |
-| Two tests parse `agentic.py` as text for a constant | `test_definitions.py:287-291` (`STACK_SIGNALS`), `:424-429` (`INSTALL_GLOBS`) | WP-09 makes them read `repo_scan.STACK_SIGNALS` and `installer.INSTALL_GLOBS` |
-| How tests derive the command list | `test_definitions.py:70-75` (`agentic_subcommands`: regex over `cmd == "..."`), used by `test_cited_commands_exist` `:450-458` | With a table there is no `cmd ==`; it reads `agentic.COMMANDS` instead |
-| Modules the portability test checks for encoding | `test_acceptance_portable.py:22` (`FLOW_MODULES`) | Gains the eight modules (a frozen file, edited on purpose: section 10) |
-| Sections of `agentic.py` | `:260` configuration · `:277` manifest · `:584` snapshots and stage checks · `:758` launchers · `:992` language rules · `:1067` living documentation · `:1108` callers · `:1274` installing · `:1507` native workflow commands · `:1564` the whole pipeline · `:1771` the clean-code ratchet · `:2130` hook PreToolUse · `:2156` the stop gate · `:2212` ledger · `:2632` CLI | The inventory in section 5 maps each function to its module |
-| `main()` and the `elif` chain | `:2634-2786` | Each branch becomes `cmd_<name>(args)` in `agentic.py`, with its argument checks and prints unchanged |
-| The usage text `die(__doc__)` prints | `:1-62` (module docstring) | Stays in `agentic.py`, unchanged |
-| The ratchet's limits and the baseline entries for this file | `.claude/quality-baseline.json`: `agentic.py` 2,790 lines / 51 long lines; `main` 153, `install` 116, `validate` 93, `guard` 70 | A moved function is a new key: `lines ≤ 60`, `nesting ≤ 4`. A new file: `≤ 800` lines, `0` long lines (>120 chars). `python3 .claude/bin/agentic.py quality` must exit 0 before any baseline edit |
-| Error handling: `die(msg)` prints to stderr and exits 1; `block(msg)` prints the guard's refusal and exits 2; `ManifestError` for a bad manifest | `:251-257`, `:2327-2329` | Unchanged; `block` moves to `guardrail`, `die`/`ManifestError` to `core` |
-| Locked JSON state files (`claims`, `gate`, `hook-seen`, `usage`) | `:2132-2153` (`locked_json`, `with_claims`) | `core`: used by the hook, the stage check and the ledger |
-| Content guardrails shared by the hook and the stage check | `:221-246` (`PROTECTED_CONFIG_RE`, `SKIP_MARKER_RE`, `TEST_PATH_RE`, `SECRET_RES`), `:674-698` (`content_problems`), `:2410-2433` (`content_checks`) | The regexes go to `core`; `content_problems` to `stage`; `content_checks` to `guardrail` |
-| `validate` already delegates families of checks | `:482-570` (`stack_errors`, `docs_errors`, `agent_model_errors`, `mirror_errors`) | The split of `validate` follows that pattern (section 6) |
-| `install` is one function with inner closures | `:1338-1453` | Split into plan / guard / write / report (section 6) |
-| `guard` is one function with six phases | `:2446-2515` | Split into universal checks / owner resolution / report gate / bash rules / write rules (section 6) |
-| The CI job that installs into a project and runs the shipped tests | `.github/workflows/agentic-flow-ci.yml` (`installed`) | Runs on every pull request; it catches a module missing from `INSTALL_GLOBS` |
-| Bench installs the flow from a checkout with `agentic.py install` | `bench/bench.py:229` | Nothing to change: install ships the modules |
+| `build_history(repo_root, globs)` walks `git rev-list HEAD`, `git ls-tree -r <commit>` per commit, keeps blobs whose path matches a glob with `fnmatch.fnmatch`, reads them all in one `git cat-file --batch` call and hashes each with sha256 after replacing `\r\n` by `\n` | `.claude/bin/upgrade.py:249-274` | Raise `ValueError("not a git repository")` and `ValueError("needs the full git history: run \`git fetch --unshallow\` (or use a full clone)")` with exactly these texts. The batch reader (lines 263-272) is what to extract into the shared helper |
+| `git(cwd, *args, **kw)`: a `subprocess.run` wrapper, UTF-8 text by default, `text=False` for bytes, returns a `CompletedProcess` with returncode 127 when git is missing | `.claude/bin/upgrade.py:179-186` | Every git call in `upgrade.py` goes through it |
+| `load_history(source_root)` returns `{path: set(hashes)}`, `{}` if the file is missing or unreadable | `.claude/bin/upgrade.py:189-195` | The history `history_gaps()` receives |
+| `version_key("2.9.0")` returns `(2, 9, 0)`; `None` for "dev" | `.claude/bin/upgrade.py:207-213` | Sort tags with it, after stripping `TAG_PREFIX` |
+| `NOTES` is a dict `{version: [note, ...]}`, not in version order (2.8.1 at lines 119-124 sits before 2.2.0). Each note is one string built from adjacent literals, under 120 characters per line | `.claude/bin/upgrade.py:20-168`, entry to mirror `:119-124` | Add `"2.9.0"` right after `"2.8.1"` |
+| `upgrade.EXTRA_GLOBS` lists the template files refreshed in projects; `installer.INSTALL_GLOBS` the flow's own files. `flow_history()` uses `INSTALL_GLOBS + upgrade.EXTRA_GLOBS`. `.claude/flow-history.json` matches neither | `.claude/bin/upgrade.py:15-17`, `.claude/bin/installer.py:19-40`, `:282-294` | `flow_history_check()` uses the same globs. Do not add the release workflow to `EXTRA_GLOBS` |
+| `flow_history()`: gets `upgrade` with `sibling("upgrade")`, turns `ValueError` into `die(f"flow-history: {e}")`, returns a summary dict that `cmd_flow_history` prints as JSON | `.claude/bin/installer.py:282-294` | `flow_history_check()` mirrors it: same sibling call, same `die` prefix |
+| `flow_version()` reads `version` from `SOURCE_ROOT/.claude-plugin/plugin.json`, `"dev"` on any error | `.claude/bin/installer.py:55-60` | The version `flow_history_check()` and `release-notes` use |
+| `SOURCE_ROOT` is the repository of the running `agentic.py` (`HERE.parents[1]`), not `CLAUDE_PROJECT_DIR` | `.claude/bin/core.py:19-28` | Both new commands act on `SOURCE_ROOT` |
+| `die(msg, code=1)` prints to stderr and exits | `.claude/bin/core.py:144-146` | Usage errors: `die("Uso: <command> ...")`, the existing spelling |
+| `cmd_flow_history` rejects any argument with `die("Uso: flow-history")`; a test asserts that text for `flow-history extra` | `.claude/bin/agentic.py:266-269`, `.claude/bin/test_agentic.py:1121-1124` | The new usage text is `Uso: flow-history [--check]`; it still contains `Uso: flow-history`, so that test stays green unchanged |
+| `COMMANDS` table and `ROOT_FREE_COMMANDS`; `main()` returns the handler's int as the exit code | `.claude/bin/agentic.py:309-334` | Handlers return `0`/`3` for a check, as `cmd_check_wave` (`:297-298`) |
+| The docstring lists each subcommand at two spaces of indentation; the continuation lines at 22 spaces. A test compares the names with `COMMANDS` and pins their count at 34 | `.claude/bin/agentic.py:3-57`, `.claude/bin/test_definitions.py:471-474` | The count becomes 35 |
+| Root-drift exemption test | `.claude/bin/test_core.py:43-54` | Pattern for the `release-notes` exemption test in `test_release.py` |
+| Unit test repo for git histories: `Repo().commit({path: text or None})` | `.claude/bin/test_upgrade.py:15-36`, `HistoryTests` `:146-196` | Mirror for `history_gaps()` tests; tag with `subprocess.run(["git", "tag", name], cwd=repo.dir, check=True)` |
+| CI hardening: `sources()` yields the CI file and the guide's YAML blocks; tests check SHA pins, `permissions:` followed by `contents: read`, `persist-credentials: false`, no `curl | sh`, npm flags | `.claude/bin/test_definitions.py:341-372` | Yield the release workflow too, only if it exists (projects do not carry it) |
+| CI jobs are guarded with `if: github.repository == 'jagosar/agentic-flow'`; checkout uses `persist-credentials: false`; `paths` filters appear twice, on one line each, and `bench/acceptance/test_acceptance_bench.py:398-405` requires both to keep `"bench/**"` and `".github/workflows/agentic-bench.yml"` | `.github/workflows/agentic-flow-ci.yml:1-24`, `:83-134` | The `history` job mirrors the `plugin` job (`:119-134`); add the release workflow's path at the end of both `paths` lines |
+| A workflow that writes with `GITHUB_TOKEN`: top-level `permissions`, `concurrency` without cancelling, a repository guard | `.github/workflows/reset-readme.yml:5-24` | Mirror for the release workflow, but with top-level `contents: read` and `contents: write` only on the job |
+| The current ceremony to replace | `docs/how-to/plugin.md:104-123` | Section heading stays `## Publish a version (maintainers)`: other docs may link its anchor |
+| Measured on 2026-11-05: the committed history covers all 17 tags `agentic-flow--v1.1.0` .. `agentic-flow--v2.8.1` with no file missing (71 matching files at 2.8.1), and every tag is an ancestor of `main` | prototype run in this design session | `flow-history --check` on `main` must pass without regenerating |
+| `upgrade.EXTRA_GLOBS` includes `.claude-plugin/*.json`, so `plugin.json` is a checked file: every version bump makes it a `HEAD` gap until the history is regenerated. That is intended: it is what forces step 2 of the ceremony | `.claude/bin/upgrade.py:15-17` | Do not exclude it from the globs |
+| Ratchet limits: 60 lines per function, 100 per test function, nesting 4, 800 lines per file (a file already above it may grow 30), 120 characters per line | `.claude/quality-baseline.json` `limits` | `test_agentic.py` (1852 lines) is near its allowance: put new tests in `test_release.py` |
+
+What must NOT change: `build_history()`'s return value, `load_history()`, `install`, the existing jobs of `agentic-flow-ci.yml`, the message `Uso: flow-history` for a wrong argument.
 
 ## 5. Data model
-No data changes. The inventory of moves (function → module), by current line range. Constants move with the first module listed; a constant used by two domains goes to `core`.
-
-**core.py** — `:79-119` all paths and constants (`HERE`, `GUARD_DIR`, `GUARD_CMD`, `LIVE_CMD`, `FROZEN`, `SOURCE_ROOT`, `ROOT`, `ARCH`, `STATE`, `USAGE`, `CLAIMS`, `LEDGER_JSON`, `LEDGER_MD`, `LEDGER_STATES`, `GATE`, `HOOK_SEEN`, `HOOK_SEEN_MAX_AGE_S`, `HOOK_SEEN_COMMAND_CHARS`, `GATE_MAX_DENIALS`, `GATE_MAX_LINES`, `GATE_TIMEOUT_S`, `GATE_STATUSES`, `WP_ID_RE`, `CONFIG`, `BASE_TOOLS`, `QA_DEFAULT_FILES`, `AT_DEFAULT_FILES`, `DOCS_DEFAULT_FILES`, `DEFAULT_CODEMAP`, `RESERVED_IDS`, `ARCHIVE_DIR`, `NEVER_OWNED`, `QUALITY_BASELINE`, `FLOW_NAME`, `TEMPLATE_MARKER`, `RULES_LIBRARY`, `RULES_DIR`) plus the new `ENTRY = HERE / "agentic.py"`; `:133-146` `SKIP_DIRS`, `SYMBOL_RES`; `:153` `VERIFY_PHASES`; `:159` `BASELINE`; `:166` `WORKER_MODEL`; `:173-181` `DEFAULT_CONFIG`, `API_AUTH_VARS`; `:186` `MANIFEST_RE`; `:221-246` `PROTECTED_CONFIG_RE`, `SKIP_MARKER_RE`, `TEST_PATH_RE`, `SECRET_RES`; `:1569` `READ_ONLY_AGENTS`. Functions: `ManifestError` `:251`, `die` `:255`, `load_config` `:262`, `load_manifest` `:279`, `wps` `:294`, `qa_entity` `:298`, `at_entity` `:303`, `review_entity` `:309`, `docs_entity` `:313`, `codemap_path` `:322`, `entities` `:327`, `owns` `:339`, `owner_conflict` `:344`, `ignored` `:348`, `child_env` `:760`, `source_files` `:994`, `symbol_re` `:1069`, `sibling` `:1627`, `is_flow_repo` `:1720`, `maintainer_mode` `:1731`, `never_owned_problem` `:1737`, `flow_path_refused` `:1745`, `locked_json` `:2132`, `with_claims` `:2152`, `now_hm` `:2214`, `ledger_read` `:2218`, `ledger_update` `:2222`, `ledger_stage` `:2230`, `status_to_state` `:2238`, `stage_of` `:2244`, `usage_records` `:2253`, `usage_summary` `:2263`, `usage_line` `:2269`, `ledger_render` `:2274`, `stop` `:2310`, `is_old_hook_command` `:2526`, `flow_hooks` `:2531`. Estimated 480 lines (not measured).
-
-**manifest_check.py** — `:160` `MIRROR_RE`, `:162` `TYPE_RE` stays in launch (see there), `:169-172` `ARCHITECT_MODEL`, `AGENT_MODEL_OVERRIDES`, `:187` `AC_RE`, `:246` `OPEN_ENDED`, `:509` `FRONTMATTER_MODEL_RE`. Functions: `open_ended_rule` `:359`, `open_ended_command` `:366`, `validate` `:383` (split), `known_packs` `:478`, `stack_errors` `:482`, `docs_errors` `:493`, `frontmatter_model` `:512`, `agent_model_errors` `:520`, `mirror_errors` `:549`, `require_valid` `:573`. Estimated 230 lines.
-
-**repo_scan.py** — `:121` `STACK_SIGNALS`, `:1110-1114` `CALLERS_PER_SYMBOL`, `CALLERS_MAX`, `CALLER_TEXT_MAX`, `CALLER_RE_TEMPLATE`, `EMPTY_CALLERS`, `:1235-1236` `LINK_RE`, `PATH_RE`. Functions: `detect_stack` `:1006`, `declared_stack` `:1022`, `rule_files` `:1030`, `rules_hint` `:1038`, `rules_sync` `:1043`, `codemap` `:1073`, `_git_paths` `:1117`, `changed_code_files` `:1126`, `file_symbols` `:1140`, `find_callers` `:1157`, `callers` `:1203`, `heading_anchors` `:1218`, `docs_files` `:1228`, `docs_check` `:1239`. Estimated 270 lines.
-
-**verification.py** — `:156-158` `FAILURE_LINE_RE`, `DURATION_RE`, `MAX_TAIL_LINE`. Functions: `run_command` `:1456`, `acceptance_check` `:1478`, `acceptance` `:1500`, `quality_module` `:1773`, `quality_state` `:1777`, `quality_files` `:1794`, `quality_measure` `:1805`, `quality_check` `:1810`, `quality_phase` `:1823`, `write_quality_baseline` `:1834`, `quality_init` `:1838`, `quality` `:1849`, `install_quality_baseline` `:1872`, `normal_failure` `:1989`, `failure_lines` `:1994`, `run_phases` `:1999`, `attribute` `:2015`, `baseline` `:2035`, `verify` `:2056`. Estimated 300 lines.
-
-**stage.py** — `:183` `DEFAULT_IGNORE`, `:601` `STAGE_LABELS`, `:1963` `MAX_DIFF_BYTES`. Functions: `tracked_files` `:586`, `digest` `:592`, `stage_owners` `:604`, `git_tree` `:610`, `snapshot` `:630`, `git_state` `:647`, `index_files` `:668`, `content_problems` `:674`, `check_stage` `:701`, `stage_label` `:1903`, `open_stage` `:1909`, `close_stage` `:1923`, `write_fix_diffs` `:1966`, `gate_denials` `:2158`, `gate_reset` `:2162`, `own_failure` `:2169`, `gate_check` `:2185`, `stage_guarded` `:2561`. Estimated 330 lines.
-
-**installer.py** — `:148-152` `INSTALL_GLOBS`, `INSTALL_RECORD`, `RESULT_FILE`, `INSTALL_GITIGNORE`, `:161` `WORKFLOW_NAME`. Functions: `flow_version` `:1276`, `merge_settings` `:1284`, `install` `:1338` (split), `sync_permissions` `:2102`, and the new `flow_history()` (the body of the `flow-history` branch, `:2751-2762`, minus the print). Estimated 230 lines.
-
-**launch.py** — `:162` `TYPE_RE`, `:163` `REVIEW_TOOLS`, `:857-860` `REPORT_FILE_RE`, `REPORT_KEYS`, `SOURCE_RANK`, `:1509-1511` `SEQ_OUTPUT_CAP`, `SEQ_COMMANDS`, `:1566-1568` `PIPELINE_STATE`, `PIPELINE_SPEC`, `:1590` `FENCED_JSON_RE`. Functions: `load_spec` `:768`, `usage_of` `:774`, `run_agent` `:787`, `write_briefs` `:829`, `run_stage` `:841`, `render_prompt` `:852`, `_report_items` `:863`, `_record_items` `:873`, `latest_reports` `:886`, `fix_defects` `:922`, `run_wave` `:935`, `run_acceptance` `:971`, `run_review` `:978`, `run_qa` `:982`, `run_docs` `:986`, `cap_output` `:1514`, `run_steps` `:1526`, `seq` `:1545`, `pipeline_tools` `:1572`, `text_report` `:1593`, `structured_report` `:1605`, `pipeline_module` `:1632`, `brief_module` `:1636`, `run_pipeline` `:1640`, `architecture_type` `:1695`, `pipeline_plan` `:1700`, `freeze_guard` `:1750`, `release_guard` `:1895`, `finish` `:2118`. Estimated 560 lines.
-
-**guardrail.py** — `:189-219` `CLAIM_RE`, `GIT_WRITE_RE`, `FORBIDDEN_BASH`, `GIT_HOOK_BYPASS_RE`, `GIT_COMMIT_N_RE`, `MAX_CHECKED_COMMAND`, `QUOTED_RE`, `:2333` `CLAIM_KINDS`, `:2518` `HOOKS_DEAD_MSG`. Functions: `block` `:2327`, `claimable` `:2337`, `claim` `:2345`, `written_text` `:2374`, `result_text` `:2389`, `content_checks` `:2410`, `claim_required_types` `:2436`, `guard` `:2446` (split), `is_flow_agent` `:2538`, `record_hook_seen` `:2546`, `hooks_static_problem` `:2570`, `hooks_check` `:2590`, `hook` `:2615`. Estimated 380 lines.
-
-**agentic.py** (after) — docstring `:1-62` unchanged; imports; the re-export block (section 6); `cmd_*` handlers from `:2634-2786`; `COMMANDS`; `main`; `if __name__ == "__main__"`. Estimated 420 lines.
-
-Import graph (an arrow means "imports at module level"): `core` ← `manifest_check`, `repo_scan`, `verification`; `stage` → `core`, `verification`; `installer` → `core`, `verification`; `launch` → `core`, `stage`, `repo_scan`; `guardrail` → `core`, `stage`; `agentic` → all. No cycles. Siblings (`compat`, `upgrade`, `pipeline`, `brief`, `quality`, `waiting`) are leaves.
+The history file is unchanged:
+```json
+{"generated_from": "<sha of HEAD>", "files": {"<path>": ["<sha256>", "..."]}}
+```
+The check's summary, printed by `flow-history --check` as one JSON line:
+```python
+{"ok": bool,                 # True when missing is empty
+ "tags": int,                # how many agentic-flow--v* tags were checked
+ "pending": str | None,      # plugin.json's version when its tag does not exist yet, else None
+ "missing": [{"ref": str, "path": str}]}   # ref: a tag name, or "HEAD" for the pending version
+```
 
 ## 6. Contracts between modules
-All moved functions keep their names, parameters, return values, messages and exit codes exactly. Below are only the new names and the splits.
-
 ```python
-# core.py
-ENTRY = HERE / "agentic.py"   # the entry script, live or frozen: what subprocesses and run_steps execute
+# upgrade.py (WP-01)
+TAG_PREFIX = "agentic-flow--v"
 
-# manifest_check.py — validate(manifest) -> list[str] keeps its signature and returns the same strings in the same
-# order as today. It is now a sum of families, each ≤ 60 lines, each returning a list:
-def maintainer_errors(manifest) -> list      # :386-392 (the flag's type and the flow-repo check)
-def package_errors(manifest, table) -> list  # :393-430 (empty table, reserved IDs, acceptance command, the per-WP loop with mirror_errors and depends_on)
-def ownership_errors(manifest, maintainer) -> list  # :431-454 (files as lists, path shape, never-owned/.claude, two owners)
-def command_errors(manifest) -> list         # :455-466 (allow_bash rules, acceptance/verify commands)
-def shape_errors(manifest) -> list           # :467-472 (ignore, verify object)
-# validate = maintainer_errors + package_errors + ownership_errors + command_errors + shape_errors
-#            + stack_errors + docs_errors + agent_model_errors   (the last three exist today, :473-474 call them)
-# `maintainer = maintainer_mode(manifest)` (:392) is computed once in validate and passed to ownership_errors.
+def release_tags(repo_root) -> list[str]:
+    """The tags named TAG_PREFIX + a version in repo_root (`git tag -l "agentic-flow--v*"`), oldest version first
+    (version_key of the part after the prefix). Tags whose suffix version_key cannot read are skipped. [] without git
+    or without tags."""
 
-# installer.py — install(target, force=False, dry_run=False, allow_dirty=False) keeps its signature, output and exits.
-def install_plan(target, upgrade, force) -> dict
-    # :1342-1370. Returns {"record", "previous", "history", "sources", "plan", "removed", "intact"}; `intact` is the
-    # closure of :1355-1357 returned as a callable. Dies (:1344-1347) as today.
-def install_guard(target, plan, dry_run, allow_dirty) -> list
-    # :1371-1382 (`guarded`, `guard_problems`, the git and blocking exits). Returns `problems`; prints and exits 3 as today.
-def install_write(target, plan, dry_run) -> tuple
-    # :1383-1416 (the copy loop with the `kept` rule, removals, merge_settings, .gitignore, agentic.json, the record).
-    # Returns (report, settings_added, missing_ignore, config_missing).
-def install_report(target, plan, written, dry_run, problems) -> None
-    # :1417-1453. Every print, the rules-sync, quality-baseline and validate subprocesses (through ENTRY), notes, warnings.
-def flow_history() -> dict
-    # :2754-2760: build_history through sibling("upgrade"), write .claude/flow-history.json, return the summary
-    # dict {"paths", "hashes", "generated_from"}; a ValueError from build_history dies with "flow-history: <e>".
+def history_gaps(repo_root, globs, history, refs) -> list[dict]:
+    """[{"ref": ref, "path": path}] for every file of each ref in refs (in the order given, then by path) whose path
+    matches a glob (fnmatch) and whose content, with CRLF read as LF, is not among history.get(path, set()).
+    history: {path: set of sha256 hex}, as load_history returns. refs: tag names or "HEAD".
+    Raises ValueError("not a git repository") and ValueError("needs the full git history: run `git fetch
+    --unshallow` (or use a full clone)"), the same texts as build_history."""
 
-# guardrail.py — guard(data) keeps its signature; it calls these in this order and returns where today returns:
-def universal_checks(tool, tinput, agent_id, owner_id) -> None     # :2452-2457 (command length, git hook bypass)
-def resolve_owner(data, tool, tinput, agent_id, owner_id) -> tuple
-    # :2459-2466 only. Returns (claimed, owner_id): a claim command claims and returns (True, None), and guard
-    # returns at once; otherwise (False, owner) with the owner from the environment or the claims file, or None.
-def report_gate(owner_id, tinput) -> None                          # :2467-2478 (StructuredOutput: the stop gate; guard returns after it)
-def require_claim(data, agent_id, owner_id) -> None                # :2479-2481 (the "First of all, run ... claim" block)
-def bash_rules(owner_id, cmd) -> None                              # :2485-2490 (FORBIDDEN_BASH)
-def write_rules(data, owner_id, tool, tinput) -> None              # :2492-2515 (path resolution, protected paths, ownership, content_checks)
-# guard itself: ≤ 25 lines, in today's order: universal_checks; resolve_owner (return if claimed); if StructuredOutput:
-# report_gate and return; require_claim; if no owner: return (:2482-2483); if Bash: bash_rules and return; write_rules.
+def release_notes(version) -> str:
+    """NOTES[version] as a Markdown list: "- <note>\n" per note, in order. Raises ValueError(f"no upgrade notes for
+    {version}") when the version has no entry or an empty one."""
 
-# agentic.py
-COMMANDS = {"hook": cmd_hook, "hooks-check": cmd_hooks_check, ...}   # the 34 names of the docstring, same spelling
-def cmd_<name>(args) -> int | None   # one per command; the body of today's branch, with its argument checks
-def main() -> None
-    # compat.utf8_stdio(); no argument or unknown command -> die(__doc__); handler = COMMANDS[cmd];
-    # code = handler(args); sys.exit(code) when code is an int. Handlers that exit themselves keep doing so.
-# `snapshot`, `check-wave` and `run-wave` share the argument check of :2772-2773: a helper stage_arg(cmd, args) -> str.
+# installer.py (WP-02)
+def flow_history_check() -> dict:
+    """Maintainers: whether SOURCE_ROOT's .claude/flow-history.json recognises every published version, and the
+    pending one. Checks every release_tags(SOURCE_ROOT) tag; when TAG_PREFIX + flow_version() is not among them,
+    pending is that version and "HEAD" is checked too. Globs: INSTALL_GLOBS + upgrade.EXTRA_GLOBS. History:
+    upgrade.load_history(SOURCE_ROOT). With an unreadable plugin.json, flow_version() is "dev": no tag is named that,
+    so pending is "dev" and HEAD is checked. Writes nothing. Returns the summary of section 5. A ValueError from
+    history_gaps ends in die(f"flow-history: {e}") (exit 1)."""
 ```
+Command line (WP-02):
+| Command | Output | Exit |
+|---|---|---|
+| `agentic.py flow-history` | unchanged | unchanged |
+| `agentic.py flow-history --check` | the summary, one JSON line on stdout | 0 if `ok`, 3 if not, 1 on a git error (message on stderr starting `flow-history: `) |
+| `agentic.py flow-history <anything else>` | `Uso: flow-history [--check]` on stderr | 1 |
+| `agentic.py release-notes` | `release_notes(flow_version())` on stdout, nothing else | 0 |
+| `agentic.py release-notes 2.8.1` | `release_notes("2.8.1")` | 0 |
+| `agentic.py release-notes 9.9.9` | `no upgrade notes for 9.9.9` on stderr | 1 |
+| `agentic.py release-notes a b` | `Uso: release-notes [VERSION]` on stderr | 1 |
 
-The re-export block of `agentic.py`: the 23 names other files read as `agentic.X`, `load_spec` (which `test_acceptance_v25.py:249-256` calls on the frozen `agentic.py` loaded as module `m`), `require_valid` (the handlers use it), and `compat`. Documentation only: the annotations in this section are not written in the code.
-```python
-import compat
-from core import (ROOT, GUARD_DIR, QUALITY_BASELINE, SKIP_DIRS, USAGE, is_flow_repo, maintainer_mode,
-                  never_owned_problem, flow_path_refused, locked_json, usage_records, status_to_state)
-from manifest_check import validate, frontmatter_model, require_valid
-from repo_scan import PATH_RE
-from verification import attribute, run_command, quality_files
-from installer import merge_settings
-from launch import structured_report, run_steps, render_prompt, release_guard, load_spec
-```
-`agentic.py` imports every module it dispatches to; nothing else in the repo imports a new module except `test_agentic.py` for its four patches.
+Both commands are in `ROOT_FREE_COMMANDS`: a `CLAUDE_PROJECT_DIR` naming another repository does not refuse them.
+
+Release workflow (WP-03), `.github/workflows/agentic-flow-release.yml`, the behaviour other packages and the docs rely on:
+- Triggers: `push` to `branches: [main]` with `paths: [".claude-plugin/plugin.json"]`, and `workflow_dispatch`. No `pull_request`, no `schedule`, no tag trigger.
+- Top-level `permissions: contents: read`; the one job has `permissions: contents: write`. `concurrency: {group: agentic-flow-release, cancel-in-progress: false}`. Job guard `if: github.repository == 'jagosar/agentic-flow' && github.ref == 'refs/heads/main'` (a manual run from another branch must not tag a commit outside `main`), `runs-on: ubuntu-latest`, `timeout-minutes: 10`.
+- Steps, in order: checkout (`fetch-depth: 0`, `persist-credentials: false`); setup-python `"3.12"`; read the version from `.claude-plugin/plugin.json` and the tag `agentic-flow--v<version>`, and stop with success and the message `<tag> already exists: nothing to release.` when `git rev-parse -q --verify "refs/tags/<tag>"` finds it; `python .claude/bin/agentic.py flow-history --check`; `python .claude/bin/agentic.py release-notes "$VERSION" > "$RUNNER_TEMP/notes.md"`; `gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "agentic-flow $VERSION" --notes-file "$RUNNER_TEMP/notes.md"` with `GH_TOKEN: ${{ github.token }}`.
+- A failing check or missing notes fails the job before `gh release create`: nothing is tagged.
+
+CI job (WP-03), `history` in `agentic-flow-ci.yml`: `if: github.repository == 'jagosar/agentic-flow'`, `ubuntu-latest`, `timeout-minutes: 10`, checkout with `fetch-depth: 0` and `persist-credentials: false`, setup-python `"3.12"`, one step named `Flow history covers every published version` that runs `python .claude/bin/agentic.py flow-history --check`.
 
 ## 7. Conventions
-- The "consumes" lists of section 8 name what each module needs from `core`, but they are not exhaustive. A name missing from `from core import (...)` fails only at run time, in WP-09's suites, which cannot edit the module. So every module WP's validation runs `python3 .claude/bin/agentic.py quality` and the undefined-names check: a scratchpad script that parses the module with `ast`, collects every `Name` in `Load` context, and asserts each is a builtin, a module-level binding, a function parameter or local, or a loop/comprehension target. Known omissions found in review: WP-04 needs `die`; WP-06 needs `DEFAULT_CONFIG`; WP-08 needs `ledger_update`, `stage_of`, `now_hm`, `ARCHIVE_DIR`.
-- English. No type annotations in the shipped scripts (3.9, frozen guard). This contradicts `.claude/rules/agentic/python.md`; the plan wins.
-- A new module: shebang-less, module docstring in the style of `brief.py:1-6`, stdlib imports, then `sys.path.insert(0, str(Path(__file__).resolve().parent))` and `import compat` as `waiting.py:15-16`, then `from core import (...)` with explicit names. Never `import *`. Never `import agentic` from a module (it would be a cycle).
-- **Moves are verbatim, with one permitted edit.** A function's body, docstring and comments are copied unchanged; only `Path(__file__)` becomes `HERE`/`ENTRY`, the imports change, and a line over 120 characters is re-wrapped (a new module has no long-line allowance; `agentic.py` has 45 such lines outside its docstring). A re-wrap must not change a string's text. `INSTALL_GLOBS` is written one entry per line. Section 6 names the only functions whose bodies are restructured.
-- **Name binding and patches.** Modules bind names with `from core import ROOT`; a test that patches must target the module whose function reads the name: `mock.patch.object(core, "USAGE", ...)` for `usage_records`, `mock.patch.object(core, "is_flow_repo", ...)` for `maintainer_mode`, `mock.patch.object(launch, "ROOT", ...)` for `release_guard`.
-- Every function ≤ 60 lines and nesting ≤ 4; every module ≤ 800 lines; no line over 120 characters in a new module (the ratchet counts them as new files with no allowance).
-- Messages, exit codes and output are byte-identical to today; `test_agentic.py` asserts many of them.
-- One commit per WP; no model names.
+- English in code, comments, docstrings, messages and docs; usage errors keep the existing `Uso:` prefix.
+- Functions under 60 lines, nesting at most 4, lines under 120 characters (the ratchet). No new long lines in `upgrade.py`, `agentic.py` or `test_definitions.py`: their baselines allow 7, 4 and 7 and they are at that number.
+- Every git call in `upgrade.py` goes through `git()`. No `shell=True`.
+- Workflows: values from files or step outputs reach a `run:` script only through `env:` variables, never as `${{ ... }}` inside the script text (script injection). Actions by full SHA with the tag in a comment.
+- Docstrings say what a function returns and raises; comments explain why, not what.
+- Commit messages: imperative subject, a body with the why, and the attribution lines the maintainer adds. Agents do not commit.
+- Forbidden: changing `build_history()`'s output, adding the release workflow to `EXTRA_GLOBS`, third-party release actions, `curl | sh`.
 
 ## 8. Work packages and acceptance criteria
 ### Acceptance criteria
-In a refactor the acceptance is the existing suites. The criteria name the checks that make a wrong split visible.
+The acceptance tests build temporary git repositories holding a copy of this checkout's `.claude/bin/*.py` (not the `test_*` files), a `.claude-plugin/plugin.json` with a chosen version, a `.claude/agents/qa.md` (matched by `.claude/agents/*.md`) and, where the scenario says so, a history written by the copy's own `flow-history`. They run the copy as `python <repo>/.claude/bin/agentic.py ...` with `cwd=<repo>` and `CLAUDE_PROJECT_DIR` removed from the environment.
 
-- AC-001 · Every suite is green after the split
-  - Scenario: the repository after WP-09.
-  - Action: run the commands of section 3.
-  - Expected: `.claude/bin` (444 tests today), `test_workflow.mjs` (39 scenarios), `acceptance`, `qa`, `bench`, `bench/acceptance` all pass; `compileall` exits 0.
-  - Must not: no test is skipped, deleted or weakened to pass. The only test edits are WP-09's: the four patch targets, `agentic_subcommands`, `FLOW_MODULES`, the new `StructureTests`, and the two tests that today read `agentic.py` as text (`test_definitions.py:287-291` finds `STACK_SIGNALS = {`, `:424-429` finds `INSTALL_GLOBS = [`), which read `repo_scan.STACK_SIGNALS` and `installer.INSTALL_GLOBS` instead.
-  - Check: the suites themselves, run by WP-09's validation and by CI.
-  - WP: WP-09 (WP-01 also lists it: `core` is the first file every suite imports after the split)
-- AC-002 · The ratchet is green without touching the baseline
-  - Scenario: the repository after WP-09, `.claude/quality-baseline.json` as committed today.
-  - Action: `python3 .claude/bin/agentic.py quality`.
-  - Expected: exit 0, `"violations": 0`. Every new module ≤ 800 lines with 0 long lines; every function in a new module ≤ 60 lines and nesting ≤ 4; `agentic.py::main` ≤ 60.
-  - Must not: the baseline is not edited by any WP; no `exclude` entry is added.
-  - Check: `test_definitions.StructureTests.test_quality_is_green` (new, WP-09) runs the command and asserts exit 0; each module WP runs the command in its validation.
-  - WP: WP-01 to WP-09 (each module WP for its own file; WP-09 for `agentic.py`)
-- AC-003 · `agentic.py` keeps its public names and the frozen copy works
-  - Scenario: `import agentic` from `.claude/bin`.
-  - Action: read every name of the re-export block of section 6 as an attribute; run `test_acceptance_v25.FrozenCopyTests` (the frozen `validate` and `load_spec`).
-  - Expected: every attribute exists and is the same object as the module's (`agentic.validate is manifest_check.validate`); the frozen tests pass.
-  - Must not: `agentic.py` must not define a second copy of any moved function.
-  - Check: `test_definitions.StructureTests.test_reexports_are_the_modules_objects` (new, WP-09); `test_acceptance_v25.FrozenCopyTests` (existing).
-  - WP: WP-09
-- AC-004 · The dispatch table covers the documented commands
-  - Scenario: `agentic.COMMANDS` and the docstring of `agentic.py`.
-  - Action: compare `set(COMMANDS)` with the commands the docstring lists (every line matching `^  ([a-z][\w-]+)` under `Subcommands:`).
-  - Expected: equal sets, 34 names (the 31 `elif` branches plus `snapshot`, `check-wave` and `run-wave`); `test_cited_commands_exist` passes for every doc.
-  - Must not: `agentic_subcommands()` must not parse source text; an unknown command still prints the usage and exits 1.
-  - Check: `test_definitions.StructureTests.test_commands_match_the_docstring` (new, WP-09); `test_cited_commands_exist` (existing).
-  - WP: WP-09
-- AC-005 · Install ships the modules and a project runs them
-  - Scenario: the CI job `installed`, and `test_definitions.test_what_is_installed_exists`.
-  - Action: install into an empty project, run `quality` and the shipped suite there.
-  - Expected: the eight modules are present in the project; the shipped suite passes; `INSTALL_GLOBS` has one entry per module.
-  - Must not: a project that kept an edited `agentic.py` must not break: the old monolith stays self-contained and the new modules sit beside it unused (install's "kept" rule, `agentic.py:1387-1390` today).
-  - Check: `test_what_is_installed_exists` (existing); the `installed` CI job.
-  - WP: WP-06 (`INSTALL_GLOBS`), WP-09
-- AC-006 · Release
-  - Scenario: this repository after WP-10.
-  - Action: read the files.
-  - Expected: `plugin.json` is `2.8.0`; `upgrade.NOTES["2.8.0"]` exists and mentions the eight module names and that an edited `agentic.py` kept by install keeps working alone; `docs/how-it-works.md` lists each new module under `.claude/bin` with one line each.
-  - Must not: no version pinned in any test.
-  - Check: `test_the_version_has_its_upgrade_note` (existing); `test_definitions.StructureTests.test_docs_list_every_module` (new, WP-09, reads the how-it-works tree).
-  - WP: WP-10
+- AC-001 · The check passes when the history covers every published version
+  - Scenario: a repo whose `qa.md` reads `A`, version `1.0.0`; `flow-history` run and committed; tag `agentic-flow--v1.0.0` on that commit.
+  - Action: `agentic.py flow-history --check`.
+  - Expected: exit 0; stdout is one JSON object with `ok` true, `tags` 1, `pending` null, `missing` [].
+  - Must not: change `.claude/flow-history.json` (same bytes before and after) or leave anything in `git status --porcelain`.
+  - Check: `test_acceptance_v29.CheckTests.test_ac_001_covered_tags_pass`
+  - WP: WP-02
+- AC-002 · A published version the history does not know fails the check
+  - Scenario: as AC-001, but after the history commit `qa.md` changes to `B`, is committed, and the tag `agentic-flow--v1.0.0` goes on that later commit; the history is not regenerated.
+  - Action: `agentic.py flow-history --check`.
+  - Expected: exit 3; `ok` false; `missing` is exactly `[{"ref": "agentic-flow--v1.0.0", "path": ".claude/agents/qa.md"}]`.
+  - Must not: report any other path (the `.py` files did not change after the history), or regenerate the history.
+  - Check: `test_acceptance_v29.CheckTests.test_ac_002_unknown_tag_content_fails`
+  - WP: WP-02
+- AC-003 · A pending version needs the pull request's own content in the history
+  - Scenario: as AC-001, then a commit bumps the version to `1.1.0` and changes `qa.md` to `C`; no tag `agentic-flow--v1.1.0`.
+  - Action: `flow-history --check`; then `flow-history`, commit, and `flow-history --check` again.
+  - Expected: first exit 3 with `pending` `"1.1.0"` and `missing` exactly `[{"ref": "HEAD", "path": ".claude-plugin/plugin.json"}, {"ref": "HEAD", "path": ".claude/agents/qa.md"}]` (sorted by path; `plugin.json` is matched by `.claude-plugin/*.json`, so the bump itself is a gap); after regenerating and committing, exit 0 with `pending` `"1.1.0"` and `missing` [].
+  - Must not: accept the pending content before the history is regenerated.
+  - Check: `test_acceptance_v29.CheckTests.test_ac_003_pending_version_needs_head`
+  - WP: WP-02
+- AC-004 · A change without a version bump does not need a new history
+  - Scenario: as AC-001, then a commit changes `qa.md` to `D` and keeps version `1.0.0`.
+  - Action: `flow-history --check`.
+  - Expected: exit 0; `pending` null; `missing` [].
+  - Must not: check `HEAD` when the version is already tagged.
+  - Check: `test_acceptance_v29.CheckTests.test_ac_004_no_bump_no_head_check`
+  - WP: WP-02
+- AC-005 · A shallow clone is refused, not judged
+  - Scenario: a `git clone --depth 1 file://<repo of AC-001>`.
+  - Action: `flow-history --check` run from the clone's own copy.
+  - Expected: exit 1; stderr contains `flow-history: needs the full git history`.
+  - Must not: print a summary with `ok` true or false.
+  - Check: `test_acceptance_v29.CheckTests.test_ac_005_shallow_clone_refused`
+  - WP: WP-01, WP-02
+- AC-006 · Release notes come from upgrade.NOTES
+  - Scenario: this checkout.
+  - Action: `agentic.py release-notes 2.8.1`; `agentic.py release-notes` with no argument; `agentic.py release-notes 9.9.9`.
+  - Expected: the first prints exactly `"".join(f"- {n}\n" for n in upgrade.NOTES["2.8.1"])` with exit 0; the second prints the notes of the version in `.claude-plugin/plugin.json`, exit 0; the third exits 1 with `no upgrade notes for 9.9.9` on stderr and nothing on stdout.
+  - Must not: include notes of any other version (no line of `NOTES["2.8.0"]` in the output of `2.8.1`).
+  - Check: `test_acceptance_v29.NotesTests.test_ac_006_notes_by_version`
+  - WP: WP-01, WP-02
+- AC-007 · The command line: usage, the table and the root-drift exemption
+  - Scenario: this checkout and a temporary repo `other`.
+  - Action: `flow-history extra`; `release-notes a b`; `release-notes 2.8.1` and `flow-history --check` run from a temporary repo's copy with `CLAUDE_PROJECT_DIR` set to `other`.
+  - Expected: exit 1 with `Uso: flow-history [--check]`; exit 1 with `Uso: release-notes [VERSION]`; `agentic.COMMANDS` has 35 entries including `release-notes`, and the docstring lists it; neither exempt command's stderr contains `CLAUDE_PROJECT_DIR names`.
+  - Must not: refuse the two commands for root drift, or run `flow-history` (write) when `--check` is misspelled.
+  - Check: `test_acceptance_v29.CommandTests.test_ac_007_usage_table_and_exemption`
+  - WP: WP-02
+- AC-008 · The release workflow publishes from the merge, safely
+  - Scenario: `.github/workflows/agentic-flow-release.yml` in this checkout.
+  - Action: read it as text.
+  - Expected: the `on:` block has `push` with `branches: [main]` and `paths` containing `.claude-plugin/plugin.json`, and `workflow_dispatch`; top-level `permissions:` then `contents: read`; the job has `contents: write`; every `uses:` is pinned by a 40-character SHA; `fetch-depth: 0` and `persist-credentials: false`; the job guard `github.repository == 'jagosar/agentic-flow'` and `github.ref == 'refs/heads/main'`; the texts `already exists`, `agentic.py flow-history --check`, `agentic.py release-notes` and `gh release create` appear in that order; `agentic-flow--v` and `GH_TOKEN` appear.
+  - Must not: trigger on `pull_request`, `schedule` or tags; contain `${{` inside any `run:` block; use a third-party release action (`softprops`).
+  - Check: `test_acceptance_v29.WorkflowTests.test_ac_008_release_workflow`
+  - WP: WP-03
+- AC-009 · CI checks the history on every pull request
+  - Scenario: `.github/workflows/agentic-flow-ci.yml`.
+  - Action: read it as text.
+  - Expected: a job `history:` whose block has the repository guard, `fetch-depth: 0`, `persist-credentials: false` and `agentic.py flow-history --check`; both `paths:` lines contain `".github/workflows/agentic-flow-release.yml"` and still contain `"bench/**"`.
+  - Must not: add `fetch-depth: 0` to the `test`, `installed` or `plugin` jobs, or drop any existing job.
+  - Check: `test_acceptance_v29.WorkflowTests.test_ac_009_history_job`
+  - WP: WP-03
+- AC-010 · Version 2.9.0 ships with its notes, and this repository's history covers its tags
+  - Scenario: this checkout.
+  - Action: read `plugin.json` and `upgrade.NOTES`; in a full clone with tags, run `flow-history --check`.
+  - Expected: version `2.9.0`; `NOTES["2.9.0"]` non-empty and mentioning `release-notes` and `flow-history --check`; the check exits 0 or 3 with every `missing` entry's ref equal to `HEAD` (no published tag is missing). Skipped in a shallow clone or outside the agentic-flow repository.
+  - Must not: list the release workflow in `upgrade.EXTRA_GLOBS`.
+  - Check: `test_acceptance_v29.ReleaseTests.test_ac_010_version_notes_and_history`
+  - WP: WP-01, WP-02
+- AC-011 · The ceremony is documented as it now is
+  - Scenario: `docs/how-to/plugin.md`.
+  - Action: read the section under `## Publish a version (maintainers)` up to the next `## `.
+  - Expected: it mentions `upgrade.py`, `agentic.py flow-history`, the `history` check, `agentic-flow-release` and `Run workflow`; `python3 .claude/bin/agentic.py docs-check` reports no problem in `plugin.md`.
+  - Must not: still tell the maintainer to run `claude plugin tag` or to create the release by hand in the GitHub UI.
+  - Check: `test_acceptance_v29.DocsTests.test_ac_011_ceremony`
+  - WP: WP-04
 
 ### Work packages
-Expand-contract: waves 1-4 create modules beside the monolith (duplicate code, every suite still green through the untouched `agentic.py`); WP-09 rewires `agentic.py` and deletes the duplicates. Each module is created by copying the line ranges of section 5.
-
-#### WP-01 · `core.py`
+#### WP-01 · upgrade.py: tags, gaps, notes and version 2.9.0
 - Wave: 1.
-- Files: `.claude/bin/core.py`.
-- Contracts: implements `core.py` of sections 5-6; consumes nothing.
-- ACs: AC-001 (its share), AC-002.
-- **Patterns to mirror:** `waiting.py:1-16` (module header), `agentic.py:76-119` (paths; move verbatim), `brief.py:1-6` (docstring).
-- **Gotchas:** `ROOT` depends on `CLAUDE_PROJECT_DIR` at import, as today (`:86`); `FROZEN` is computed before `SOURCE_ROOT` and `ROOT` (`:84-86`); `ledger_render` (`:2274`) calls `sibling("waiting")`, so `sibling` must be defined above it or be a plain function (it is); `stop` (`:2310`) uses `subprocess` and `time`. Keep the `# ---------- ... ----------` section comments.
-- **WP validation:** `python3 -m compileall -q .claude/bin`; an import check (a scratchpad script: `import core; print(core.ROOT, core.ENTRY)` with `.claude/bin` on `sys.path`; `allow_bash` has no `python3 -c`, so validations use scripts, not inline code); `python3 .claude/bin/agentic.py quality` (exit 0: the new file is measured); the `.claude/bin` suite (unchanged, green).
+- Files: `.claude/bin/upgrade.py`, `.claude/bin/test_upgrade.py`, `.claude-plugin/plugin.json`.
+- Implements: `TAG_PREFIX`, `release_tags`, `history_gaps`, `release_notes` (section 6), `NOTES["2.9.0"]` and version `2.9.0` in `plugin.json` (only `version` changes). Both in the same package because `test_definitions.py:405-410` (`test_the_version_has_its_upgrade_note`) requires the `plugin.json` version to equal the newest `NOTES` key. Consumes nothing new.
+- ACs: AC-005, AC-006, AC-010 (shared with WP-02).
+- Patterns to mirror:
+  - `.claude/bin/upgrade.py:249-274` (`build_history`): the git checks, `ls-tree` parsing and the batch reader. Extract the reader into a private `_hashes(root, blobs) -> {blob: sha256}` and call it from both functions; `build_history`'s output must not change.
+  - `.claude/bin/upgrade.py:119-124`: the shape of a NOTES entry.
+  - `.claude/bin/test_upgrade.py:146-196` (`HistoryTests`): temporary repos with `Repo().commit`, `sha()`, cleanup.
+- Gotchas:
+  - `git ls-tree -r <ref>` prints `<mode> <type> <blob>\t<path>`; skip entries whose type is not `blob` (submodules are `commit`).
+  - Collect the blobs of all refs first, read them in one `cat-file --batch`: one batch, not one call per file.
+  - The shallow check comes before reading any ref, so a shallow clone never yields a partial answer.
+  - `release_tags` must ignore tags such as `agentic-flow--vnext` (`version_key` returns `None`).
+  - The `NOTES["2.9.0"]` text, two notes: (1) "Maintainers: `agentic.py flow-history --check` says whether .claude/flow-history.json recognises every published version and, while plugin.json carries an untagged version, the current content (exit 3 if not), and `agentic.py release-notes [VERSION]` prints a version's upgrade notes. Projects see no change in behaviour." (2) "The shipped CI workflow gains a `history` job that only runs in the agentic-flow repository; install refreshes the file where yours is intact."
+- Imports: standard library only (`fnmatch`, `hashlib`, already imported).
+- Validation: `python3 -m unittest discover -s .claude/bin -p "test_upgrade.py"`; `python3 .claude/bin/agentic.py quality`.
 
-#### WP-02 · `manifest_check.py`
-- Wave: 2, after WP-01.
-- Files: `.claude/bin/manifest_check.py`.
-- Contracts: implements the `validate` split of section 6; consumes `core` by implementation.
-- ACs: AC-002.
-- **Patterns to mirror:** `agentic.py:482-506` (`stack_errors`, `docs_errors`: a family returns a list), `:549-570` (`mirror_errors`).
-- **Gotchas:** the order of the returned errors must not change: `test_agentic.ValidateTests` and the frozen acceptance files assert on specific messages and sometimes on `errors[0]`. Concatenate the families in the order of section 6. `package_errors` is the only one near 40 lines; its `continue` statements stay.
-- **WP validation:** `compileall`; an import check; `quality` exit 0; a throwaway comparison script that imports both `agentic` and `manifest_check` and asserts `agentic.validate(m) == manifest_check.validate(m)` for the manifests of `test_agentic.MANIFEST` and `test_acceptance_v25.manifest(True)`.
+#### WP-02 · The commands: flow-history --check and release-notes
+- Wave: 1.
+- Files: `.claude/bin/installer.py`, `.claude/bin/agentic.py`, `.claude/bin/test_release.py` (new), `.claude/bin/test_definitions.py`.
+- Implements: `installer.flow_history_check()` and the command line of section 6. Consumes WP-01's `TAG_PREFIX`, `release_tags`, `history_gaps`, `release_notes` by signature (same wave). Its unit tests run against real temporary repos holding a copy of `.claude/bin/*.py`, so they go green once WP-01 has landed; while WP-01 is missing they fail with an `AttributeError` on `upgrade`, which is expected, not a defect of WP-02. No `mock.patch` of names that do not exist yet.
+- ACs: AC-001, AC-002, AC-003, AC-004, AC-007, and the command side of AC-005, AC-006 and AC-010.
+- Patterns to mirror:
+  - `.claude/bin/installer.py:282-294` (`flow_history`): `sibling("upgrade")`, the `die(f"flow-history: {e}")`, a summary dict.
+  - `.claude/bin/agentic.py:266-269` (`cmd_flow_history`) and `:297-298` (`cmd_check_wave` returning 0 or 3).
+  - `.claude/bin/agentic.py:309-323`: add `"release-notes": cmd_release_notes` to `COMMANDS` and `"release-notes"` to `ROOT_FREE_COMMANDS`.
+  - `.claude/bin/test_core.py:1-54`: header docstring, imports from `test_agentic`, the exemption test.
+  - `.claude/bin/test_definitions.py:341-372` (`CIHardeningTests.sources`): yield `.github/workflows/agentic-flow-release.yml` when it exists, as the guide is yielded.
+- Gotchas:
+  - `cmd_flow_history`: `[]` writes as today; `["--check"]` prints `json.dumps(flow_history_check())` and returns `0 if ok else 3`; anything else dies with `Uso: flow-history [--check]`.
+  - `cmd_release_notes`: more than one argument dies with `Uso: release-notes [VERSION]`; the `ValueError` of `release_notes` becomes `die(str(e))`; print with `print(..., end="")` so stdout is exactly the notes.
+  - The tag test is `upgrade.TAG_PREFIX + flow_version() in tags`, with tags from `release_tags(SOURCE_ROOT)`.
+  - The docstring entries, at the `flow-history` line (`agentic.py:44`): `flow-history [--check]` with continuation lines describing `--check`, and a new `release-notes [VERSION]` entry after it. Keep lines under 120 characters.
+  - `test_definitions.py:474`: the count becomes 35.
+  - The ratchet: `agentic.py` has a baseline of 334 lines and 4 long lines; it is under 800 lines, so only long lines matter. Do not add one.
+- `test_release.py` ships to projects (`.claude/bin/test_*.py` is in `EXTRA_GLOBS`) and the CI `installed` job runs it in a fresh project with no tags: every test builds its own temporary repo with its own `plugin.json`; none may read this repository's tags, history or version. A test that must, gets `FLOW_REPO_ONLY` as in `test_definitions.py:28`.
+- Imports: in `installer.py`, `flow_version` is local; `sibling`, `SOURCE_ROOT`, `die` come from `core` (already imported at `installer.py:13-15`; add any missing name to that import).
+- Validation: `python3 -m unittest discover -s .claude/bin -p "test_release.py"`; `python3 -m unittest discover -s .claude/bin -p "test_definitions.py"`; `python3 -m unittest discover -s .claude/bin -p "test_core.py"`; `python3 .claude/bin/agentic.py quality`.
 
-#### WP-03 · `repo_scan.py`
-- Wave: 2, after WP-01.
-- Files: `.claude/bin/repo_scan.py`.
-- Contracts: verbatim moves; consumes `core` (`source_files`, `symbol_re`, `SKIP_DIRS`, `RULES_LIBRARY`, `RULES_DIR`, `ROOT`).
-- ACs: AC-002.
-- **Patterns to mirror:** `agentic.py:1108-1116` (section comment and constants).
-- **Gotchas:** `codemap` (`:1073-1105`) is 33 lines; `find_callers` (`:1157-1200`) is 44: both fit. `PATH_RE` is re-exported by `agentic` (used by `acceptance/test_docs.py`).
-- **WP validation:** `compileall`; import check; `quality` exit 0.
+#### WP-03 · The workflows: CI history job and the release workflow
+- Wave: 1.
+- Files: `.github/workflows/agentic-flow-ci.yml`, `.github/workflows/agentic-flow-release.yml` (new).
+- Implements: the release workflow and the `history` job of section 6. Consumes the command line of WP-02 by signature.
+- ACs: AC-008, AC-009.
+- Patterns to mirror:
+  - `.github/workflows/agentic-flow-ci.yml:119-134` (`plugin` job): guard, runner, timeout, pinned checkout.
+  - `.github/workflows/reset-readme.yml:1-24`: header comment explaining the workflow, `permissions`, `concurrency`.
+- Gotchas:
+  - Pass the version and tag between steps through `$GITHUB_OUTPUT` and into later `run:` blocks only through `env:` (`VERSION: ${{ steps.tag.outputs.version }}`), never `${{ }}` inside `run:`.
+  - The "already exists" step must make the later steps skip (`if: steps.tag.outputs.exists != 'true'`), not fail the job: a push that touches `plugin.json` without a new version is normal.
+  - `--target "$GITHUB_SHA"`: `gh release create` then creates the tag on the commit that was checked.
+  - A `history` job is not added to the matrix `test` job: the matrix clones shallow on purpose.
+  - The `installed` job copies `agentic-flow-ci.yml` into a temporary project; the new job's repository guard keeps it from running there.
+- Validation: `python3 -m unittest discover -s .claude/bin -p "test_definitions.py"`; `python3 -m unittest discover -s bench/acceptance`; `python3 -m unittest discover -s .claude/bin -p test_acceptance_portable.py`.
 
-#### WP-04 · `verification.py`
-- Wave: 2, after WP-01.
-- Files: `.claude/bin/verification.py`.
-- Contracts: verbatim moves; consumes `core` (`child_env`, `load_config`, `source_files`, `symbol_re`, `is_flow_repo`, `ledger_stage`, `at_entity`, `wps`, `STATE`, `ROOT`, `BASELINE`, `GUARD_DIR`, `QUALITY_BASELINE`, `VERIFY_PHASES`, `LEDGER_STATES`, `sibling`).
-- ACs: AC-002.
-- **Patterns to mirror:** `agentic.py:1771-1774` (`quality_module` through `sibling`).
-- **Gotchas:** `install_quality_baseline` (`:1872-1892`) runs `quality --init` as a subprocess of `Path(__file__)`: use `ENTRY`. `verify` (`:2056-2099`) is 44 lines, nesting 4: it fits as is. `run_command` (`:1456`) uses `compat.resolve`, `compat.group_kwargs`, `compat.kill_tree`.
-- **WP validation:** `compileall`; import check; `quality` exit 0.
-
-#### WP-05 · `stage.py`
-- Wave: 3, after WP-04.
-- Files: `.claude/bin/stage.py`.
-- Contracts: verbatim moves; consumes `core` and `verification` (`attribute`, `acceptance_check`, `normal_failure`, `run_command`) by implementation.
-- ACs: AC-002.
-- **Patterns to mirror:** `agentic.py:584-607` (section header, `STAGE_LABELS` built from the `*_entity` functions).
-- **Gotchas:** `STAGE_LABELS` (`:601`) maps labels to `core` functions: import them explicitly. `snapshot` (`:630`) calls `sibling("waiting").clear(STATE)`. `check_stage` (`:701-755`) is 55 lines, nesting ≤ 4: fits. `gate_check` (`:2185`) runs the acceptance command through `run_command` with `GATE_TIMEOUT_S`.
-- **WP validation:** `compileall`; import check; `quality` exit 0.
-
-#### WP-06 · `installer.py`
-- Wave: 3, after WP-04.
-- Files: `.claude/bin/installer.py`.
-- Contracts: implements the `install` split and `flow_history` of section 6; consumes `core` (`SOURCE_ROOT`, `ENTRY`, `die`, `sibling`, `flow_hooks`, `is_old_hook_command`, `at_entity`, `qa_entity`, `ROOT`), `verification` (`install_quality_baseline`). It does not use `stage` (`install` hashes with `compat.content_hash`).
-- ACs: AC-002, AC-005.
-- **Patterns to mirror:** `agentic.py:1338-1453` (`install`; the closures `shipped` and `intact` become parameters or module functions), `:2751-2762` (the `flow-history` branch).
-- **Gotchas:** `INSTALL_GLOBS` gains the eight modules in this WP, in the same list style as `:148-149`; the `rules-sync` and `quality --init` subprocesses run `ENTRY`, not `__file__`. `install` prints in a fixed order that `test_agentic.InstallTests` and `test_acceptance_v27.InstallTests` assert (`quality baseline: ...`, `rules: ...`, `upgrade notes:`); keep the order of `:1417-1453`. The `kept` rule (`:1387-1390`) writes the new version under `.claude/state/upgrade/`.
-- **WP validation:** `compileall`; import check; `quality` exit 0; a scratchpad script comparing `installer.install` and `agentic.install` with `dry_run=True` into the same temporary git repo, under `mock.patch.object(installer, "INSTALL_GLOBS", agentic.INSTALL_GLOBS)` (the new list names modules the monolith does not ship yet): identical stdout.
-
-#### WP-07 · `launch.py`
-- Wave: 4, after WP-03 and WP-05.
-- Files: `.claude/bin/launch.py`.
-- Contracts: verbatim moves; consumes `core`, `stage` (`snapshot`, `stage_owners`, `check_stage`, `STAGE_LABELS`), `repo_scan` (`rule_files`, `rules_hint`).
-- ACs: AC-002.
-- **Patterns to mirror:** `agentic.py:1507-1512` (section header), `:1627-1637` (`sibling` users).
-- **Gotchas:** `run_steps` (`:1526-1542`) defaults its script to `Path(__file__)`: use `ENTRY`, and keep the `script` parameter (the pipeline's gate passes the frozen path). `run_pipeline` (`:1640-1692`) is 53 lines: fits. `freeze_guard` (`:1750-1768`) copies `ROOT/.claude/bin/*.py` except tests: unchanged, it now also copies the modules. `release_guard` is the function `test_agentic.py:1770` patches `ROOT` for: it reads `ROOT` bound in `launch`.
-- **WP validation:** `compileall`; import check; `quality` exit 0.
-
-#### WP-08 · `guardrail.py`
-- Wave: 4, after WP-05.
-- Files: `.claude/bin/guardrail.py`.
-- Contracts: implements the `guard` split of section 6; consumes `core` (`locked_json`, `with_claims`, `load_manifest`, `entities`, `at_entity`, `codemap_path`, `owns`, `maintainer_mode`, `flow_path_refused`, `flow_hooks`, `is_old_hook_command`, the content regexes, `ROOT`, `STATE`, `HOOK_SEEN`, `CLAIMS`, `WP_ID_RE`, `GATE_MAX_DENIALS`, `READ_ONLY_AGENTS`, `WORKER_MODEL`), `stage` (`gate_check`, `gate_denials`).
-- ACs: AC-002.
-- **Patterns to mirror:** `agentic.py:2446-2515` (`guard`, the phases in order), `:2615-2629` (`hook`: fail closed).
-- **Gotchas:** the order of checks in `guard` decides which message an agent sees; `test_agentic.HookWriteTests`, `HookBashTests`, `StopGateTests`, `V2EntityTests` and `test_acceptance_v27.GuardTests` assert them. `hook()` must keep its `try/except SystemExit/except Exception` shape (`:2615-2629`). `hooks_check` (`:2590-2612`) reads `.claude/settings.json` through `flow_hooks`.
-- **WP validation:** `compileall`; import check; `quality` exit 0; the hook tests run against the live `agentic.py` and stay green only after WP-09; here, a scratchpad script that feeds `test_agentic.write_payload("src/a.py")` to `guardrail.guard` inside a `test_agentic.Repo` (with `CLAUDE_PROJECT_DIR` set before importing) and sees the same exit as `agentic.guard`.
-
-#### WP-09 · `agentic.py` becomes the entry point; tests follow
-- Wave: 5, after WP-06, WP-07, WP-08 and WP-10 (its docs test reads what WP-10 writes).
-- Files: `.claude/bin/agentic.py`, `.claude/bin/test_agentic.py`, `.claude/bin/test_definitions.py`, `.claude/bin/test_acceptance_portable.py`.
-- Contracts: implements `COMMANDS`, `cmd_*`, `main`, the re-export block; consumes every module by implementation.
-- ACs: AC-001, AC-002, AC-003, AC-004, AC-005, AC-006 (the docs test).
-- **Patterns to mirror:** `agentic.py:2634-2786` (each branch's checks and prints, verbatim into its handler), `test_definitions.py:380-392` (`PluginTests` style for the new `StructureTests`).
-- **Gotchas:**
-  - Delete every moved definition from `agentic.py`; AC-003 forbids duplicates. What remains: docstring, imports, re-exports, handlers, `COMMANDS`, `main`, the `__main__` guard.
-  - `main()` ≤ 60 lines; `cmd_save_result` (`:2699-2714`, 16 lines) and `cmd_codemap` (`:2727-2737`) are the largest handlers.
-  - `test_agentic.py`: the four patch targets of section 7; nothing else changes.
-  - `test_definitions.agentic_subcommands()` returns `set(agentic.COMMANDS)`; add `StructureTests` with the four tests named in AC-002, AC-003, AC-004 and AC-006. `test_quality_is_green` and `test_docs_list_every_module` carry `@FLOW_REPO_ONLY` (`test_definitions.py:26`): the suite ships to projects (`upgrade.EXTRA_GLOBS`) and the CI `installed` job runs it there, where there is no how-it-works and the ratchet would measure the project. `test_docs_list_every_module` asserts that the `.claude/bin` tree of `docs/how-it-works.md` contains `── <module>.py` for each of the eight modules.
-  - `test_acceptance_portable.FLOW_MODULES` gains the eight module file names, one per line: the file's long-line allowance is already used by `:259`.
-  - The docstring is unchanged; `die(__doc__)` for no command and for an unknown one. `qa/test_qa_docs.py:190-198` requires every flag the docs cite to appear in `agentic.py`'s text: the docstring is what keeps them there.
-  - `hook.py` is not touched: it runs `agentic.py` with `sys.argv = [target, "hook"]`.
-- **WP validation:** every command of section 3, bench included, plus `python3 .claude/bin/agentic.py quality` (exit 0) and `python3 .claude/bin/agentic.py validate`.
-
-#### WP-10 · Version, note and docs
-- Wave: 1 (it depends on nothing; WP-09 reads its output).
-- Files: `.claude-plugin/plugin.json`, `.claude/bin/upgrade.py`, `docs/how-it-works.md`.
-- Contracts: none.
-- ACs: AC-006.
-- **Patterns to mirror:** `upgrade.py:99-112` (the 2.7.x notes), `docs/how-it-works.md:312-321` (the `.claude/bin` tree).
-- **Gotchas:** `docs/how-it-works.md:312-313` describes `agentic.py` as the owner of every command: rewrite those two lines as the entry point and dispatch, and add one line per module. `test_the_version_has_its_upgrade_note` requires `NOTES["2.8.0"]`; `qa/test_qa_docs.py` caps README at 150 lines and the hub at 260 (neither is edited here). The how-it-works tree uses `│   ├──` box characters: copy a line.
-- **WP validation:** `python3 -m unittest discover -s .claude/bin -p "test_definitions.py"`, `python3 -m unittest discover -s acceptance`, `python3 -m unittest discover -s qa`.
+#### WP-04 · The documented ceremony
+- Wave: 1.
+- Files: `docs/how-to/plugin.md`, `docs/how-it-works.md`.
+- Implements: nothing in code. Consumes the command names and the workflow name.
+- ACs: AC-011.
+- Patterns to mirror: `docs/how-to/plugin.md:104-123`: numbered steps with one command block each, the same voice.
+- Gotchas:
+  - The new steps: (1) in the pull request, bump `version` in `.claude-plugin/plugin.json` and add `NOTES["<version>"]` in `.claude/bin/upgrade.py`; (2) as its last commit, after any update from `main`, run `python3 .claude/bin/agentic.py flow-history` in a full clone and commit the file; the `history` check fails until you do; (3) merge: `agentic-flow-release` checks the history again, creates the tag `agentic-flow--v<version>` and the release with the notes; (4) if it fails, fix it in a new pull request and use **Run workflow** in the Actions tab; `claude plugin validate --strict .` remains as a local check.
+  - Keep the heading `## Publish a version (maintainers)` exactly.
+  - `docs/how-it-works.md:319`: the `installer.py` line of the tree lists `flow-history`; make it `flow-history and its check`. Nothing else in that file changes.
+- Validation: `python3 .claude/bin/agentic.py docs-check`; `python3 -m unittest discover -s .claude/bin -p "test_definitions.py"`.
 
 ```json wp-manifest
 {
   "maintainer": true,
-  "stack": ["python", "typescript"],
-  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(python3 -m compileall:*)", "Bash(node .claude/bin/test_workflow.mjs)", "Bash(python3 .claude/bin/agentic.py quality)", "Bash(python3 .claude/bin/agentic.py validate)"],
-  "verify": {"build": "python3 -m unittest discover -s qa", "lint": "node .claude/bin/test_workflow.mjs", "types": "python3 -m unittest discover -s acceptance", "tests": "python3 -m unittest discover -s .claude/bin -p \"test_*.py\""},
+  "stack": ["python"],
+  "allow_bash": ["Bash(python3 -m unittest:*)", "Bash(node .claude/bin/test_workflow.mjs)"],
+  "acceptance": {"files": [".claude/bin/test_acceptance_v29.py"], "command": "python3 -m unittest discover -s .claude/bin -p test_acceptance_v29.py"},
+  "verify": {"build": "python3 -m unittest discover -s bench -p \"test_*.py\"", "lint": "node .claude/bin/test_workflow.mjs", "types": "python3 -m unittest discover -s bench/acceptance", "tests": "python3 -m unittest discover -s .claude/bin -p \"test_*.py\""},
   "docs": {"files": ["docs/assets/"], "codemap": null},
-  "_docs_note": "the docs zone is a placeholder that overlaps nothing: WP-10 owns the documentation this change touches",
   "work_packages": [
-    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/core.py"], "acs": ["AC-001", "AC-002"], "mirror": [".claude/bin/waiting.py:1-16", ".claude/bin/core.py", ".claude/bin/brief.py:1-6"]},
-    {"id": "WP-02", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/manifest_check.py"], "acs": ["AC-002"], "mirror": [".claude/bin/manifest_check.py"]},
-    {"id": "WP-03", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/repo_scan.py"], "acs": ["AC-002"], "mirror": [".claude/bin/repo_scan.py"]},
-    {"id": "WP-04", "wave": 2, "depends_on": ["WP-01"], "files": [".claude/bin/verification.py"], "acs": ["AC-002"], "mirror": [".claude/bin/verification.py"]},
-    {"id": "WP-05", "wave": 3, "depends_on": ["WP-04"], "files": [".claude/bin/stage.py"], "acs": ["AC-002"], "mirror": [".claude/bin/stage.py"]},
-    {"id": "WP-06", "wave": 3, "depends_on": ["WP-04"], "files": [".claude/bin/installer.py"], "acs": ["AC-002", "AC-005"], "mirror": [".claude/bin/installer.py"]},
-    {"id": "WP-07", "wave": 4, "depends_on": ["WP-03", "WP-05"], "files": [".claude/bin/launch.py"], "acs": ["AC-002"], "mirror": [".claude/bin/launch.py"]},
-    {"id": "WP-08", "wave": 4, "depends_on": ["WP-05"], "files": [".claude/bin/guardrail.py"], "acs": ["AC-002"], "mirror": [".claude/bin/guardrail.py"]},
-    {"id": "WP-09", "wave": 5, "depends_on": ["WP-06", "WP-07", "WP-08", "WP-10"], "files": [".claude/bin/agentic.py", ".claude/bin/test_agentic.py", ".claude/bin/test_definitions.py", ".claude/bin/test_acceptance_portable.py"], "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006"], "mirror": [".claude/bin/agentic.py", ".claude/bin/test_definitions.py:380-392"]},
-    {"id": "WP-10", "wave": 1, "depends_on": [], "files": [".claude-plugin/plugin.json", ".claude/bin/upgrade.py", "docs/how-it-works.md"], "acs": ["AC-006"], "mirror": [".claude/bin/upgrade.py:99-112"]}
+    {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/upgrade.py", ".claude/bin/test_upgrade.py", ".claude-plugin/plugin.json"],
+     "acs": ["AC-005", "AC-006", "AC-010"], "mirror": [".claude/bin/upgrade.py:249-274", ".claude/bin/upgrade.py:119-124", ".claude/bin/test_upgrade.py:146-196"]},
+    {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude/bin/installer.py", ".claude/bin/agentic.py", ".claude/bin/test_release.py", ".claude/bin/test_definitions.py"],
+     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-005", "AC-006", "AC-007", "AC-010"], "mirror": [".claude/bin/installer.py:282-294", ".claude/bin/agentic.py:266-269", ".claude/bin/agentic.py:309-323", ".claude/bin/test_core.py:1-54", ".claude/bin/test_definitions.py:341-372"]},
+    {"id": "WP-03", "wave": 1, "depends_on": [], "files": [".github/workflows/agentic-flow-ci.yml", ".github/workflows/agentic-flow-release.yml"],
+     "acs": ["AC-008", "AC-009"], "mirror": [".github/workflows/agentic-flow-ci.yml:119-134", ".github/workflows/reset-readme.yml:1-24"]},
+    {"id": "WP-04", "wave": 1, "depends_on": [], "files": ["docs/how-to/plugin.md", "docs/how-it-works.md"],
+     "acs": ["AC-011"], "mirror": ["docs/how-to/plugin.md:104-123", "docs/how-it-works.md:310-325"]}
   ]
 }
 ```
 
 ## 9. Test strategy
-- No acceptance tests are written: the acceptance is the existing suites (refactor). The manifest therefore has no `acceptance` block; `verify.tests` runs the `.claude/bin` suite.
-- Unit: each module WP's validation imports the module and, where the body was restructured (`validate`, `install`, `guard`), compares the new function with the monolith's on the same inputs before WP-09 deletes the original.
-- WP-09 adds `StructureTests` to `test_definitions.py`: ratchet green, re-exports are the modules' objects, `COMMANDS` equals the docstring's list, how-it-works lists every module.
-- After WP-09: every suite of section 3, the `installed` CI job, and `agentic.py quality` exit 0 before any baseline edit. Then the maintainer runs `agentic.py quality --update`, which drops the `main`, `install`, `validate` and `guard` entries and lowers the `agentic.py` file entry; commits the baseline.
-- The run is executed by hand, sequentially in wave order.
+- **Unit:** WP-01 tests `release_tags`, `history_gaps` (covered, missing, CRLF, a ref order, a non-blob entry, shallow and no-git errors) and `release_notes` in `test_upgrade.py`, with the existing `Repo` helper. WP-02 tests the two commands in `test_release.py` against temporary repos holding a copy of the flow's `.claude/bin/*.py`, plus the usage errors and the exemption.
+- **Acceptance:** `.claude/bin/test_acceptance_v29.py`, written first from AC-001..AC-011 and red before the code. `unittest`, no network, temporary directories removed with `addCleanup`. AC-010's history part is skipped in a shallow clone (`git rev-parse --is-shallow-repository`) and outside the agentic-flow repository (`agentic.is_flow_repo(ROOT)`), so the matrix CI jobs, which clone shallow, skip it; in CI the same property is checked by the `history` job's command, not by this test. It runs in full local clones.
+- **QA:** by hand after integration: run `flow-history --check` on this repository before and after regenerating; run the release workflow's shell steps locally against a temporary clone with a fake tag.
+- **The ratchet** (`python3 .claude/bin/agentic.py quality`) is not a `verify` phase here (phases run one command each); the maintainer runs it before each commit, and CI runs it in the `test` job.
+- **Everything:** `python3 -m unittest discover -s .claude/bin -p "test_*.py"`, `python3 -m unittest discover -s bench -p "test_*.py"`, `bench/acceptance`, `node .claude/bin/test_workflow.mjs`, `python3 .claude/bin/agentic.py quality`.
 
 ## 10. Decisions
-- **Eight modules by domain** (user's choice) over five coarser ones (two would start near the 800-line limit) or a table-only change (leaves 2,790 lines frozen).
-- **Split `install`, `validate` and `guard`** (user's choice) rather than move them and rewrite their baseline keys by hand. The split follows the families `validate` already uses.
-- **Re-exports in `agentic.py`** for the 23 names other files read, so no frozen acceptance file changes and `test_agentic.py` keeps importing `agentic`. The alternative (tests import the modules) would edit three frozen files and hundreds of lines.
-- **`from core import name`** in modules, not `import core` plus `core.name`: bodies stay verbatim and the diff is a move. The cost is that patches must target the reading module (section 7, four sites).
-- **`source_files`, `symbol_re`, `child_env`, `flow_hooks`, `is_old_hook_command` go to `core`**, not to the domain of their section: each is used by two or more domains, and leaving them where they sit would add import edges (`verification → repo_scan`, `guardrail → installer`) and one more wave each.
-- **The frozen-guard functions (`freeze_guard`, `release_guard`) go to `launch`**, where `pipeline_plan` calls them, instead of the `ratchet` module the interview mentioned; `verification` holds the ratchet and the verify phases.
-- **`flow_history` becomes a function in `installer`** (it reads `INSTALL_GLOBS` and `upgrade`); the handler only prints.
-- **Expand-contract in five waves.** Modules import real siblings at module level, so a module cannot be validated before its dependencies exist: waves follow the import DAG, with three WPs in parallel in waves 2 and 4. A single wave would require stubbing imports, and the user executes by hand anyway.
-- **`test_acceptance_portable.FLOW_MODULES` is edited** although the file is frozen: its encoding check is the only one that reads every shipped module as bytes, and leaving the eight out would be a coverage gap on Windows.
-- **Version 2.8.0** (user's choice): projects receive eight new files and a different `agentic.py`.
-- **`test_agentic.py` is not split** (user's choice): a follow-up.
-- **Reuse:** `sibling`, `compat`, the existing error families of `validate`, the `installed` CI job, the ratchet as the size check. No new dependency.
+- **The check is an invariant, not an equality** (issue's proposal discarded). Comparing the committed file with a regeneration fails on every commit, because `generated_from` is the HEAD sha, and on GitHub's merge commit the HEAD is not the pull request's. What upgrades need is that every published version's files are recognised; that is what the check asserts.
+- **HEAD is checked only while a version is pending** (user's choice). Ordinary pull requests do not regenerate the history; the release pull request must, as its last commit, so the tag created at the merge already recognises its own content. Discarded: HEAD on every pull request (friction on every change) and tags only (the tag would lag one release).
+- **The release is created on the merge that bumps the version** (user's choice), with `workflow_dispatch` as the manual retry. Discarded: a tag-push trigger (someone must push tags, and a release made by hand in the UI would collide) and dispatch only (one more manual step).
+- **`gh release create` with `GITHUB_TOKEN`**, not `softprops/action-gh-release`: `gh` is preinstalled, so no third-party action runs with write permission.
+- **The release notes are `upgrade.NOTES[version]`**, printed by a new subcommand so the workflow has no inline Python that reads module internals, and so the maintainer can preview them.
+- **A separate `history` job with a full clone**, not a step in the matrix: the matrix clones shallow and runs four times.
+- **`history` becomes a required check** (user's choice), set by the maintainer in the ruleset after the merge, since the job name must exist first.
+- **Version 2.9.0, a minor**: two new subcommands and no behaviour change for projects.
+- **Executed by hand**, like designs 0013 and 0014: Claude Code refuses writes under `.claude/` from `claude -p` agents (issue 100), and two of the four packages own `.claude/` files.
+- **New tests go to `test_release.py`**, not `test_agentic.py`, which is near its ratchet allowance.
+- Reused: `build_history`'s git checks and batch reader (extracted, not duplicated), `load_history`, `flow_version`, `version_key`, `sibling`, `die`, the CI's pinned action SHAs.
 
 ## 11. Risks and open questions
-- **A broken module import fails open.** Today a syntax error anywhere in `agentic.py` stops the hook before `hook()`'s try block too, so this is not new, but the surface grows: eight files. `compileall` in CI and `test_acceptance_v25.FrozenCopyTests` cover it; a project's `hooks-check` does not. Not mitigated further.
-- **Hook latency.** The hook now imports eight modules instead of parsing one file; bytecode caches make this comparable, but it is not measured. If a run shows the hook slower, `guardrail` could import `stage` lazily inside `report_gate`; not planned.
-- **A project that kept an edited `agentic.py`** gets the new modules beside the old monolith. The monolith is self-contained and keeps working; the modules are unused there. `install` reports the file as kept, as today.
-- **Name clashes on `sys.path`.** `core`, `stage`, `launch` are generic names; the flow's folder is inserted at position 0, so they win over anything else importable, and nothing in the stdlib has those names. A project with its own `core.py` in `.claude/bin` is not a supported layout.
-- **Patch targets.** A future test that patches `agentic.X` for a moved function will silently patch a re-export and test nothing. Section 7 states the rule; `StructureTests.test_reexports_are_the_modules_objects` makes the aliasing visible.
-- **The maintainer guard during this run** is the pre-refactor copy and executes the monolith; fine, since the run is by hand.
-- **Line counts are estimates** from today's inventory, not measured; `quality` (AC-002) is the measurement. If a module lands over 800 lines, split it along its section comments before WP-09.
-- **The manifest's `mirror` references named line ranges of the pre-refactor `agentic.py`** (section 4b keeps them for reading). Once WP-09 shrank the file, `validate` rejected them as out of range, so the manifest now names the module each pattern moved to; the WP texts keep the original ranges.
-- **One more frozen-file edit, found at the end:** `test_acceptance_v25.HookTests.test_ac_004` loosens the live `guard` by editing `agentic.py`; after the split it edits `guardrail.py` (one line). AC-001's list did not foresee it.
-- **Rollback:** revert the pull request; projects on 2.7.x are unaffected until they install 2.8.0.
+- **The repository's Actions settings may limit `GITHUB_TOKEN` to read.** The proxy of this session cannot read that setting (HTTP 403). A job-level `contents: write` is enough unless an organisation policy caps it; if the first release fails with 403 at `gh release create`, the maintainer enables "Read and write permissions" in Settings, Actions, General, and uses **Run workflow**.
+- **The first run is this pull request's own merge**: the release workflow file arrives in the same push that bumps the version to 2.9.0. GitHub runs workflows from the pushed commit, so it should fire; if it does not, **Run workflow** publishes 2.9.0.
+- **Required check after merge**: `history` must be added to the ruleset `main: CI en los tres sistemas` (id 25961858) once the job has run on `main`; until then it informs but does not block. Like the checks already required, it lives in a workflow with a `paths` filter: a pull request touching none of those paths gets no check and waits; that is today's behaviour, not a new one.
+- **A release pull request updated from `main` after its history commit** fails `history` when `main` changed a shipped file: regenerate and commit again. Documented in step 2 of the ceremony.
+- Rollback: revert the merge commit; delete the tag and the release if one was created. `install` never reads anything new, so projects are unaffected.
