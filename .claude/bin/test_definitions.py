@@ -313,7 +313,7 @@ class SettingsTests(unittest.TestCase):
     def test_hook_registered(self):
         entries = self.settings["hooks"]["PreToolUse"]
         commands = [h["command"] for e in entries for h in e["hooks"]]
-        # 2.5.0: the launcher, which picks the frozen guard of a maintainer run or the live agentic.py.
+        # 2.5.0: the launcher hook.py, which runs the live agentic.py.
         self.assertIn('python3 "$CLAUDE_PROJECT_DIR/.claude/bin/hook.py"', commands)
         self.assertFalse([c for c in commands if "agentic.py" in c and c.strip().endswith("hook")],
                          "the old command must be gone")
@@ -324,18 +324,18 @@ class SettingsTests(unittest.TestCase):
     def test_permissions_and_workflows(self):
         perms = self.settings["permissions"]
         self.assertIn("Workflow(agentic-implement)", perms["allow"])
-        self.assertIn("Bash(python3 .claude/state/guard/bin/agentic.py:*)", perms["allow"], "the frozen guard's gate calls")
+        self.assertFalse([r for r in perms["allow"] if "state/guard" in r], "the frozen guard is gone (2.10.0)")
         self.assertTrue(self.settings.get("enableWorkflows"))
         for rule in ("Bash(git reset --hard:*)", "Bash(git clean:*)", "Bash(rm -rf:*)"):
             self.assertIn(rule, perms["deny"])
         self.assertFalse(any("git push" in r for r in perms["deny"]), "the hook blocks push only for agents")
 
 
-    def test_the_gatekeeper_accepts_the_live_and_the_frozen_command(self):
+    def test_the_gatekeeper_accepts_only_the_live_command(self):
         rule = next(line for line in (CLAUDE / "agents" / "gatekeeper.md").read_text(encoding="utf-8").splitlines()
                     if "are accepted" in line)
         self.assertIn("`python3 .claude/bin/agentic.py`", rule)
-        self.assertIn("`python3 .claude/state/guard/bin/agentic.py`", rule)
+        self.assertNotIn("state/guard", rule)
 
 
 class CIHardeningTests(unittest.TestCase):
@@ -445,11 +445,11 @@ class StructureTests(unittest.TestCase):
     """agentic.py is the entry point: a dispatch table and re-exports; the code lives in the modules by domain."""
     MODULES = ["core", "manifest_check", "repo_scan", "verification", "stage", "installer", "launch", "guardrail"]
     REEXPORTS = {
-        "core": ["ROOT", "GUARD_DIR", "QUALITY_BASELINE", "SKIP_DIRS", "USAGE", "is_flow_repo", "maintainer_mode",
+        "core": ["ROOT", "QUALITY_BASELINE", "SKIP_DIRS", "USAGE", "is_flow_repo", "maintainer_mode",
                  "never_owned_problem", "flow_path_refused", "locked_json", "usage_records", "status_to_state"],
         "manifest_check": ["validate", "frontmatter_model", "require_valid"], "repo_scan": ["PATH_RE"],
         "verification": ["attribute", "run_command", "quality_files"], "installer": ["merge_settings"],
-        "launch": ["structured_report", "run_steps", "render_prompt", "release_guard", "load_spec"],
+        "launch": ["structured_report", "run_steps", "render_prompt", "load_spec"],
     }
 
     @FLOW_REPO_ONLY  # a project's code is its own; the ratchet there is the project's baseline
@@ -474,7 +474,7 @@ class StructureTests(unittest.TestCase):
     def test_commands_match_the_docstring(self):
         listed = set(re.findall(r"^  ([a-z][\w-]+)", agentic.__doc__.split("Subcommands:")[1], re.M))
         self.assertEqual(set(agentic.COMMANDS), listed)
-        self.assertEqual(len(agentic.COMMANDS), 35)
+        self.assertEqual(len(agentic.COMMANDS), 34)
 
     @FLOW_REPO_ONLY  # a project does not carry the flow's own guides
     def test_docs_list_every_module(self):

@@ -16,11 +16,11 @@
       "long_lines": 4
     },
     ".claude/bin/hook.py": {
-      "lines": 34,
+      "lines": 29,
       "long_lines": 1
     },
     ".claude/bin/pipeline.py": {
-      "lines": 567,
+      "lines": 556,
       "long_lines": 30
     },
     ".claude/bin/test_acceptance.py": {
@@ -69,11 +69,11 @@
     },
     ".claude/bin/test_definitions.py": {
       "lines": 492,
-      "long_lines": 7
+      "long_lines": 6
     },
     ".claude/bin/test_pipeline.py": {
-      "lines": 366,
-      "long_lines": 18
+      "lines": 356,
+      "long_lines": 16
     },
     ".claude/bin/test_upgrade.py": {
       "lines": 196,
@@ -92,8 +92,8 @@
       "long_lines": 7
     },
     ".claude/workflows/agentic-implement.js": {
-      "lines": 562,
-      "long_lines": 69
+      "lines": 555,
+      "long_lines": 68
     },
     "acceptance/test_docs_ab.py": {
       "lines": 102,

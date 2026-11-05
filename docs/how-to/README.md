@@ -171,7 +171,7 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 ```bash
 python3 .claude/bin/agentic.py validate                # manifest and models are consistent
 python3 .claude/bin/agentic.py sync-permissions        # agents' permissions in settings.local.json
-python3 .claude/bin/agentic.py pipeline-plan           # the plan the workflow follows (JSON); guard-release unfreezes a maintainer run's guard
+python3 .claude/bin/agentic.py pipeline-plan           # the plan the workflow follows (JSON)
 python3 .claude/bin/agentic.py baseline                # the suite before any change
 python3 .claude/bin/agentic.py verify                  # phases against the baseline + acceptance (JSON); quality --init starts the clean-code ratchet
 python3 .claude/bin/agentic.py stack                   # detected languages against the manifest's stack

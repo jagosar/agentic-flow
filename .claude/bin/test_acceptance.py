@@ -248,8 +248,8 @@ class PromptTests(unittest.TestCase):
             self.assertIn(".claude/state/briefs/AT.md", happy["prompts"][key])
         self.assertEqual(happy["gates"][:4], ["hooks-check", "pipeline-plan", "briefs", "baseline"])
         resumed = self.dump["start_wave skips the baseline, wave 0 and earlier waves"]
-        # 2.5.0: a resumed run keeps the guard frozen at its first start.
-        self.assertEqual(resumed["gates"][:3], ["hooks-check", "pipeline-plan --keep-guard", "briefs"])
+        # 2.10.0: a resumed run plans like a fresh one (the frozen guard of 2.5.0 is gone).
+        self.assertEqual(resumed["gates"][:3], ["hooks-check", "pipeline-plan", "briefs"])
         judges = ("reviewer", "qa", "verifier", "doc-updater")
         seen = 0
         for scenario in self.dump.values():

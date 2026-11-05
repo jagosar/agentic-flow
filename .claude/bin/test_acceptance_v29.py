@@ -189,7 +189,8 @@ class CommandTests(unittest.TestCase):
         r = run([sys.executable, str(BIN / "agentic.py"), "release-notes", "a", "b"], ROOT)
         self.assertEqual(r.returncode, 1)
         self.assertIn("Uso: release-notes [VERSION]", r.stderr)
-        self.assertEqual(len(agentic.COMMANDS), 35)
+        self.assertEqual(set(agentic.COMMANDS),
+                         set(re.findall(r"^  ([a-z][\w-]+)", agentic.__doc__.split("Subcommands:")[1], re.M)))
         self.assertIn("release-notes", agentic.COMMANDS)
         self.assertRegex(agentic.__doc__, r"\n  release-notes")
         repo, other = FlowCopy(), FlowCopy()
@@ -275,7 +276,7 @@ def is_shallow():
 
 class ReleaseTests(unittest.TestCase):
     def test_ac_010_version_notes_and_history(self):
-        self.assertEqual(json.loads((ROOT / PLUGIN).read_text(encoding="utf-8"))["version"], "2.9.0")
+        # The version is no longer pinned here: test_definitions checks that plugin.json's version has its notes.
         notes = " ".join(upgrade.NOTES.get("2.9.0", []))
         self.assertIn("release-notes", notes)
         self.assertIn("flow-history --check", notes)

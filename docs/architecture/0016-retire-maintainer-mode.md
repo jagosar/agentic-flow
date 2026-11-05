@@ -72,7 +72,7 @@ docs/how-to/README.md                    WP-04  the pipeline-plan line
 | `validate`: `maintainer_errors` (flag boolean; true only in the flow repo) and `ownership_errors(manifest, maintainer)` (never-owned rule for `.claude/` paths of a maintainer plan, plain refusal otherwise) | `.claude/bin/manifest_check.py:62-81`, `:128-150` | Behaviour unchanged. Only the `maintainer_errors` docstring and message say "a plan for the agentic-flow repository itself, run by hand" |
 | close-stage: `maintainer = maintainer_mode(manifest)` then `flow_path_refused(path, maintainer)` | `.claude/bin/stage.py:150-160` | Drop the variable; call `flow_path_refused(path)`; drop `maintainer_mode` from the import at `:19` if unused |
 | The hook's guard: `flow_path_refused(rel, maintainer_mode(manifest))` | `.claude/bin/guardrail.py:252-263`, import `:17` | Call `flow_path_refused(rel)` |
-| `hook.py`: `target()` picks the frozen copy when `.claude/state/guard/active.json` exists | `.claude/bin/hook.py:1-34` | `target()` returns `root / ".claude" / "bin" / "agentic.py"` only; keep the fail-closed `try` in `main()`, the `runpy` call, Python 3.9 compatibility and the rule of not importing `agentic.py` at module level |
+| `hook.py`: `target()` picks the frozen copy when `.claude/state/guard/active.json` exists | `.claude/bin/hook.py:1-29` | `target()` returns `root / ".claude" / "bin" / "agentic.py"` only; keep the fail-closed `try` in `main()`, the `runpy` call, Python 3.9 compatibility and the rule of not importing `agentic.py` at module level |
 | `SEQ_COMMANDS` includes `guard-release`; `PIPELINE_SPEC` reads the frozen copy's spec when `FROZEN` | `.claude/bin/launch.py:36-45` | Remove `guard-release`; `PIPELINE_SPEC = ROOT / ".claude" / "workflows" / "pipeline-spec.json"`; fix the comment |
 | The agent launchers write state before `run_stage`: `run_wave` writes briefs and, with `--fix`, the ledger (`launch.py:244-246`); `run_acceptance` writes briefs (`:256`); `run_pipeline` creates `.claude/state/runs` and writes `workflow-result.json` | `.claude/bin/launch.py:217-268`, `:378-430` | So the refusal goes in the command handlers, before the launcher runs: `cmd_run_wave`, `cmd_run_acceptance`, `cmd_run_review`, `cmd_run_qa`, `cmd_run_docs`, `cmd_run_pipeline` and `cmd_pipeline_plan` (`agentic.py:149-156`, `:189-190`, `:223-224`, `:292-297`, `cmd_run_wave` after `stage_arg`) call `require_runnable()` instead of `require_valid()` |
 | `run_steps(groups, env=None, script=None)` | `.claude/bin/launch.py:284-299` | Remove `script`; always `ENTRY` |
@@ -139,7 +139,7 @@ RETIRED_PERMISSIONS = ("Bash(python3 .claude/state/guard/bin/agentic.py:*)",)
 def merge_settings(dst, src) -> (dict, list)    # also removes RETIRED_PERMISSIONS from permissions.allow,
                                                 # adding "removed allow <rule>" to the list
 ```
-Command line (WP-02): `pipeline-plan` with any argument prints `Uso: pipeline-plan` on stderr, exit 1. `guard-release` is not a command: `agentic.py guard-release` prints the usage text and exits 1, as any unknown command. A by-hand plan: `pipeline-plan`, `run-pipeline` and every `run-*` one-off launcher print `BY_HAND_PLAN` on stderr and exit 1 before writing anything (no briefs, no snapshot, no ledger entry, no `runs/` file).
+Command line (WP-02): `pipeline-plan` with any argument prints `Uso: pipeline-plan` on stderr, exit 1. `guard-release` is not a command: running it prints the usage text and exits 1, as any unknown command. A by-hand plan: `pipeline-plan`, `run-pipeline` and every `run-*` one-off launcher print `BY_HAND_PLAN` on stderr and exit 1 before writing anything (no briefs, no snapshot, no ledger entry, no `runs/` file).
 
 Engines (WP-03): the gatekeeper prompt always starts with `python3 .claude/bin/agentic.py`; the first call is `seq hooks-check + pipeline-plan + briefs`, resumed or not; no call is `guard-release`.
 
@@ -234,7 +234,7 @@ The four packages are coupled by imports and shared tests: removing `GUARD_DIR`,
 - Files: `.claude/bin/core.py`, `.claude/bin/manifest_check.py`, `.claude/bin/stage.py`, `.claude/bin/guardrail.py`, `.claude/bin/verification.py`. The maintainer also edits `.claude/bin/hook.py` with this package (never owned, so outside the manifest).
 - Implements: `BY_HAND_PLAN`, `refuse_by_hand_plan`, `flow_path_refused(path)`, the constants' removal, `hook.py`'s live-only target. Consumes nothing new.
 - ACs: AC-001, AC-006, and the core side of AC-002, AC-003, AC-004. AC-005 is the maintainer's (`hook.py`).
-- Patterns to mirror: `.claude/bin/core.py:235-261` (the functions to edit, their docstring style); `.claude/bin/hook.py:1-34` (keep its structure); `.claude/bin/core.py:124-136` (`root_drift`, a message that names the cause and the way out).
+- Patterns to mirror: `.claude/bin/core.py:235-261` (the functions to edit, their docstring style); `.claude/bin/hook.py:1-29` (keep its structure); `.claude/bin/core.py:124-136` (`root_drift`, a message that names the cause and the way out).
 - Gotchas:
   - `SOURCE_ROOT` is used by `installer.py` and `root_drift`; it must stay `HERE.parents[1]`.
   - `verification.py:128`: only the docstring's parenthesis about the frozen guard changes.
@@ -249,7 +249,7 @@ The four packages are coupled by imports and shared tests: removing `GUARD_DIR`,
 - Files: `.claude/bin/launch.py`, `.claude/bin/agentic.py`, `.claude/bin/installer.py`, `.claude/bin/test_agentic.py`, `.claude/bin/test_definitions.py`, `.claude/bin/test_acceptance_v29.py`.
 - Implements: `pipeline_plan(manifest)`, `require_runnable()` in the handlers, `run_steps(groups, env=None)`, the CLI of section 6, `RETIRED_PERMISSIONS` in `merge_settings`. Consumes WP-01's `refuse_by_hand_plan` and `flow_path_refused` by signature.
 - ACs: AC-008, and the launcher side of AC-002, AC-003, AC-004.
-- Patterns to mirror: `.claude/bin/launch.py:436-454` (`pipeline_plan`); `.claude/bin/installer.py:62-92` (`merge_settings`, the `added` list); `.claude/bin/test_agentic.py:1710-1808` (`MaintainerModeTests`, its `flow_dir` helper).
+- Patterns to mirror: `.claude/bin/launch.py:430-440` (`pipeline_plan`); `.claude/bin/installer.py:62-92` (`merge_settings`, the `added` list); `.claude/bin/test_agentic.py:1710-1808` (`MaintainerModeTests`, its `flow_dir` helper).
 - Gotchas:
   - `launch.py` imports from `core`: remove `GUARD_CMD`, `GUARD_DIR`, `FROZEN`, `LIVE_CMD`, `maintainer_mode`, and `HERE` once `PIPELINE_SPEC` no longer uses it. `agentic.py` imports `refuse_by_hand_plan` from `core` for `require_runnable()`.
   - `test_agentic.py` sits at 1852 lines with an allowance of 1879: delete before adding.
@@ -294,9 +294,9 @@ The four packages are coupled by imports and shared tests: removing `GUARD_DIR`,
   "docs": {"files": ["docs/assets/"], "codemap": null},
   "work_packages": [
     {"id": "WP-01", "wave": 1, "depends_on": [], "files": [".claude/bin/core.py", ".claude/bin/manifest_check.py", ".claude/bin/stage.py", ".claude/bin/guardrail.py", ".claude/bin/verification.py"],
-     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-006"], "mirror": [".claude/bin/core.py:235-261", ".claude/bin/hook.py:1-34", ".claude/bin/core.py:124-136"]},
+     "acs": ["AC-001", "AC-002", "AC-003", "AC-004", "AC-006"], "mirror": [".claude/bin/core.py:235-261", ".claude/bin/hook.py:1-29", ".claude/bin/core.py:124-136"]},
     {"id": "WP-02", "wave": 1, "depends_on": [], "files": [".claude/bin/launch.py", ".claude/bin/agentic.py", ".claude/bin/installer.py", ".claude/bin/test_agentic.py", ".claude/bin/test_definitions.py", ".claude/bin/test_acceptance_v29.py"],
-     "acs": ["AC-002", "AC-003", "AC-004", "AC-008"], "mirror": [".claude/bin/launch.py:436-454", ".claude/bin/installer.py:62-92", ".claude/bin/test_agentic.py:1710-1808"]},
+     "acs": ["AC-002", "AC-003", "AC-004", "AC-008"], "mirror": [".claude/bin/launch.py:430-440", ".claude/bin/installer.py:62-92", ".claude/bin/test_agentic.py:1710-1808"]},
     {"id": "WP-03", "wave": 1, "depends_on": [], "files": [".claude/bin/pipeline.py", ".claude/workflows/agentic-implement.js", ".claude/bin/conformance.json", ".claude/bin/test_pipeline.py", ".claude/bin/test_workflow.mjs", ".claude/bin/test_acceptance.py", ".claude/bin/test_acceptance_portable.py"],
      "acs": ["AC-007"], "mirror": [".claude/bin/pipeline.py:228-260", ".claude/workflows/agentic-implement.js:392-412"]},
     {"id": "WP-04", "wave": 1, "depends_on": [], "files": [".claude/agents/gatekeeper.md", ".claude/bin/upgrade.py", ".claude-plugin/plugin.json", ".claude/bin/test_acceptance_v25.py", "docs/how-it-works.md", "docs/how-to/README.md"],
