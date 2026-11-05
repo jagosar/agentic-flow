@@ -232,7 +232,7 @@ The hook's Bash rules are regular expressions: they stop mistakes, not a determi
 - a commit or ref change, or a change to git's own `config`, hooks or excludes, or to the baseline;
 - a secret, an unconditional test skip or a relaxed quality configuration added during the stage (compared with each file's content when the stage opened, so a fixture that was already there is not blamed).
 
-**Maintainer mode** lets the flow change itself, in the agentic-flow repository only. A plan with `"maintainer": true` may give packages files under `.claude/`, except the settings, `.claude/state/` and the two hook scripts. `pipeline-plan` then copies the guard (the non-test scripts and the pipeline spec) into `.claude/state/guard/`, and until the run ends the hook, `close-stage` and every other gate call run that frozen copy, so a package that edits `agentic.py` is still judged by the guard the run started with. A resumed run keeps the copy; both engines call `guard-release` on the way out, and any normal run releases a copy left behind. Today a maintainer plan runs by hand: Claude Code itself protects `.claude/` from agents started with `claude -p` (a write there needs a person's approval, and allow rules do not lift it), so a package that owns a flow file cannot write it.
+**Changing the flow itself.** The agentic-flow repository is changed by hand: Claude Code does not let the agents the flow starts write under `.claude/`, where the flow lives. A plan for it carries `"maintainer": true`, which lets its packages own `.claude/` files except the never-owned ones (the settings, `.claude/state/`, `hook.py`, `waiting.py` and the quality baseline). `validate` accepts the flag only in the agentic-flow repository, and `pipeline-plan`, `run-pipeline` and every `run-*` command refuse such a plan before writing anything, so no agent is started for work it cannot do.
 
 **The clean-code ratchet.** With `.claude/quality-baseline.json` in the repo (install creates it from the code as it is), `baseline` and `verify` add a `quality` phase: function length and nesting (Python through `ast`, JavaScript/TypeScript through a heuristic scanner), file size and long lines may not get worse than the baseline, and new code must respect the limits. A failure names the file, so the package that owns it goes to a fix cycle. Only a person writes the baseline: `quality --update` lowers it, and agents can run neither `--init` nor `--update`.
 
@@ -317,7 +317,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── verification.py     commands without a shell, acceptance, baseline/verify with attribution, the ratchet
 │   ├── stage.py            snapshots, stage checks, open/close-stage, fix diffs, the stop gate
 │   ├── installer.py        install with its intact-file rule, settings, sync-permissions, flow-history and its check
-│   ├── launch.py           the claude -p launchers, run-*, seq, run-pipeline, pipeline-plan and the frozen guard
+│   ├── launch.py           the claude -p launchers, run-*, seq, run-pipeline and pipeline-plan
 │   ├── guardrail.py        the PreToolUse hook: guard, claims, content checks, the heartbeat, hooks-check
 │   ├── brief.py            slices architecture.md into the briefs the agents read
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer

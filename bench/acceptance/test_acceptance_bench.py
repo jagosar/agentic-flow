@@ -407,7 +407,7 @@ class CiTests(unittest.TestCase):
         self.assertIn("unittest discover -s bench/acceptance", ci)
         env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
         proc = run_in(REPO / ".claude" / "bin",
-                      [sys.executable, "-m", "unittest", "test_definitions", "test_acceptance_portable"], env)
+                      [sys.executable, "-m", "unittest", "test_definitions", "test_ci"], env)
         self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
 
 

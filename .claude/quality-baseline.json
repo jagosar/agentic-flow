@@ -16,52 +16,12 @@
       "long_lines": 4
     },
     ".claude/bin/hook.py": {
-      "lines": 34,
+      "lines": 29,
       "long_lines": 1
     },
     ".claude/bin/pipeline.py": {
-      "lines": 567,
+      "lines": 556,
       "long_lines": 30
-    },
-    ".claude/bin/test_acceptance.py": {
-      "lines": 311,
-      "long_lines": 10
-    },
-    ".claude/bin/test_acceptance_portable.py": {
-      "lines": 282,
-      "long_lines": 1
-    },
-    ".claude/bin/test_acceptance_upgrade.py": {
-      "lines": 261,
-      "long_lines": 7
-    },
-    ".claude/bin/test_acceptance_v2.py": {
-      "lines": 189,
-      "long_lines": 4
-    },
-    ".claude/bin/test_acceptance_v21.py": {
-      "lines": 298,
-      "long_lines": 4
-    },
-    ".claude/bin/test_acceptance_v22.py": {
-      "lines": 183,
-      "long_lines": 1
-    },
-    ".claude/bin/test_acceptance_v23.py": {
-      "lines": 280,
-      "long_lines": 3
-    },
-    ".claude/bin/test_acceptance_v24.py": {
-      "lines": 302,
-      "long_lines": 1
-    },
-    ".claude/bin/test_acceptance_v241.py": {
-      "lines": 103,
-      "long_lines": 1
-    },
-    ".claude/bin/test_acceptance_waiting.py": {
-      "lines": 192,
-      "long_lines": 3
     },
     ".claude/bin/test_agentic.py": {
       "lines": 1849,
@@ -69,11 +29,11 @@
     },
     ".claude/bin/test_definitions.py": {
       "lines": 492,
-      "long_lines": 7
+      "long_lines": 6
     },
     ".claude/bin/test_pipeline.py": {
-      "lines": 366,
-      "long_lines": 18
+      "lines": 356,
+      "long_lines": 16
     },
     ".claude/bin/test_upgrade.py": {
       "lines": 196,
@@ -92,8 +52,8 @@
       "long_lines": 7
     },
     ".claude/workflows/agentic-implement.js": {
-      "lines": 562,
-      "long_lines": 69
+      "lines": 555,
+      "long_lines": 68
     },
     "acceptance/test_docs_ab.py": {
       "lines": 102,
