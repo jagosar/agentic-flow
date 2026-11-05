@@ -103,24 +103,28 @@ claude --plugin-dir /path/to/agentic-flow
 
 ## Publish a version (maintainers)
 
-1. Bump `version` in `.claude-plugin/plugin.json` and commit. The version lives only there; the marketplace entry does not repeat it.
-2. Record the flow's history, so upgrades recognise every published version, and commit it (it needs a full clone, not a shallow one):
+A version is published by merging the pull request that bumps it: no second pull request, no release made by hand.
+
+1. In the pull request, bump `version` in `.claude-plugin/plugin.json` (the version lives only there; the marketplace entry does not repeat it) and add its entry to `NOTES` in `.claude/bin/upgrade.py`: what changed for projects, one sentence per change. Those notes become the release's description; preview them with:
+
+   ```bash
+   python3 .claude/bin/agentic.py release-notes
+   ```
+
+2. As the pull request's last commit, after any update from `main`, record the flow's history so upgrades recognise this version too, and commit it. It needs a full clone, not a shallow one:
 
    ```bash
    python3 .claude/bin/agentic.py flow-history
+   python3 .claude/bin/agentic.py flow-history --check   # what CI's history check runs: exit 0
    ```
 
-3. Check the plugin, as CI does:
+   The `history` check of the pull request fails until you do, and again if `main` changes a shipped file afterwards: regenerate and commit once more.
 
-   ```bash
-   claude plugin validate --strict .
-   ```
+3. Merge. The `agentic-flow-release` workflow checks the history again, creates the `agentic-flow--v<version>` tag on the merge commit and the GitHub release, titled `agentic-flow <version>`, with the notes of step 1. A merge that does not change the version publishes nothing.
 
-4. Create the `agentic-flow--v<version>` tag:
+4. If the workflow fails, fix the cause in a new pull request and publish with **Run workflow** in the repository's Actions tab, on `agentic-flow-release`. Nothing is tagged until every check passes.
 
-   ```bash
-   claude plugin tag .
-   ```
+CI already validates the plugin on every pull request; to check it locally, run `claude plugin validate --strict .`.
 
 ## Troubleshooting
 
