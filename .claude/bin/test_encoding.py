@@ -17,8 +17,8 @@ sys.path.insert(0, str(BIN))
 from test_definitions import FLOW_REPO_ONLY, ROOT  # noqa: E402
 
 BINARY_PROBE_BYTES = 8000
-BOM = "﻿"
-DOUBLE_ENCODED = re.compile("Ã[\u0080-¿]|â€|Â[ -¿]")
+BOM = "\ufeff"
+DOUBLE_ENCODED = re.compile("\u00c3[\u0080-\u00bf]|\u00e2\u20ac|\u00c2[\u00a0-\u00bf]")
 
 
 def text_problems(root, paths):
@@ -53,8 +53,8 @@ class TextProblemsTests(unittest.TestCase):
         return d
 
     def test_each_problem_is_named_and_clean_or_binary_files_are_not(self):
-        d = self.folder({"ok.md": "ñ €\n".encode("utf-8"), "latin.txt": b"caf\xe9\n",
-                         "double.md": "cafÃ©\n".encode("utf-8"), "bom.md": "﻿x\n".encode("utf-8"),
+        d = self.folder({"ok.md": "\u00f1 \u20ac\n".encode("utf-8"), "latin.txt": b"caf\xe9\n",
+                         "double.md": "caf\u00c3\u00a9\n".encode("utf-8"), "bom.md": "\ufeffx\n".encode("utf-8"),
                          "bin.dat": b"\x00\xff"})
         self.assertEqual(text_problems(d, ["ok.md", "latin.txt", "double.md", "bom.md", "bin.dat"]),
                          ["bom.md: starts with a byte-order mark", "double.md: double-encoded text",
