@@ -169,7 +169,7 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 ## Script reference
 
 ```bash
-python3 .claude/bin/agentic.py validate                # manifest and models are consistent
+python3 .claude/bin/agentic.py validate                # manifest and models are consistent; warns about oversized packages or a chain of waves
 python3 .claude/bin/agentic.py sync-permissions        # agents' permissions in settings.local.json
 python3 .claude/bin/agentic.py pipeline-plan           # the plan the workflow follows (JSON)
 python3 .claude/bin/agentic.py baseline                # the suite before any change
