@@ -230,7 +230,7 @@ The hook's Bash rules are regular expressions: they stop mistakes, not a determi
 
 - a change outside the stage's zones, or to `architecture.md`, `.claude/`, the decision archive or the code map even inside a zone that covers them by prefix;
 - a commit or ref change, or a change to git's own `config`, hooks or excludes, or to the baseline;
-- a secret, an unconditional test skip or a relaxed quality configuration added during the stage (compared with each file's content when the stage opened, so a fixture that was already there is not blamed).
+- a secret, an unconditional test skip, a relaxed quality configuration or an agent shortcut in code (an exception swallowed with `pass`, an empty `catch`, an always-true assertion, a debug log tagged `[DEBUG-`, a Python test without an assertion) added during the stage (compared with each file's content when the stage opened, so a fixture that was already there is not blamed).
 
 **Changing the flow itself.** The agentic-flow repository is changed by hand: Claude Code does not let the agents the flow starts write under `.claude/`, where the flow lives. A plan for it carries `"maintainer": true`, which lets its packages own `.claude/` files except the never-owned ones (the settings, `.claude/state/`, `hook.py`, `waiting.py` and the quality baseline). `validate` accepts the flag only in the agentic-flow repository, and `pipeline-plan`, `run-pipeline` and every `run-*` command refuse such a plan before writing anything, so no agent is started for work it cannot do.
 
