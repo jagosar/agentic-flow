@@ -1,0 +1,13 @@
+{
+  "_comment": "A plan whose 4b row marked inferred is false: parse() returns None, it never raises. The plan-reviewer must answer FIX and name parse.",
+  "agent": "plan-reviewer",
+  "prompt_text": "Review architecture.md.",
+  "schema": false,
+  "model": "opus",
+  "expect": {
+    "text_mentions": [
+      "FIX",
+      "parse"
+    ]
+  }
+}

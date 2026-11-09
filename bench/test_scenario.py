@@ -94,9 +94,10 @@ class RunTests(Case):
 
     def test_an_agent_file_replaces_the_definition_the_agent_reads(self):
         old = self.dir / "old.md"
-        old.write_text("an older auditor\n", encoding="utf-8")
+        old.write_text("---\nname: reviewer\n---\nan older auditor\n", encoding="utf-8")
         self.run_with(report("PASS", []), agent_file=old)
-        self.assertEqual(self.call()["agent"], "an older auditor\n")
+        self.assertEqual(self.call()["agent"], "---\nname: test-auditor\n---\nan older auditor\n",
+                         "the name is rewritten, or --agent would not find it")
         self.run_with(report("PASS", []))
         self.assertIn("**Wrong:**", self.call()["agent"])
 
@@ -108,11 +109,83 @@ class CommandLineTests(Case):
             return scenario.main(list(args)), err.getvalue()
 
     def test_usage_errors_exit_1(self):
-        for args in ([], [str(self.dir)], [str(SCENARIO), "--agent-file"], [str(SCENARIO), "--agent-file", "nope.md"]):
+        bad = ([], [str(self.dir)], [str(SCENARIO), "--agent-file"], [str(SCENARIO), "--agent-file", "nope.md"],
+               [str(SCENARIO), "--repeat", "0"], [str(SCENARIO), "--repeat", "x"],
+               [str(SCENARIO), "--against", "no.md"])
+        for args in bad:
             with self.subTest(args=args):
                 code, err = self.main(*args)
                 self.assertEqual(code, 1)
-                self.assertIn("Uso: scenario.py DIR [--agent-file PATH]", err)
+                self.assertIn("Uso: scenario.py TARGET [--agent-file PATH] [--repeat N] [--against PATH] [--save]", err)
+
+    def test_a_scenario_file_is_a_target_and_names_its_results(self):
+        self.assertEqual(scenario.locate(SCENARIO / "scenario.json"), (SCENARIO, SCENARIO / "scenario.json"))
+        self.assertEqual(scenario.scenario_name(SCENARIO), "auditor-wrong-expected")
+        style = HERE / "scenarios" / "review-style" / "standards.json"
+        self.assertEqual(scenario.scenario_name(style), "review-style-standards")
+
+
+class ExpectationTests(unittest.TestCase):
+    """met(): every kind of expectation, on reports built here."""
+
+    def test_status_mentions_and_tier(self):
+        reflex = {"tier": "reflex", "rule": "No magic numbers", "file": "a.py", "problem": "0.85", "evidence": "e"}
+        found = {"status": "FAIL", "findings": [reflex]}
+        self.assertTrue(scenario.met(found, {"status": "FAIL", "tier": "reflex", "finding_mentions": ["MAGIC"]}))
+        self.assertFalse(scenario.met(found, {"status": "FAIL", "tier": "floor", "finding_mentions": ["magic"]}))
+        self.assertFalse(scenario.met(found, {"status": "PASS"}))
+        finish = {"status": "FAIL", "findings": [dict(reflex, tier="finish")]}
+        self.assertFalse(scenario.met(finish, {"finding_mentions": ["magic"]}), "a finish finding is not blocking")
+
+    def test_no_blocking_equals_and_min(self):
+        self.assertTrue(scenario.met({"status": "PASS", "findings": [{"tier": "finish"}]}, {"no_blocking": True}))
+        self.assertFalse(scenario.met({"status": "PASS", "findings": [{"tier": "floor"}]}, {"no_blocking": True}))
+        verdict = {"is_real": False, "confidence": 0.8}
+        self.assertTrue(scenario.met(verdict, {"equals": {"is_real": False}, "min": {"confidence": 0.7}}))
+        self.assertFalse(scenario.met(verdict, {"min": {"confidence": 0.9}}))
+        self.assertFalse(scenario.met({"is_real": False}, {"min": {"confidence": 0.1}}))
+
+    def test_text_mentions_need_the_text_answer(self):
+        answer = "VERDICT: FIX ... parse() returns None"
+        self.assertTrue(scenario.met(None, {"text_mentions": ["fix", "PARSE"]}, answer))
+        self.assertFalse(scenario.met(None, {"text_mentions": ["fix"]}, None))
+        self.assertFalse(scenario.met(None, {"status": "PASS"}, "PASS"))
+
+    def test_fisher(self):
+        self.assertEqual(scenario.fisher_p(2, 5, 5, 5), 0.083)
+        self.assertEqual(scenario.fisher_p(5, 5, 5, 5), 1.0)
+        self.assertEqual(scenario.fisher_p(0, 3, 3, 3), 0.05)
+
+
+class PromptTests(Case):
+    """The prompt and the command a scenario file asks for."""
+
+    def scenario_file(self, meta):
+        folder = self.dir / "sc"
+        (folder / "src").mkdir(parents=True)
+        (folder / "src" / "a.py").write_text("a = 1\n", encoding="utf-8")
+        (folder / "scenario.json").write_text(json.dumps(meta), encoding="utf-8")
+        (folder / "other.json").write_text("{}", encoding="utf-8")
+        return folder
+
+    def test_rules_suffix_and_text_mode(self):
+        folder = self.scenario_file({"agent": "plan-reviewer", "prompt_text": "Review it.{rules}", "rules": ["common"],
+                                     "suffix": " SUFFIX", "schema": False, "model": "opus",
+                                     "expect": {"text_mentions": ["fix"]}})
+        script = self.dir / "text.py"
+        script.write_text(FAKE.replace("print(OUTPUT)", "print(json.dumps({'result': 'VERDICT: FIX'}))")
+                          .replace("'test-auditor.md'", "'plan-reviewer.md'"), encoding="utf-8")
+        with unittest.mock.patch.dict("os.environ", FAKE_SCENARIO_LOG=str(self.log)):
+            result = scenario.run(folder, claude=[sys.executable, str(script)])
+        self.assertTrue(result["met"])
+        self.assertEqual(result["text"], "VERDICT: FIX")
+        call = self.call()
+        self.assertNotIn("--json-schema", call["argv"])
+        self.assertEqual(call["argv"][call["argv"].index("--model") + 1], "opus")
+        self.assertIn("--- .claude/rules-library/common.md ---", call["prompt"])
+        self.assertTrue(call["prompt"].startswith("Review it.\nRules you must follow"))
+        self.assertTrue(call["prompt"].endswith(" SUFFIX"))
+        self.assertEqual(call["cwd_files"], [".claude", "src"], "no scenario file reaches the agent")
 
 
 if __name__ == "__main__":
