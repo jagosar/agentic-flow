@@ -1,4 +1,4 @@
-# A/B: 2.13.0 (.) vs 2.13.0 (/tmp/claude-0/-home-user/b58ac183-3cc2-5117-a349-f6ea1d3c987e/scratchpad/no-standards)
+# A/B: 2.13.0 (.) vs 2.13.0 (variant:implementer-no-standards)
 
 3 session(s) per arm and fixture, seed 0. Ratios are median(B) / median(A): below 1, B is cheaper, faster or shorter. Differences are B - A. Only OK and REVIEW sessions count.
 

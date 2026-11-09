@@ -7,7 +7,7 @@
     "dirty": true
   },
   "b": {
-    "spec": "/tmp/claude-0/-home-user/b58ac183-3cc2-5117-a349-f6ea1d3c987e/scratchpad/no-standards",
+    "spec": "variant:implementer-no-standards",
     "version": "2.13.0",
     "commit": "5c701bb",
     "dirty": false
