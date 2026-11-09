@@ -1,0 +1,463 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_stock.py::test_sku_is_normalised"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_stock.py::test_empty_sku_is_rejected"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_stock.py::test_invalid_quantities_are_rejected"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_stock.py::test_failed_removal_changes_nothing"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_stock.py::test_quantities_add_up"
+            ]
+          },
+          {
+            "ac": "AC-006",
+            "tests": [
+              "test_stock.py::test_items_is_a_copy"
+            ]
+          },
+          {
+            "ac": "AC-007",
+            "tests": [
+              "test_report.py::test_low_stock_includes_zero"
+            ]
+          },
+          {
+            "ac": "AC-008",
+            "tests": [
+              "test_report.py::test_low_stock_ties_by_sku"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Test names follow the architecture's Check column, not the test_ac_NNN_ naming in the role prompt, so the checks stay traceable to section 8. The AC ID is not in the test name.",
+          "Tests are red only from the missing inventory.stock and inventory.report modules (ModuleNotFoundError). They have not been run against an implementation.",
+          "The unittest discover command assumes the repo root is on sys.path, which holds when it is run from the root."
+        ]
+      },
+      "check": "AT: 2 file(s) changed: acceptance/test_report.py, acceptance/test_stock.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: inventory/stock.py, tests/test_stock.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0\nRESULT: OK"
+    },
+    {
+      "stage": "wave 2",
+      "ok": true,
+      "check": "WP-02: 2 file(s) changed: inventory/report.py, tests/test_report.py\nStage 2: all changes are within their owners.\nGATE: WP-02=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "..",
+          "----------------------------------------------------------------------",
+          "Ran 2 tests in 0.000s",
+          "",
+          "OK"
+        ]
+      },
+      {
+        "name": "quality",
+        "command": "agentic.py quality",
+        "exit": 0,
+        "passed": true,
+        "tail": []
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "inventory/stock.py",
+        "tests/test_stock.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "8 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "test_stock.py tests pass; the only error is test_report, which cannot import inventory.report (WP-02, not yet written)"
+        }
+      ],
+      "internal_decisions": [
+        "Private helpers _normalise_sku and _check_qty; the SKU and qty are validated before any state change."
+      ],
+      "blocker": null,
+      "not_checked": [
+        "acceptance/test_report.py depends on WP-02"
+      ],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE",
+      "wp": "WP-02",
+      "files": [
+        "inventory/report.py",
+        "tests/test_report.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "12 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "8 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Sorted with a (quantity, sku) key over inv.items()."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "............",
+          "----------------------------------------------------------------------",
+          "Ran 12 tests in 0.001s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "quality",
+        "command": "agentic.py quality",
+        "exit": 0,
+        "passed": true,
+        "tail": [],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "spec": {
+      "confirmed": [],
+      "refuted": [],
+      "advisory": []
+    },
+    "standards": {
+      "confirmed": [],
+      "refuted": [],
+      "advisory": [],
+      "waived": []
+    },
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "waived": [],
+    "opened": true,
+    "callers": 0
+  },
+  "qa": {
+    "status": "PASS",
+    "plan": [
+      "Baseline: tests (12) and acceptance (8) all pass.",
+      "Contracts: low_stock consumes Inventory.items() correctly (tested through the real Inventory).",
+      "Integration: add, remove and report flow with normalised SKUs and later changes (qa/test_integration.py).",
+      "Edge cases: empty inventory, threshold 0 and equal to the quantity, a failed call leaves state unchanged, removing exactly the stock then more, a 10**30 quantity.",
+      "Acceptance: ACs 001-008 already covered by acceptance/; not duplicated.",
+      "Regression, security, performance: discarded (no prior code, in-memory only, not in the architecture).",
+      "Re-run: python3 -m unittest discover -s qa"
+    ],
+    "defects": [],
+    "gaps": [
+      "A non-str SKU (for example None) raises AttributeError, not ValueError. Section 6 types sku as str and does not specify this, so I did not report it.",
+      "Concurrency is a non-goal and was not tested."
+    ],
+    "needs_validation": []
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "tier": "finish",
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_stock.py",
+        "line": 27,
+        "problem": "AC-003: the five bad quantities share one test and one final check of the stock. The first failure hides the rest, and the check can't say which call changed the stock. It still catches an implementation that mutates before it raises.",
+        "evidence": "An implementation that accepts one bad value, e.g. add(\"A\", True), fails the test, but the error doesn't name the value. Splitting by value with subTest would make failures easier to read."
+      },
+      {
+        "tier": "finish",
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_stock.py",
+        "line": 16,
+        "problem": "AC-002: the calls are all valid except for the SKU, so the test can't show that an empty SKU raises ValueError and not some other error. Nothing in the brief asks for more.",
+        "evidence": "No trivial implementation passes: every call needs a ValueError and items() must stay {}."
+      }
+    ]
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "README: added requirements, usage example, API summary for inventory.stock and inventory.report, and test commands"
+      ],
+      "unverified": [
+        "Did not run the usage example or the test commands",
+        "No CHANGELOG exists and it is not in the docs zone"
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 0,
+  "pending": [
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "Did not run the usage example or the test commands",
+        "No CHANGELOG exists and it is not in the docs zone"
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Test names follow the architecture's Check column, not the test_ac_NNN_ naming in the role prompt, so the checks stay traceable to section 8. The AC ID is not in the test name.",
+        "Tests are red only from the missing inventory.stock and inventory.report modules (ModuleNotFoundError). They have not been run against an implementation.",
+        "The unittest discover command assumes the repo root is on sys.path, which holds when it is run from the root."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "I did not run the tests, because the implementation does not exist yet.",
+        "I did not check whether the order of validation (SKU before qty) matters, because the brief doesn't specify it.",
+        "I did not check tests/test_version.py."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-01",
+      "items": [
+        "acceptance/test_report.py depends on WP-02"
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "Did not run the unit or acceptance tests.",
+        "Did not review tests/ or acceptance/ contents."
+      ]
+    },
+    {
+      "agent": "standards-reviewer",
+      "label": "standards-reviewer",
+      "items": [
+        "Tests and acceptance files not read in detail",
+        "Spec-axis correctness not assessed"
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "verification_failures": [],
+  "rules": "printed",
+  "usage": {
+    "total": {
+      "input": 48444,
+      "cache_read": 364611,
+      "output": 13728,
+      "turns": 60,
+      "cost_usd": 0.3673891
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 7119,
+        "cache_read": 43160,
+        "output": 3576,
+        "cost_usd": 0.068536,
+        "turns": 7
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 5795,
+        "cache_read": 26261,
+        "output": 1155,
+        "cost_usd": 0.037344100000000005,
+        "turns": 6
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 6626,
+        "cache_read": 65613,
+        "output": 2389,
+        "cost_usd": 0.0569353,
+        "turns": 10
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 4337,
+        "cache_read": 47545,
+        "output": 1297,
+        "cost_usd": 0.035056500000000004,
+        "turns": 6
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 6287,
+        "cache_read": 34199,
+        "output": 475,
+        "cost_usd": 0.0333059,
+        "turns": 6
+      },
+      {
+        "id": "REVIEW",
+        "agent": "standards-reviewer",
+        "label": "standards-reviewer",
+        "input": 3347,
+        "cache_read": 26436,
+        "output": 620,
+        "cost_usd": 0.0222196,
+        "turns": 7
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 8388,
+        "cache_read": 79773,
+        "output": 2837,
+        "cost_usd": 0.0698753,
+        "turns": 9
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 6545,
+        "cache_read": 41624,
+        "output": 1379,
+        "cost_usd": 0.0441164,
+        "turns": 9
+      }
+    ]
+  }
+}

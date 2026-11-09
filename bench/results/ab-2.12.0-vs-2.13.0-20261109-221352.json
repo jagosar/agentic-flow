@@ -1,0 +1,554 @@
+{
+  "schema": "ab-1",
+  "a": {
+    "spec": "agentic-flow--v2.12.0",
+    "version": "2.12.0",
+    "commit": "c31d4be",
+    "dirty": false
+  },
+  "b": {
+    "spec": ".",
+    "version": "2.13.0",
+    "commit": "6afbd5b",
+    "dirty": true
+  },
+  "started": "2026-11-09T22:13:52",
+  "repeat": 3,
+  "auth": "subscription",
+  "seed": 0,
+  "runs": [
+    {
+      "arm": "a",
+      "fixture": "pricing",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 1,
+      "test_audit_rounds": 1,
+      "agents": 11,
+      "seconds": 190.2,
+      "oracle": {
+        "passed": 19,
+        "total": 19
+      },
+      "usage": {
+        "input": 134088,
+        "cache_read": 433153,
+        "output": 20459,
+        "turns": 84,
+        "cost_usd": 0.7840733
+      },
+      "mutation": {
+        "total": 11,
+        "killed": 9,
+        "oracle_killed": 11,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "shop/money.py",
+            "line": 39,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "shop/money.py",
+            "line": 39,
+            "operator": "const",
+            "description": "0 -> 1"
+          }
+        ]
+      },
+      "verification_failures": 0,
+      "review_callers": 5,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "b",
+      "fixture": "pricing",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 1,
+      "test_audit_rounds": 1,
+      "agents": 13,
+      "seconds": 200.4,
+      "oracle": {
+        "passed": 19,
+        "total": 19
+      },
+      "usage": {
+        "input": 145103,
+        "cache_read": 606010,
+        "output": 21786,
+        "turns": 96,
+        "cost_usd": 0.858653
+      },
+      "mutation": {
+        "total": 13,
+        "killed": 11,
+        "oracle_killed": 13,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "shop/money.py",
+            "line": 32,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "shop/money.py",
+            "line": 32,
+            "operator": "const",
+            "description": "0 -> 1"
+          }
+        ]
+      },
+      "verification_failures": 0,
+      "review_callers": 5,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "b",
+      "fixture": "pricing",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 1,
+      "test_audit_rounds": 1,
+      "agents": 13,
+      "seconds": 193.2,
+      "oracle": {
+        "passed": 19,
+        "total": 19
+      },
+      "usage": {
+        "input": 95543,
+        "cache_read": 638189,
+        "output": 18972,
+        "turns": 92,
+        "cost_usd": 0.6354949000000001
+      },
+      "mutation": {
+        "total": 13,
+        "killed": 11,
+        "oracle_killed": 13,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "shop/money.py",
+            "line": 32,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "shop/money.py",
+            "line": 32,
+            "operator": "const",
+            "description": "0 -> 1"
+          }
+        ]
+      },
+      "verification_failures": 0,
+      "review_callers": 5,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "a",
+      "fixture": "pricing",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 1,
+      "test_audit_rounds": 1,
+      "agents": 11,
+      "seconds": 210.9,
+      "oracle": {
+        "passed": 19,
+        "total": 19
+      },
+      "usage": {
+        "input": 92825,
+        "cache_read": 619076,
+        "output": 21894,
+        "turns": 95,
+        "cost_usd": 0.6519236
+      },
+      "mutation": {
+        "total": 12,
+        "killed": 10,
+        "oracle_killed": 12,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "shop/money.py",
+            "line": 35,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "shop/money.py",
+            "line": 35,
+            "operator": "const",
+            "description": "0 -> 1"
+          }
+        ]
+      },
+      "verification_failures": 0,
+      "review_callers": 5,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "a",
+      "fixture": "pricing",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 1,
+      "test_audit_rounds": 1,
+      "agents": 11,
+      "seconds": 192.7,
+      "oracle": {
+        "passed": 19,
+        "total": 19
+      },
+      "usage": {
+        "input": 88020,
+        "cache_read": 550175,
+        "output": 21297,
+        "turns": 92,
+        "cost_usd": 0.6198635
+      },
+      "mutation": {
+        "total": 11,
+        "killed": 9,
+        "oracle_killed": 11,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "shop/money.py",
+            "line": 39,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "shop/money.py",
+            "line": 39,
+            "operator": "const",
+            "description": "0 -> 1"
+          }
+        ]
+      },
+      "verification_failures": 0,
+      "review_callers": 5,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "b",
+      "fixture": "pricing",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 2,
+      "test_audit_rounds": 1,
+      "agents": 18,
+      "seconds": 250.0,
+      "oracle": {
+        "passed": 19,
+        "total": 19
+      },
+      "usage": {
+        "input": 132997,
+        "cache_read": 963763,
+        "output": 28013,
+        "turns": 137,
+        "cost_usd": 0.9081783
+      },
+      "mutation": {
+        "total": 13,
+        "killed": 11,
+        "oracle_killed": 13,
+        "timeouts": 0,
+        "survived": [
+          {
+            "file": "shop/money.py",
+            "line": 35,
+            "operator": "compare",
+            "description": "< -> <="
+          },
+          {
+            "file": "shop/money.py",
+            "line": 35,
+            "operator": "const",
+            "description": "0 -> 1"
+          }
+        ]
+      },
+      "verification_failures": 0,
+      "review_callers": 5,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "a",
+      "fixture": "inventory",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 139.1,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 54209,
+        "cache_read": 314168,
+        "output": 14239,
+        "turns": 57,
+        "cost_usd": 0.3905228
+      },
+      "mutation": {
+        "total": 15,
+        "killed": 15,
+        "oracle_killed": 15,
+        "timeouts": 0,
+        "survived": []
+      },
+      "verification_failures": 0,
+      "review_callers": 0,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "b",
+      "fixture": "inventory",
+      "index": 1,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 8,
+      "seconds": 105.7,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 52437,
+        "cache_read": 344577,
+        "output": 12406,
+        "turns": 58,
+        "cost_usd": 0.3681417
+      },
+      "mutation": {
+        "total": 14,
+        "killed": 14,
+        "oracle_killed": 14,
+        "timeouts": 0,
+        "survived": []
+      },
+      "verification_failures": 0,
+      "review_callers": 0,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "b",
+      "fixture": "inventory",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 8,
+      "seconds": 127.6,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 54597,
+        "cache_read": 406845,
+        "output": 15688,
+        "turns": 62,
+        "cost_usd": 0.4158165
+      },
+      "mutation": {
+        "total": 15,
+        "killed": 15,
+        "oracle_killed": 15,
+        "timeouts": 0,
+        "survived": []
+      },
+      "verification_failures": 0,
+      "review_callers": 0,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "a",
+      "fixture": "inventory",
+      "index": 2,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 119.8,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 51691,
+        "cache_read": 317366,
+        "output": 13666,
+        "turns": 58,
+        "cost_usd": 0.3750366
+      },
+      "mutation": {
+        "total": 15,
+        "killed": 15,
+        "oracle_killed": 15,
+        "timeouts": 0,
+        "survived": []
+      },
+      "verification_failures": 0,
+      "review_callers": 0,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "a",
+      "fixture": "inventory",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 7,
+      "seconds": 120.3,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 51345,
+        "cache_read": 330177,
+        "output": 13577,
+        "turns": 53,
+        "cost_usd": 0.3740397
+      },
+      "mutation": {
+        "total": 15,
+        "killed": 15,
+        "oracle_killed": 15,
+        "timeouts": 0,
+        "survived": []
+      },
+      "verification_failures": 0,
+      "review_callers": 0,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    },
+    {
+      "arm": "b",
+      "fixture": "inventory",
+      "index": 3,
+      "result": "OK",
+      "failed_stage": null,
+      "fix_cycles": 0,
+      "test_audit_rounds": 1,
+      "agents": 8,
+      "seconds": 106.8,
+      "oracle": {
+        "passed": 16,
+        "total": 16
+      },
+      "usage": {
+        "input": 49128,
+        "cache_read": 322453,
+        "output": 11865,
+        "turns": 55,
+        "cost_usd": 0.3472913
+      },
+      "mutation": {
+        "total": 14,
+        "killed": 14,
+        "oracle_killed": 14,
+        "timeouts": 0,
+        "survived": []
+      },
+      "verification_failures": 0,
+      "review_callers": 0,
+      "review_confirmed": 0,
+      "review_refuted": 0
+    }
+  ],
+  "comparison": {
+    "fixtures": {
+      "inventory": {
+        "cost_usd": 0.982,
+        "minutes": 0.888,
+        "output": 0.908,
+        "mutation": 0.0,
+        "oracle": 0.0,
+        "fix_cycles": 0,
+        "review_callers": 0,
+        "review_confirmed": 0
+      },
+      "pricing": {
+        "cost_usd": 1.317,
+        "minutes": 1.04,
+        "output": 1.023,
+        "mutation": 0.028,
+        "oracle": 0.0,
+        "fix_cycles": 0,
+        "review_callers": 0,
+        "review_confirmed": 0
+      }
+    },
+    "overall": {
+      "cost_usd": {
+        "geomean": 1.137,
+        "interval": [
+          0.874,
+          1.244
+        ],
+        "wins": 1,
+        "losses": 1,
+        "ties": 0,
+        "p": 1.0
+      },
+      "minutes": {
+        "geomean": 0.961,
+        "interval": [
+          0.854,
+          1.173
+        ],
+        "wins": 1,
+        "losses": 1,
+        "ties": 0,
+        "p": 1.0
+      },
+      "output": {
+        "geomean": 0.964,
+        "interval": [
+          0.869,
+          1.229
+        ],
+        "wins": 1,
+        "losses": 1,
+        "ties": 0,
+        "p": 1.0
+      }
+    }
+  }
+}
