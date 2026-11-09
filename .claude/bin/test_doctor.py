@@ -224,9 +224,9 @@ class ProjectStateTests(ProjectStateCase):
         self.assertEqual((code, out["ok"]), (0, True))
         self.assertEqual([f["code"] for f in out["findings"]], ["upgrade-pending"])
         flow = self.repo()
-        (flow.dir / ".claude-plugin").mkdir()
-        shutil.copy(ROOT / ".claude-plugin/plugin.json", flow.dir / ".claude-plugin/plugin.json")
-        shutil.copy(ROOT / "README.md", flow.dir / "README.md")
+        # The flow's own repository by its two marks, written here: in a project, ROOT's files are the project's.
+        flow.write(".claude-plugin/plugin.json", json.dumps({"name": "agentic-flow"}))
+        flow.write("README.md", "<!-- agentic-flow-template -->\n# flow\n")
         self.assertNotIn("install-record", [f["code"] for f in self.doctor(flow)[1]["findings"]])
 
     def test_rules_out_of_sync_are_named_and_never_written(self):
