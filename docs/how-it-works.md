@@ -320,6 +320,8 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── launch.py           the claude -p launchers, run-*, seq, run-pipeline and pipeline-plan
 │   ├── guardrail.py        the PreToolUse hook: guard, claims, content checks, the heartbeat, hooks-check
 │   ├── brief.py            slices architecture.md into the briefs the agents read
+│   ├── doctor.py           what the flow left stale in a project, and --fix
+│   ├── plan_picture.py     the HTML+SVG picture of the manifest
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer
 │   ├── pipeline.py         the pipeline as a Python engine: fallback mode and CI
 │   ├── quality.py          the clean-code ratchet: function length, nesting, file size and long lines

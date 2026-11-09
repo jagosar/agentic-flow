@@ -179,16 +179,16 @@ python3 .claude/bin/agentic.py rules-sync              # installs the stack's ru
 python3 .claude/bin/agentic.py codemap                 # deterministic code map in docs/CODEMAP.md
 python3 .claude/bin/agentic.py callers                 # who calls the symbols a change touched (what the reviewer reads)
 python3 .claude/bin/agentic.py hooks-check             # whether the guardrail hook runs in this session (exit 3 if not)
+python3 .claude/bin/agentic.py doctor [--fix]          # what the flow left stale in this project; --fix repairs the safe ones
+python3 .claude/bin/agentic.py plan-picture            # the manifest as a picture in .claude/state/plan.html
 python3 .claude/bin/agentic.py docs-check              # links, anchors and paths in the documentation
 python3 .claude/bin/agentic.py install ../other-repo   # installs or updates the flow in another repo
 python3 .claude/bin/agentic.py briefs                  # writes each agent's slice of architecture.md in .claude/state/briefs/
 python3 .claude/bin/agentic.py status                  # the ledger: every agent and stage, with tokens and cost
 python3 .claude/bin/agentic.py stop [WP-02]            # stops every running agent, or only the one named
 python3 .claude/bin/agentic.py mark WP-02 blocker note # annotates by hand
-# Fallback mode: the whole pipeline (or --start-wave N, or --resume after the last finished wave):
-python3 .claude/bin/agentic.py run-pipeline
-# ...or stage by stage:
-python3 .claude/bin/agentic.py run-acceptance          # wave 0: the test-author writes the acceptance tests
+python3 .claude/bin/agentic.py run-pipeline            # fallback mode, the whole pipeline (--start-wave N, or --resume)
+python3 .claude/bin/agentic.py run-acceptance          # or stage by stage; wave 0: the test-author writes the acceptance tests
 python3 .claude/bin/agentic.py acceptance --expect red|green  # red before the code, green after it
 python3 .claude/bin/agentic.py run-wave 1 [WP-02]      # wave 1 in parallel, or a single package
 python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # fix its defects from the newest review or QA (--all: medium and low too)
