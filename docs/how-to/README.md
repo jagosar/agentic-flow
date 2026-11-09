@@ -187,10 +187,8 @@ python3 .claude/bin/agentic.py briefs                  # writes each agent's sli
 python3 .claude/bin/agentic.py status                  # the ledger: every agent and stage, with tokens and cost
 python3 .claude/bin/agentic.py stop [WP-02]            # stops every running agent, or only the one named
 python3 .claude/bin/agentic.py mark WP-02 blocker note # annotates by hand
-# Fallback mode: the whole pipeline (or --start-wave N, or --resume after the last finished wave):
-python3 .claude/bin/agentic.py run-pipeline
-# ...or stage by stage:
-python3 .claude/bin/agentic.py run-acceptance          # wave 0: the test-author writes the acceptance tests
+python3 .claude/bin/agentic.py run-pipeline            # fallback mode, the whole pipeline (--start-wave N, or --resume)
+python3 .claude/bin/agentic.py run-acceptance          # or stage by stage; wave 0: the test-author writes the acceptance tests
 python3 .claude/bin/agentic.py acceptance --expect red|green  # red before the code, green after it
 python3 .claude/bin/agentic.py run-wave 1 [WP-02]      # wave 1 in parallel, or a single package
 python3 .claude/bin/agentic.py run-wave 1 WP-02 --fix  # fix its defects from the newest review or QA (--all: medium and low too)
