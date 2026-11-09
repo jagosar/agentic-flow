@@ -126,7 +126,7 @@ sequenceDiagram
         W->>G: close-stage N + open-stage N+1 (ownership + ledger)
     end
     W->>G: verify + open-stage review + callers (phases against the baseline + acceptance, alone; then the callers of the changed symbols)
-    W->>AG: reviewer (with the callers outside the diff)
+    W->>AG: reviewer (Spec, with the callers outside the diff) and standards-reviewer (Standards), in parallel
     AG-->>W: findings
     par one verifier per serious finding
         W->>AG: try to refute it
@@ -252,6 +252,7 @@ Tracked files are always compared, even in a folder named like an artefact (`cov
 | test-author (`AT`) | latest Sonnet | `acceptance.files` (default `acceptance/`) | `allow_bash` + the acceptance command | write production code |
 | implementer (`WP-NN`) | latest Sonnet | its package's `files` | `allow_bash` + the acceptance command | touch other files, `acceptance/`, git, dependencies; report `DONE` with its acceptance tests red (the stop gate refuses it, twice at most) |
 | reviewer (`REVIEW`) | latest Sonnet | nothing | `git diff/status/log` + `allow_bash`; reads the callers its prompt lists | write |
+| standards-reviewer (`REVIEW`) | latest Sonnet | nothing | `git diff/status/log` + `allow_bash` | write |
 | qa (`QA`) | latest Sonnet | `qa.files` (default `qa/`) | `allow_bash` | write production code |
 | doc-updater (`DOCS`) | latest Sonnet | `docs.files` (default `README.md`, `CHANGELOG.md`, `docs/`) | `git diff/status/log` | write code, tests, the codemap, `docs/architecture/` |
 
@@ -300,7 +301,8 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── test-author.md      wave 0
 │   ├── test-auditor.md     checks the wave 0 tests are not weak, read-only
 │   ├── implementer.md      one work package
-│   ├── reviewer.md         read-only
+│   ├── reviewer.md         the Spec axis, read-only
+│   ├── standards-reviewer.md  the Standards axis, read-only
 │   ├── qa.md               exploratory
 │   └── doc-updater.md      living documentation, docs zone
 ├── workflows/
@@ -320,6 +322,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── launch.py           the claude -p launchers, run-*, seq, run-pipeline and pipeline-plan
 │   ├── guardrail.py        the PreToolUse hook: guard, claims, content checks, the heartbeat, hooks-check
 │   ├── brief.py            slices architecture.md into the briefs the agents read
+│   ├── findings.py         tiers, waivers and what blocks
 │   ├── doctor.py           what the flow left stale in a project, and --fix
 │   ├── plan_picture.py     the HTML+SVG picture of the manifest
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer

@@ -21,7 +21,7 @@
     },
     ".claude/bin/pipeline.py": {
       "lines": 556,
-      "long_lines": 30
+      "long_lines": 29
     },
     ".claude/bin/test_agentic.py": {
       "lines": 1849,
@@ -53,7 +53,7 @@
     },
     ".claude/workflows/agentic-implement.js": {
       "lines": 555,
-      "long_lines": 68
+      "long_lines": 64
     },
     "acceptance/test_docs_ab.py": {
       "lines": 102,
@@ -102,11 +102,11 @@
   },
   "functions": {
     ".claude/bin/pipeline.py::Pipeline.judge": {
-      "lines": 96,
+      "lines": 73,
       "nesting": 4
     },
     ".claude/workflows/agentic-implement.js::runAfterPlan": {
-      "lines": 150,
+      "lines": 128,
       "nesting": 3
     }
   }
