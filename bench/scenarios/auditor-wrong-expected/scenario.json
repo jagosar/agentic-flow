@@ -1,0 +1,17 @@
+{
+  "_comment": "Issue #70, from the 2.1.0 bench: the test-author asserted 960 + 480 where AC-009 says 960, and the audit of the whole suite reported no critical or high finding. brief.md is the test-author's brief of the roster fixture (brief.slice_architecture, AT); acceptance/ is a whole suite rebuilt from the plan's checks, correct except for that value (the original files were not kept). Only brief.md and acceptance/ reach the agent.",
+  "agent": "test-auditor",
+  "prompt": "test_auditor",
+  "values": {
+    "brief": "brief.md",
+    "coverage": "{\"AC-001\": [\"acceptance/test_intervals.py::test_overlap_of_two_intervals\"], \"AC-002\": [\"acceptance/test_intervals.py::test_merging_intervals\"], \"AC-003\": [\"acceptance/test_intervals.py::test_gaps_in_a_window\"], \"AC-004\": [\"acceptance/test_shifts.py::test_shift_text_becomes_an_interval\"], \"AC-005\": [\"acceptance/test_shifts.py::test_an_interval_becomes_shift_text\"], \"AC-006\": [\"acceptance/test_shifts.py::test_nonsense_shift_text_is_rejected\"], \"AC-007\": [\"acceptance/test_schedule.py::test_shifts_are_listed_in_order\"], \"AC-008\": [\"acceptance/test_schedule.py::test_coverage_gaps_across_people\"], \"AC-009\": [\"acceptance/test_schedule.py::test_minutes_worked\"], \"AC-010\": [\"acceptance/test_schedule.py::test_a_double_booking_is_refused\"], \"AC-011\": [\"acceptance/test_rules.py::test_a_short_rest_is_reported\"], \"AC-012\": [\"acceptance/test_rules.py::test_few_shifts_no_violations\"]}",
+    "rules": ""
+  },
+  "expect": {
+    "status": "FAIL",
+    "finding_mentions": [
+      "AC-009",
+      "960"
+    ]
+  }
+}
