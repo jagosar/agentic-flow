@@ -179,6 +179,8 @@ python3 .claude/bin/agentic.py rules-sync              # installs the stack's ru
 python3 .claude/bin/agentic.py codemap                 # deterministic code map in docs/CODEMAP.md
 python3 .claude/bin/agentic.py callers                 # who calls the symbols a change touched (what the reviewer reads)
 python3 .claude/bin/agentic.py hooks-check             # whether the guardrail hook runs in this session (exit 3 if not)
+python3 .claude/bin/agentic.py doctor [--fix]          # what the flow left stale in this project; --fix repairs the safe ones
+python3 .claude/bin/agentic.py plan-picture            # the manifest as a picture in .claude/state/plan.html
 python3 .claude/bin/agentic.py docs-check              # links, anchors and paths in the documentation
 python3 .claude/bin/agentic.py install ../other-repo   # installs or updates the flow in another repo
 python3 .claude/bin/agentic.py briefs                  # writes each agent's slice of architecture.md in .claude/state/briefs/
