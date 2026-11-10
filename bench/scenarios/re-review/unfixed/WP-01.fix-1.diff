@@ -1,0 +1,15 @@
+diff --git a/unfixed/src/pricing.py b/unfixed/src/pricing.py
+--- a/unfixed/src/pricing.py
++++ b/unfixed/src/pricing.py
+@@ -3,8 +3,10 @@
+ 
+ 
+ def discount(total_cents: int) -> int:
++    """The total after the large-basket discount, in cents."""
+     if total_cents > DISCOUNT_FROM_CENTS:
+-        return round(total_cents * (1 - DISCOUNT_RATE))
++        discounted = total_cents * (1 - DISCOUNT_RATE)
++        return round(discounted)
+     return total_cents
+ 
+ 

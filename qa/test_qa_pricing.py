@@ -80,14 +80,14 @@ class CompareTests(unittest.TestCase):
         runs = [run("a", review_callers=True), run("b", review_callers="2")]
         self.assertIsNone(bench.compare(runs, seed=0)["fixtures"]["f"]["review_callers"])
 
-    def test_markdown_with_doc_from_old_comparison_has_nine_cells(self):
+    def test_markdown_with_doc_from_old_comparison_has_ten_cells(self):
         doc = {"a": {"version": "1", "spec": "x"}, "b": {"version": "2", "spec": "y"}, "repeat": 1, "seed": 0,
                "comparison": {"fixtures": {"f": {"cost_usd": 1.0, "minutes": 1.0, "output": 1.0, "mutation": None,
                                                 "oracle": None, "fix_cycles": 0}},
                               "overall": {}}}
         lines = [x for x in bench.ab_markdown(doc).splitlines() if x.startswith("| f ")]
         self.assertEqual(len(lines), 1)
-        self.assertEqual(len(lines[0].strip("|").split("|")), 9)
+        self.assertEqual(len(lines[0].strip("|").split("|")), 10)  # agent_calls joined in 2.14.0
 
 
 class FixtureHygieneTests(unittest.TestCase):
