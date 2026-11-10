@@ -1,0 +1,18 @@
+{
+  "_comment": "The Spec axis on the same code, which meets its contract: style is not this reviewer's, so nothing may block.",
+  "agent": "reviewer",
+  "prompt": "reviewer",
+  "values": {
+    "callers": "",
+    "concerns": ""
+  },
+  "rules": [
+    "common",
+    "python"
+  ],
+  "suffix": " There is no git here: the change is the files under src/.",
+  "expect": {
+    "status": "PASS",
+    "no_blocking": true
+  }
+}

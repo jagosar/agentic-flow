@@ -1,0 +1,447 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_stock.py::test_sku_is_normalised"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_stock.py::test_empty_sku_is_rejected"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_stock.py::test_invalid_quantities_are_rejected"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_stock.py::test_failed_removal_changes_nothing"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_stock.py::test_quantities_add_up"
+            ]
+          },
+          {
+            "ac": "AC-006",
+            "tests": [
+              "test_stock.py::test_items_is_a_copy"
+            ]
+          },
+          {
+            "ac": "AC-007",
+            "tests": [
+              "test_report.py::test_low_stock_includes_zero"
+            ]
+          },
+          {
+            "ac": "AC-008",
+            "tests": [
+              "test_report.py::test_low_stock_ties_by_sku"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Test names follow the Check fields in section 8 rather than the test_ac_NNN_ pattern, so the criterion ID is not in the name.",
+          "Both files fail with ModuleNotFoundError: No module named 'inventory.stock' or 'inventory.report'. I only saw the traceback for test_stock.py, but both files error out in the same run.",
+          "I only ran the command once and did not run the tests/ suite."
+        ]
+      },
+      "check": "AT: 2 file(s) changed: acceptance/test_report.py, acceptance/test_stock.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: inventory/stock.py, tests/test_stock.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0\nRESULT: OK"
+    },
+    {
+      "stage": "wave 2",
+      "ok": true,
+      "check": "WP-02: 2 file(s) changed: inventory/report.py, tests/test_report.py\nStage 2: all changes are within their owners.\nGATE: WP-02=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "..",
+          "----------------------------------------------------------------------",
+          "Ran 2 tests in 0.000s",
+          "",
+          "OK"
+        ]
+      },
+      {
+        "name": "quality",
+        "command": "agentic.py quality",
+        "exit": 0,
+        "passed": true,
+        "tail": []
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE",
+      "wp": "WP-01",
+      "files": [
+        "inventory/stock.py",
+        "tests/test_stock.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "8 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "test_stock passes; the only error is test_report importing inventory.report (WP-02, not yet written)"
+        }
+      ],
+      "internal_decisions": [
+        "A non-string sku raises ValueError",
+        "Private helpers _normalise and _check_qty validate before any state change"
+      ],
+      "blocker": null,
+      "not_checked": [
+        "Full acceptance suite is green only once WP-02 lands"
+      ],
+      "concerns": [],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE",
+      "wp": "WP-02",
+      "files": [
+        "inventory/report.py",
+        "tests/test_report.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "11 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "8 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Filter with strict < on inv.items(), then sort by (qty, sku)."
+      ],
+      "blocker": null,
+      "not_checked": [],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "...........",
+          "----------------------------------------------------------------------",
+          "Ran 11 tests in 0.001s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "quality",
+        "command": "agentic.py quality",
+        "exit": 0,
+        "passed": true,
+        "tail": [],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "spec": {
+      "confirmed": [],
+      "refuted": [],
+      "advisory": []
+    },
+    "standards": {
+      "confirmed": [],
+      "refuted": [],
+      "advisory": [],
+      "waived": []
+    },
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "waived": [],
+    "opened": true,
+    "callers": 0
+  },
+  "qa": {
+    "status": "PASS",
+    "plan": [
+      "Baseline: tests/ 11 OK, acceptance/ 8 OK.",
+      "Contracts (sec 6): Inventory -> low_stock tested from the consumer side (qa/test_qa_flows.py). Report does not mutate the inventory.",
+      "Integration: add, remove to 0, re-add, then report. Passes.",
+      "Edge cases: threshold 0 and negative, empty inventory, 10**30 quantities, whitespace variants, None and non-str SKU, None qty, failed add leaves no entry. All pass.",
+      "Acceptance: the 8 ACs are met by the code and by acceptance/ tests. Not duplicated.",
+      "Regression, non-functional: discarded. No pre-existing behaviour beyond the version test, and the library is in-memory only.",
+      "Re-run: python3 -m unittest discover -s qa -p \"test_*.py\""
+    ],
+    "defects": [],
+    "gaps": [
+      "Concurrency is out of scope per section 2, so it was not tested.",
+      "Section 6 does not say what a non-str SKU should do. The code raises ValueError, which matches the section 7 convention. A test pins this, but the spec does not require it."
+    ],
+    "needs_validation": []
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": []
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "README.md: added requirements, usage example, Inventory and low_stock API, and test commands"
+      ],
+      "unverified": [
+        "I did not run the usage example or the test commands.",
+        "No CHANGELOG exists and it is not in docs.files, so I did not create one."
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 0,
+  "pending": [
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "I did not run the usage example or the test commands.",
+        "No CHANGELOG exists and it is not in docs.files, so I did not create one."
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Test names follow the Check fields in section 8 rather than the test_ac_NNN_ pattern, so the criterion ID is not in the name.",
+        "Both files fail with ModuleNotFoundError: No module named 'inventory.stock' or 'inventory.report'. I only saw the traceback for test_stock.py, but both files error out in the same run.",
+        "I only ran the command once and did not run the tests/ suite."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "I did not run the tests. The inventory package may not exist yet, so I judged them by reading only.",
+        "Wrong-implementation checks were mental: a stub, an implementation that accepts bool, one that exposes the internal dict, one that sorts by insertion order, and one that uses <= for the threshold. The tests would catch each of these.",
+        "The tests do not check that a ValueError from add leaves items() unchanged for invalid qty with a new SKU. No AC requires it."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-01",
+      "items": [
+        "Full acceptance suite is green only once WP-02 lands"
+      ]
+    },
+    {
+      "agent": "standards-reviewer",
+      "label": "standards-reviewer",
+      "items": [
+        "tests/test_stock.py, tests/test_report.py and acceptance/ were not opened.",
+        "I did not run the linter or the type checker.",
+        "Spec axis, not checked: the contract wording for Inventory.items() and low_stock."
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "Did not run the unit or acceptance tests.",
+        "Did not read tests/test_stock.py, tests/test_report.py or acceptance/ in detail.",
+        "Did not check README.md."
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "verification_failures": [],
+  "rules": "printed",
+  "usage": {
+    "total": {
+      "input": 49563,
+      "cache_read": 375658,
+      "output": 13915,
+      "turns": 59,
+      "cost_usd": 0.3748318
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 6991,
+        "cache_read": 43097,
+        "output": 3434,
+        "cost_usd": 0.0665977,
+        "turns": 7
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 5769,
+        "cache_read": 26300,
+        "output": 896,
+        "cost_usd": 0.034654000000000004,
+        "turns": 6
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 6334,
+        "cache_read": 53665,
+        "output": 2313,
+        "cost_usd": 0.053812500000000006,
+        "turns": 9
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 4136,
+        "cache_read": 37760,
+        "output": 1201,
+        "cost_usd": 0.032313999999999996,
+        "turns": 5
+      },
+      {
+        "id": "REVIEW",
+        "agent": "standards-reviewer",
+        "label": "standards-reviewer",
+        "input": 3405,
+        "cache_read": 26447,
+        "output": 709,
+        "cost_usd": 0.0233427,
+        "turns": 7
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 6323,
+        "cache_read": 34188,
+        "output": 483,
+        "cost_usd": 0.033528800000000004,
+        "turns": 6
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 9055,
+        "cache_read": 97178,
+        "output": 3410,
+        "cost_usd": 0.08000979999999999,
+        "turns": 9
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 7550,
+        "cache_read": 57023,
+        "output": 1469,
+        "cost_usd": 0.0505723,
+        "turns": 10
+      }
+    ]
+  }
+}

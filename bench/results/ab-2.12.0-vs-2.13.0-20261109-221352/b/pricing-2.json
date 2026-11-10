@@ -1,0 +1,562 @@
+{
+  "result": "OK",
+  "stages": [
+    {
+      "stage": "wave 0",
+      "ok": true,
+      "test_author": {
+        "status": "DONE",
+        "coverage": [
+          {
+            "ac": "AC-001",
+            "tests": [
+              "test_money_currency.py::test_ac_001_prefix_and_plain"
+            ]
+          },
+          {
+            "ac": "AC-002",
+            "tests": [
+              "test_money_currency.py::test_ac_002_mismatch"
+            ]
+          },
+          {
+            "ac": "AC-003",
+            "tests": [
+              "test_money_currency.py::test_ac_003_unknown_currency"
+            ]
+          },
+          {
+            "ac": "AC-004",
+            "tests": [
+              "test_money_currency.py::test_ac_004_old_errors"
+            ]
+          },
+          {
+            "ac": "AC-005",
+            "tests": [
+              "test_cart_currency.py::test_ac_005_cart_in_usd"
+            ]
+          },
+          {
+            "ac": "AC-006",
+            "tests": [
+              "test_cart_currency.py::test_ac_006_cart_refuses_other_currency"
+            ]
+          },
+          {
+            "ac": "AC-007",
+            "tests": [
+              "test_cart_currency.py::test_ac_007_unknown_cart_currency"
+            ]
+          }
+        ],
+        "blocker": null,
+        "not_checked": [
+          "Red state is an ImportError (CurrencyMismatch missing) at module import for both files, so individual tests are not yet run.",
+          "Assumes Cart exposes total() and lines() as the ACs describe; I did not read shop/cart.py."
+        ]
+      },
+      "check": "AT: 2 file(s) changed: acceptance/test_cart_currency.py, acceptance/test_money_currency.py\nStage acceptance: all changes are within their owners.\nACCEPTANCE (red): RED, as it should be before the code\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: shop/money.py, tests/test_money.py\nWP-02: 2 file(s) changed: shop/cart.py, tests/test_cart.py\nStage 1: all changes are within their owners.\nGATE: WP-01=0 WP-02=0\nRESULT: OK"
+    },
+    {
+      "stage": "wave 1 (fix)",
+      "ok": true,
+      "check": "WP-01: 2 file(s) changed: shop/money.py, tests/test_money.py\nWP-02: 0 file(s) changed\nStage 1: all changes are within their owners.\nGATE: WP-01=0\nRESULT: OK"
+    },
+    {
+      "stage": "documentation",
+      "ok": true,
+      "check": "DOCS: 1 file(s) changed: README.md\nStage docs: all changes are within their owners.\nRESULT: OK"
+    }
+  ],
+  "baseline": {
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "........",
+          "----------------------------------------------------------------------",
+          "Ran 8 tests in 0.000s",
+          "",
+          "OK"
+        ]
+      },
+      {
+        "name": "quality",
+        "command": "agentic.py quality",
+        "exit": 0,
+        "passed": true,
+        "tail": []
+      }
+    ],
+    "preexisting_failures": []
+  },
+  "work_packages": {
+    "WP-01": {
+      "status": "DONE_WITH_CONCERNS",
+      "wp": "WP-01",
+      "files": [
+        "shop/money.py",
+        "tests/test_money.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": true,
+          "detail": "16 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "7 tests OK"
+        }
+      ],
+      "internal_decisions": [
+        "Gave parse_price a default currency='EUR' so the untouched caller shop/receipt.py (one-arg call) keeps working; added a test for it."
+      ],
+      "blocker": null,
+      "not_checked": [
+        "Did not run from_rows directly (command needed approval); the default makes its call parse_price(price_text) valid."
+      ],
+      "concerns": [
+        "shop/money.py: the default `currency=\"EUR\"` differs slightly from the section 6 signature `currency: str`; shop/receipt.py (no owner) should pass the currency explicitly and get a receipt test."
+      ],
+      "missing_context": null
+    },
+    "WP-02": {
+      "status": "DONE",
+      "wp": "WP-02",
+      "files": [
+        "shop/cart.py",
+        "tests/test_cart.py"
+      ],
+      "checks": [
+        {
+          "command": "python3 -m unittest tests/test_cart.py",
+          "passed": true,
+          "detail": "7 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s acceptance",
+          "passed": true,
+          "detail": "7 tests OK"
+        },
+        {
+          "command": "python3 -m unittest discover -s tests",
+          "passed": false,
+          "detail": "7 errors, all in tests/test_money.py: they still call parse_price with one argument. That file belongs to WP-01."
+        }
+      ],
+      "internal_decisions": [
+        "Cart.currency is a plain public attribute set after validation in __init__."
+      ],
+      "blocker": null,
+      "not_checked": [
+        "The full tests/ suite is not green until WP-01 updates tests/test_money.py."
+      ],
+      "concerns": [],
+      "missing_context": null
+    }
+  },
+  "verification": {
+    "ok": true,
+    "blocking": [],
+    "preexisting_failures": [],
+    "suspects": {},
+    "phases": [
+      {
+        "name": "build",
+        "skipped": true
+      },
+      {
+        "name": "types",
+        "skipped": true
+      },
+      {
+        "name": "lint",
+        "skipped": true
+      },
+      {
+        "name": "tests",
+        "command": "python3 -m unittest discover -s tests",
+        "exit": 0,
+        "passed": true,
+        "tail": [
+          "................",
+          "----------------------------------------------------------------------",
+          "Ran 16 tests in 0.000s",
+          "",
+          "OK"
+        ],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "quality",
+        "command": "agentic.py quality",
+        "exit": 0,
+        "passed": true,
+        "tail": [],
+        "baseline_passed": true,
+        "status": "ok"
+      },
+      {
+        "name": "acceptance",
+        "command": "python3 -m unittest discover -s acceptance",
+        "passed": true,
+        "verdict": "GREEN",
+        "status": "ok"
+      }
+    ]
+  },
+  "review": {
+    "spec": {
+      "confirmed": [],
+      "refuted": [],
+      "advisory": []
+    },
+    "standards": {
+      "confirmed": [],
+      "refuted": [],
+      "advisory": [],
+      "waived": []
+    },
+    "confirmed": [],
+    "refuted": [],
+    "advisory": [],
+    "waived": [],
+    "opened": true,
+    "callers": 5
+  },
+  "qa": {
+    "status": "PASS",
+    "plan": [
+      "Baseline: tests/ 16 OK, acceptance/ 7 OK.",
+      "Contracts/integration: Cart→parse_price checked, including a failed add leaving the cart unchanged (qa/test_qa_edges.py), passes.",
+      "Edge cases: lowercase prefix, double space, trailing space or newline, and unknown currency checked before the text all behave as specified.",
+      "Edge case: non-ASCII digits are accepted (D1, low). test_d1_non_ascii_digits_rejected stays red on purpose.",
+      "Non-functional and regression: discarded, because the architecture asks for neither.",
+      "Re-run command: python3 -m unittest discover -s qa"
+    ],
+    "defects": [
+      {
+        "tier": "finish",
+        "id": "D1",
+        "severity": "low",
+        "wp": "WP-01",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "parse_price('١٢.٥٠', 'EUR') returns 1250. PRICE_RE uses \\d, which matches Unicode digits, and int() converts them. The contract only describes ASCII prices.",
+        "fix": "Use [0-9] in PRICE_RE, or compile it with re.ASCII.",
+        "if_skipped": "Non-ASCII digit strings are accepted as prices. The effect is minor and the input is unlikely."
+      },
+      {
+        "tier": "finish",
+        "id": "D2",
+        "severity": "low",
+        "wp": "WP-01",
+        "kind": "implementation",
+        "section": "6",
+        "repro": "The contract signature is parse_price(text, currency) with no default. The code has currency='EUR', so parse_price('1.00') succeeds silently.",
+        "fix": "Remove the default value from the currency parameter.",
+        "if_skipped": "A caller that forgets the currency gets EUR with no error, which defeats the point of making the currency explicit."
+      }
+    ],
+    "gaps": [
+      "I did not run lint or type tools, because the architecture lists none."
+    ],
+    "needs_validation": []
+  },
+  "test_audit": {
+    "rounds": 1,
+    "weak": [],
+    "advisory": [
+      {
+        "tier": "finish",
+        "severity": "low",
+        "wp": "AT",
+        "file": "acceptance/test_money_currency.py",
+        "line": 24,
+        "problem": "AC-004 only asserts ValueError. A CurrencyMismatch, which is a ValueError subclass, would also pass for 'EUR -1.00', and the criterion does not forbid that. This weakens the check only slightly.",
+        "evidence": "An implementation that raises CurrencyMismatch for every bad text would pass test_ac_004_old_errors, but it would fail AC-001 to AC-003."
+      }
+    ]
+  },
+  "docs": {
+    "codemap": null,
+    "report": {
+      "status": "DONE",
+      "files": [
+        "README.md"
+      ],
+      "changes": [
+        "Added Currencies section: CURRENCIES, parse_price(text, currency) with examples and errors, Cart(currency) behaviour, and test commands"
+      ],
+      "unverified": [
+        "Code gives parse_price a default currency=\"EUR\", while architecture.md section 6 declares it required; README documents the explicit-currency call only",
+        "No CHANGELOG exists and it is outside docs.files, so none was created"
+      ],
+      "blocker": null
+    },
+    "ownership_ok": true,
+    "check": {
+      "ok": true,
+      "checked": 1,
+      "broken": []
+    }
+  },
+  "fix_cycles": 1,
+  "pending": [
+    {
+      "type": "concern",
+      "source": "WP-01",
+      "wp": "WP-01",
+      "problem": "shop/money.py: the default `currency=\"EUR\"` differs slightly from the section 6 signature `currency: str`; shop/receipt.py (no owner) should pass the currency explicitly and get a receipt test."
+    },
+    {
+      "type": "documentation",
+      "severity": "low",
+      "problem": "claims the doc-updater could not verify",
+      "unverified": [
+        "Code gives parse_price a default currency=\"EUR\", while architecture.md section 6 declares it required; README documents the explicit-currency call only",
+        "No CHANGELOG exists and it is outside docs.files, so none was created"
+      ]
+    }
+  ],
+  "not_checked": [
+    {
+      "agent": "test-author",
+      "label": "test-author",
+      "items": [
+        "Red state is an ImportError (CurrencyMismatch missing) at module import for both files, so individual tests are not yet run.",
+        "Assumes Cart exposes total() and lines() as the ACs describe; I did not read shop/cart.py."
+      ]
+    },
+    {
+      "agent": "test-auditor",
+      "label": "test-auditor",
+      "items": [
+        "I did not run the tests against an implementation.",
+        "I did not read the existing shop/ code or the tests/ directory."
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-01",
+      "items": [
+        "shop/cart.py caller (owned by another WP) was not touched or checked"
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-02",
+      "items": [
+        "The full tests/ suite is not green until WP-01 updates tests/test_money.py."
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "Did not run the unit or acceptance tests.",
+        "Did not read the contents of acceptance/."
+      ]
+    },
+    {
+      "agent": "standards-reviewer",
+      "label": "standards-reviewer",
+      "items": [
+        "Test files diff (tests/test_cart.py, tests/test_money.py) not opened in detail",
+        "Spec axis (contracts, ACs, correctness) not reviewed"
+      ]
+    },
+    {
+      "agent": "implementer",
+      "label": "WP-01 (fix)",
+      "items": [
+        "Did not run from_rows directly (command needed approval); the default makes its call parse_price(price_text) valid."
+      ]
+    },
+    {
+      "agent": "standards-reviewer",
+      "label": "standards-reviewer",
+      "items": [
+        "Test files (tests/, acceptance/, qa/) were not read in detail.",
+        "Spec-axis matters (contracts, ACs, correctness) are not covered here."
+      ]
+    },
+    {
+      "agent": "reviewer",
+      "label": "reviewer",
+      "items": [
+        "Did not run the unit or acceptance tests.",
+        "Did not read the acceptance/ and qa/ files.",
+        "Implementer concern about default currency=\"EUR\" in parse_price: I left it out as a finding. Section 6 shows `currency: str` with no default. But shop/receipt.py:12 calls parse_price(price_text) with one argument, and the default keeps that call working with its old behaviour. Removing the default would break receipt.py, which has no owner in this plan. The caller still works, and the only change is that a prefixed text that used to raise ValueError may now parse or raise CurrencyMismatch, which is a ValueError. Adding a currency argument to from_rows and a receipt test would be a follow-up outside this plan."
+      ]
+    }
+  ],
+  "gate_denials": {},
+  "verification_failures": [],
+  "rules": "printed",
+  "usage": {
+    "total": {
+      "input": 95543,
+      "cache_read": 638189,
+      "output": 18972,
+      "turns": 92,
+      "cost_usd": 0.6354949000000001
+    },
+    "by_agent": [
+      {
+        "id": "AT",
+        "agent": "test-author",
+        "label": "test-author",
+        "input": 4890,
+        "cache_read": 29536,
+        "output": 1571,
+        "cost_usd": 0.0382116,
+        "turns": 4
+      },
+      {
+        "id": "REVIEW",
+        "agent": "test-auditor",
+        "label": "test-auditor",
+        "input": 8123,
+        "cache_read": 23134,
+        "output": 841,
+        "cost_usd": 0.0432034,
+        "turns": 6
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01",
+        "input": 9336,
+        "cache_read": 85928,
+        "output": 3723,
+        "cost_usd": 0.0831428,
+        "turns": 10
+      },
+      {
+        "id": "WP-02",
+        "agent": "implementer",
+        "label": "WP-02",
+        "input": 7465,
+        "cache_read": 98069,
+        "output": 2681,
+        "cost_usd": 0.0664489,
+        "turns": 12
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 11318,
+        "cache_read": 34752,
+        "output": 805,
+        "cost_usd": 0.05678520000000001,
+        "turns": 5
+      },
+      {
+        "id": "REVIEW",
+        "agent": "standards-reviewer",
+        "label": "standards-reviewer",
+        "input": 3415,
+        "cache_read": 26567,
+        "output": 574,
+        "cost_usd": 0.0220447,
+        "turns": 6
+      },
+      {
+        "id": "REVIEW",
+        "agent": "verifier",
+        "label": "verify shop/receipt.py",
+        "input": 2876,
+        "cache_read": 8336,
+        "output": 367,
+        "cost_usd": 0.015999600000000003,
+        "turns": 4
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 7591,
+        "cache_read": 82874,
+        "output": 2167,
+        "cost_usd": 0.0602974,
+        "turns": 8
+      },
+      {
+        "id": "WP-01",
+        "agent": "implementer",
+        "label": "WP-01 (fix)",
+        "input": 9924,
+        "cache_read": 81931,
+        "output": 1746,
+        "cost_usd": 0.06532510000000001,
+        "turns": 11
+      },
+      {
+        "id": "REVIEW",
+        "agent": "standards-reviewer",
+        "label": "standards-reviewer",
+        "input": 3453,
+        "cache_read": 26574,
+        "output": 591,
+        "cost_usd": 0.022367400000000003,
+        "turns": 6
+      },
+      {
+        "id": "REVIEW",
+        "agent": "reviewer",
+        "label": "reviewer",
+        "input": 12172,
+        "cache_read": 32176,
+        "output": 906,
+        "cost_usd": 0.060953600000000004,
+        "turns": 5
+      },
+      {
+        "id": "QA",
+        "agent": "qa",
+        "label": "qa",
+        "input": 7278,
+        "cache_read": 66701,
+        "output": 1505,
+        "cost_usd": 0.0508121,
+        "turns": 7
+      },
+      {
+        "id": "DOCS",
+        "agent": "doc-updater",
+        "label": "doc-updater",
+        "input": 7702,
+        "cache_read": 41611,
+        "output": 1495,
+        "cost_usd": 0.049903100000000006,
+        "turns": 8
+      }
+    ]
+  }
+}

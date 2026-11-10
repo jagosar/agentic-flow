@@ -80,7 +80,7 @@ Requirements in one line: a Pro, Max, Team or Enterprise plan, Dynamic workflows
 | `test-author` | latest Sonnet | Writes the acceptance tests from the criteria, before the code |
 | `implementer` | latest Sonnet | Builds one work package, in parallel with the rest of its wave |
 | `test-auditor` | latest Sonnet | Read-only; checks the acceptance tests would not pass against an empty implementation |
-| `reviewer` · `verifier` | latest Sonnet | Read-only review; the reviewer also checks the callers of every changed symbol, the verifier tries to refute every serious finding |
+| `reviewer` · `standards-reviewer` · `verifier` | latest Sonnet | Read-only review on two axes in parallel: the reviewer checks the contracts and the callers of every changed symbol, the standards reviewer the written rules; the verifier tries to refute every finding that blocks |
 | `qa` | latest Sonnet | Exploratory testing beyond the acceptance criteria |
 | `doc-updater` | latest Sonnet | Updates README, CHANGELOG and guides, only inside its zone |
 | `gatekeeper` | latest Haiku | Runs the deterministic steps of `agentic.py` for the workflow, several per call |

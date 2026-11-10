@@ -76,6 +76,19 @@ python3 bench/bench.py ab --a agentic-flow--v2.1.0 --b . --fixture tally --repea
 
 Each arm is a flow directory or a git ref of the repo (`--repo` to name another one); a ref is checked out in a temporary worktree that is removed at the end. The result is an `ab-*.json` file next to the other results, with each arm's sessions in its own folder, and an `ab-*.md` with two tables: per fixture, median(B) / median(A) for cost, minutes and output tokens, and B minus A for the mutation score, the oracle, the fix cycles, the callers the reviewer received (`review_callers`) and the findings it confirmed (`review_confirmed`); overall, the geometric mean of the ratios, a bootstrap interval (seeded with `--seed`) and a sign test over the fixtures. Only sessions that ended OK or REVIEW count. With three sessions per arm and six fixtures the sign test cannot go below p = 0.03125: read "no detectable difference" as that, not as "the same". `report` ignores A/B files, so `RESULTS.md` keeps one version per row.
 
+## Test a prompt change (scenarios)
+
+A fixture measures the whole flow; a scenario tests one agent's prompt. It is a folder under `bench/scenarios/` with the files the agent reads and one or more scenario files (`scenario.json`, or any other `.json` at the top), each naming the agent, the prompt (a key of `pipeline-spec.json` or a literal `prompt_text`) and what the answer must hold: a status, a blocking finding of a given tier that mentions some words, fields of the report (`equals`, `min`), words in a text answer. Run the old definition against the new one before changing a prompt:
+
+```bash
+git show agentic-flow--v2.12.0:.claude/agents/reviewer.md > /tmp/old-reviewer.md
+python3 bench/scenario.py bench/scenarios/review-contract --against /tmp/old-reviewer.md --repeat 5 --save
+```
+
+`--against` alternates old and new runs and prints how many met in each arm and a one-sided Fisher exact p; `--repeat N` alone repeats the current definition; `--save` keeps the printed JSON, with every report verbatim, in `bench/results/scenarios/`. Each run is a real agent session, isolated like the bench's. If the old definition passes too, the scenario does not show the change: make it harder or say so, never tune it until it passes.
+
+To measure a change to the flow that is not a commit yet, build a variant and give it to `ab` as an arm: `python3 bench/variant.py implementer-no-standards /tmp/no-standards`, then `bench.py ab --a . --b /tmp/no-standards`. A variant is applied to a copy of the checkout at build time and refuses to build if a definition no longer has what it removes.
+
 ## Add a fixture
 
 Create `bench/fixtures/<name>/`:

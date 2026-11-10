@@ -48,9 +48,9 @@ Without this, every prompt or agent change is decided by reasoning.
 |---|---|---|---|
 | 3.1 | **Read beyond the diff.** The reviewer gets the callers of every changed signature (from `graphify affected` when installed, else by grepping). `reviewer.md` says "no problems in code that was not touched"; a change that breaks an untouched caller must be reported. Shipped in 2.2.0 (plain grep; no `graphify`): see `docs/architecture/0005-reviewer-callers.md`. Measured on the `pricing` fixture (A/B 2.1.0 vs 2.4.0, three sessions each, `bench/results/ab-2.1.0-vs-2.4.0-20261102-210456.md`): 2.4.0's reviewer received the callers and confirmed the broken caller in 3 of 3 sessions, citing its line; 2.1.0 ended OK with the caller broken in 2 of 3 and QA caught it once by exploration. | ponytail, graphify | Medium |
 | 3.2 | **Stricter findings:** a concrete case for each; four parts (what it is, problem, fix, if skipped); severity anchors ("fully defeats a control or only weakens it"; "if you cannot state the damage, it is lower than it feels"); a third verdict `needs_validation` for findings blocked by an external fact, with no severity; a "cannot verify from diff" category resolved by the orchestrator. Shipped in 2.0.0. | ponytail, cloudflare, superpowers | Low  |
-| 3.3 | **Two axes, Standards and Spec,** reviewed in parallel and never reranked against each other. | mattpocock | Medium |
-| 3.4 | **One scale for every check:** Floor (never ships), Reflex (a default the model falls into; waivable with a reason on the record), Finish (never blocks). Waivers take the narrowest scope and a `"<who decided: evidence>"` reason; every WARN needs a one-line defence. | hallmark, impeccable, taste | Low-medium |
-| 3.5 | **Provenance:** every fact in section 4b and every reviewer evidence is "read at file:line" or "inferred"; the plan-reviewer challenges the inferred ones first. | graphify | Low |
+| 3.3 | **Two axes, Standards and Spec,** reviewed in parallel and never reranked against each other. Shipped in 2.13.0: see `docs/architecture/0020-reliable-review.md`. | mattpocock | Medium |
+| 3.4 | **One scale for every check:** Floor (never ships), Reflex (a default the model falls into; waivable with a reason on the record), Finish (never blocks). Waivers take the narrowest scope and a `"<who decided: evidence>"` reason; every WARN needs a one-line defence. Shipped in 2.13.0 for the judges' findings (the deterministic checks stay Floor). | hallmark, impeccable, taste | Low-medium |
+| 3.5 | **Provenance:** every fact in section 4b and every reviewer evidence is "read at file:line" or "inferred"; the plan-reviewer challenges the inferred ones first. Shipped in 2.13.0. | graphify | Low |
 
 ## 4. Agent prompts (cheap; measure with the bench)
 
@@ -59,8 +59,8 @@ Without this, every prompt or agent change is decided by reasoning.
 | 4.1 | Reuse ladder before writing: needed? already in the repo? standard library? installed dependency? one line? only then the minimum. "Grep every caller before editing shared code; fix the root cause once." Shipped in 2.0.0. | ponytail  |
 | 4.2 | Every report ends with "not checked / skipped / risk". Shipped in 2.0.0 (`not_checked`). | ponytail  |
 | 4.3 | No invented numbers, benchmarks or claims (doc-updater, architect). Shipped in 2.0.0. | taste, hallmark  |
-| 4.4 | Print what must be followed into the prompt instead of pointing at a file ("a printed line is followed where an extra read gets skipped"); audit the workflow prompts for pasted history. Partly: the callers are printed in the reviewer's prompt (2.2.0); the audit of the workflow prompts is open. | impeccable, superpowers  |
-| 4.5 | Move coding standards from the implementer to the reviewer. Only after measuring. | mattpocock, impeccable |
+| 4.4 | Print what must be followed into the prompt instead of pointing at a file ("a printed line is followed where an extra read gets skipped"); audit the workflow prompts for pasted history. Shipped: the callers are printed in the reviewer's prompt (2.2.0), the rules in every prompt that named them (2.13.0); the audit of the prompts found no pasted history. | impeccable, superpowers  |
+| 4.5 | Move coding standards from the implementer to the reviewer. Only after measuring: measured in 2.13.0 with `bench/variant.py`, decided next. | mattpocock, impeccable |
 
 ## 5. New deterministic checks in close-stage
 
@@ -81,7 +81,7 @@ Without this, every prompt or agent change is decided by reasoning.
 
 - 7.1 A `doctor` command: what the flow left stale in a project, each finding as data with a severity that says what happens: `auto` (fixed by `--fix`), `mention`, `route` (names the command that repairs it). (impeccable)
 - 7.2 A `retro` command: parallel analysts over a run (cost and time, repeated work, stumbles, plan adherence); every finding cites `path:line`; a mechanical mistake becomes a deterministic check, not a prompt line. (mattpocock, superpowers)
-- 7.3 TDD for prompts: pressure scenarios run without the change (record the rationalisation verbatim), then with it, then close loopholes. (superpowers)
+- 7.3 TDD for prompts: pressure scenarios run without the change (record the rationalisation verbatim), then with it, then close loopholes. (superpowers) Shipped in 2.13.0: `bench/scenario.py --against`.
 - 7.4 `shortcut: <limit>, <when to upgrade>` markers and a debt ledger. (ponytail)
 
 ## Later (high cost or low return now)
