@@ -164,7 +164,7 @@ If a stage stops (a blocked package, a broken acceptance test), fix the cause an
 - **`timeout_s`:** the longest a stage may run; agents still alive are ended and marked `TIMEOUT`. For a one-off change: `AGENTIC_TIMEOUT_S`. The stop gate runs the acceptance suite inside the implementer's time (up to 14 minutes per check): with a slow suite, raise `timeout_s` or expect a `TIMEOUT`.
 - **`auth: "subscription"`:** agents run on your subscription. In `-p` mode Claude Code uses `ANTHROPIC_API_KEY` whenever it exists, so the launcher removes `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the agents' environment. Use `"inherit"` only to bill the API.
 - **`max_fix_cycles`:** fix cycles allowed per package before it escalates to a person.
-- **Models:** not configurable; set by alias.
+- **`escalation`, `max_agent_calls`:** the last fix attempt of a package runs on Opus (false turns it off); a budget in agent calls that reserves review and QA before a fix cycle (null: none). Models are otherwise set by alias.
 
 ## Script reference
 
