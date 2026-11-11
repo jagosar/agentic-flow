@@ -1,0 +1,12 @@
+diff --git a/fixed/src/pricing.py b/fixed/src/pricing.py
+--- a/fixed/src/pricing.py
++++ b/fixed/src/pricing.py
+@@ -3,7 +3,7 @@
+ 
+ 
+ def discount(total_cents: int) -> int:
+-    if total_cents > DISCOUNT_FROM_CENTS:
++    if total_cents >= DISCOUNT_FROM_CENTS:
+         return round(total_cents * (1 - DISCOUNT_RATE))
+     return total_cents
+ 

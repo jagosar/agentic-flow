@@ -136,10 +136,10 @@ sequenceDiagram
     AG-->>W: defects (implementation or design)
     opt a defect, or a failed verification that a WP owns (at most 2 attempts per WP)
         W->>G: close-stage qa + open-stage N
-        W->>AG: Fix WP-NN, with its defects (and the first attempt's diff from the second one on)
+        W->>AG: Fix WP-NN, with its defects (and the first attempt's diff from the second one on; the last attempt on Opus)
         W->>G: close-stage N --fix
         W->>G: verify + open-stage review
-        Note over W,AG: then review and QA again
+        Note over W,AG: then a re-review of the open findings (by fingerprint, against the fix's diffs) and QA again
     end
     opt docs section and accepted code
         W->>G: close-stage qa + codemap + open-stage docs
@@ -152,7 +152,9 @@ sequenceDiagram
     U->>O: approve the commit
 ```
 
-When a judge finds a real defect, the workflow sends it back to the package that owns it, with the evidence. This is the prompt WP-02 received in a real run, after the reviewer and QA found the same defect independently:
+When a judge finds a real defect, the workflow sends it back to the package that owns it, with the evidence. The last attempt a package is allowed (the second, by default) runs on Opus instead of Sonnet, with the same prompt (`escalation: false` in `.claude/agentic.json` turns it off); in the fallback engine the earlier attempts continue the implementer's own session (`claude -p --resume`), and a resumed call that answers nothing is retried once, fresh. After the fix the reviewers do not review everything again: each finding carries a fingerprint (`findings.py`: the axis, tier, rule, file and the start of the problem), and each axis with open findings on the fixed packages runs a re-review of those only, against the fix's diffs (`runs/<WP>.fix-N.diff`), answering ADDRESSED or NOT_ADDRESSED per fingerprint. A missing verdict is NOT_ADDRESSED, no verifier runs, and anything new goes to `pending` as a `new finding` that never starts another cycle. With `max_agent_calls` set, the run checks before it starts and before each fix cycle that the calls left pay for that cycle and for the review and QA after it; if not, it stops as REVIEW with the gap and the cycle's defects as `over budget`.
+
+This is the prompt WP-02 received in a real run, after the reviewer and QA found the same defect independently:
 
 <p align="center"><img src="assets/screens/fix.png" width="760" alt="The fix prompt sent to WP-02: the reviewer's high-severity finding (stats swallows storage errors and exits 0, contradicting contract 6.2) and QA's defect D1 with its reproduction and test."></p>
 
@@ -322,7 +324,7 @@ The two engines are kept identical on purpose. The schemas, prompts and limits l
 │   ├── launch.py           the claude -p launchers, run-*, seq, run-pipeline and pipeline-plan
 │   ├── guardrail.py        the PreToolUse hook: guard, claims, content checks, the heartbeat, hooks-check
 │   ├── brief.py            slices architecture.md into the briefs the agents read
-│   ├── findings.py         tiers, waivers and what blocks
+│   ├── findings.py         tiers, waivers, what blocks and fingerprints
 │   ├── doctor.py           what the flow left stale in a project, and --fix
 │   ├── plan_picture.py     the HTML+SVG picture of the manifest
 │   ├── waiting.py          hook: records which agent is waiting for your permission or answer

@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -151,6 +152,15 @@ class ExpectationTests(unittest.TestCase):
         self.assertFalse(scenario.met(None, {"text_mentions": ["fix"]}, None))
         self.assertFalse(scenario.met(None, {"status": "PASS"}, "PASS"))
 
+    def test_all_verdicts_needs_one_and_every_one(self):
+        both = {"status": "PASS", "verdicts": [{"fingerprint": "F1", "verdict": "ADDRESSED"},
+                                               {"fingerprint": "F2", "verdict": "ADDRESSED"}]}
+        self.assertTrue(scenario.met(both, {"status": "PASS", "all_verdicts": "ADDRESSED"}))
+        mixed = dict(both, verdicts=[both["verdicts"][0], {"fingerprint": "F2", "verdict": "NOT_ADDRESSED"}])
+        self.assertFalse(scenario.met(mixed, {"all_verdicts": "ADDRESSED"}))
+        for verdicts in ([], None, "ADDRESSED", ["ADDRESSED"]):
+            self.assertFalse(scenario.met({"verdicts": verdicts}, {"all_verdicts": "ADDRESSED"}), verdicts)
+
     def test_fisher(self):
         self.assertEqual(scenario.fisher_p(2, 5, 5, 5), 0.083)
         self.assertEqual(scenario.fisher_p(5, 5, 5, 5), 1.0)
@@ -186,6 +196,90 @@ class PromptTests(Case):
         self.assertTrue(call["prompt"].startswith("Review it.\nRules you must follow"))
         self.assertTrue(call["prompt"].endswith(" SUFFIX"))
         self.assertEqual(call["cwd_files"], [".claude", "src"], "no scenario file reaches the agent")
+
+
+class ScenarioSetTests(unittest.TestCase):
+    """From test_acceptance_v213 ac_010 and ac_011: the saved scenarios name real agents and prompts, and an old
+    definition can be run against a new one."""
+
+    BASE = HERE / "scenarios"
+    SPEC = json.loads((HERE.parent / ".claude/workflows/pipeline-spec.json").read_text(encoding="utf-8"))
+
+    def test_every_scenario_names_a_real_agent_prompt_and_schema(self):
+        files = sorted(p for d in self.BASE.iterdir() if d.is_dir() for p in d.glob("*.json"))
+        self.assertGreaterEqual(len(files), 8)
+        for path in files:
+            with self.subTest(path=path.relative_to(self.BASE)):
+                meta = json.loads(path.read_text(encoding="utf-8"))
+                self.assertTrue((HERE.parent / ".claude/agents" / f"{meta['agent']}.md").is_file())
+                self.assertTrue(meta.get("prompt") in self.SPEC["prompts"] or meta.get("prompt_text"))
+                if meta.get("schema", True):
+                    self.assertIn(meta.get("schema_name", meta["agent"]), self.SPEC["schemas"])
+        self.assertFalse(list(self.BASE.rglob("__init__.py")))
+
+    def test_the_expectations_of_the_review_scenarios(self):
+        load = lambda rel: json.loads((self.BASE / rel).read_text(encoding="utf-8"))  # noqa: E731
+        self.assertIn("0.85", (self.BASE / "review-style/src/pricing.py").read_text(encoding="utf-8"))
+        self.assertEqual(load("review-style/standards.json")["expect"],
+                         {"status": "FAIL", "tier": "reflex", "finding_mentions": ["magic"]})
+        self.assertEqual(load("review-style/spec.json")["expect"], {"status": "PASS", "no_blocking": True})
+        self.assertEqual(load("verifier-inferred/scenario.json")["expect"],
+                         {"equals": {"is_real": False}, "min": {"confidence": 0.7}})
+        plan = load("plan-inferred-row/scenario.json")
+        self.assertEqual((plan["schema"], plan["model"]), (False, "opus"))
+        self.assertEqual(plan["expect"], {"text_mentions": ["FIX", "parse"]})
+        arch = (self.BASE / "plan-inferred-row/architecture.md").read_text(encoding="utf-8")
+        self.assertRegex(arch, r"\|\s*inferred\s*\|")
+
+    def test_the_re_review_scenario_carries_its_finding_and_both_fixes(self):
+        sys.path.insert(0, str(HERE.parent / ".claude" / "bin"))
+        import findings
+        for name, verdict in (("fixed", "ADDRESSED"), ("unfixed", "NOT_ADDRESSED")):
+            meta = json.loads((self.BASE / "re-review" / f"{name}.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["expect"]["all_verdicts"], verdict)
+            [open_] = json.loads(meta["values"]["findings"])
+            self.assertEqual(open_["fingerprint"], findings.fingerprint(open_))
+            diff = self.BASE / "re-review" / meta["values"]["diffs"]
+            self.assertTrue(diff.is_file(), diff)
+            self.assertIn(f"+++ b/{name}/src/pricing.py", diff.read_text(encoding="utf-8"))
+        fixed = (self.BASE / "re-review/fixed/src/pricing.py").read_text(encoding="utf-8")
+        unfixed = (self.BASE / "re-review/unfixed/src/pricing.py").read_text(encoding="utf-8")
+        self.assertIn(">= DISCOUNT_FROM_CENTS", fixed)
+        self.assertIn("> DISCOUNT_FROM_CENTS", unfixed)
+        self.assertNotIn(">= DISCOUNT_FROM_CENTS", unfixed)
+
+    def fake(self, d):
+        script = d / "fake.py"
+        script.write_text(
+            "import json, os, sys\nsys.stdin.read()\n"
+            "text = open(os.path.join('.claude', 'agents', 'verifier.md'), encoding='utf-8').read()\n"
+            "new = 'NEW-VERIFIER' in text\n"
+            "report = {'is_real': not new, 'confidence': 0.9 if new else 0.5, 'reasoning': 'r'}\n"
+            "print(json.dumps({'structured_output': report, 'result': 'done'}))\n", encoding="utf-8")
+        return [sys.executable, str(script)]
+
+    def test_an_old_definition_against_a_new_one_and_saved_results(self):
+        d = Path(tempfile.mkdtemp(prefix="scenario-set-"))
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        target = d / "refute-me"
+        (target / "src").mkdir(parents=True)
+        (target / "src" / "a.py").write_text("a = 1\n", encoding="utf-8")
+        (target / "scenario.json").write_text(json.dumps({
+            "agent": "verifier", "prompt": "verifier", "values": {"finding": "{}"},
+            "expect": {"equals": {"is_real": False}, "min": {"confidence": 0.7}}}), encoding="utf-8")
+        old, new = d / "old.md", d / "new.md"
+        old.write_text("---\nname: verifier\nmodel: sonnet\n---\nOLD\n", encoding="utf-8")
+        new.write_text("---\nname: verifier\nmodel: sonnet\n---\nNEW-VERIFIER\n", encoding="utf-8")
+        claude = self.fake(d)
+        result = scenario.compare(target, 2, against=old, claude=claude, agent_file=new)
+        self.assertEqual((result["old"]["met"], result["new"]["met"]), (0, 2))
+        self.assertEqual(set(scenario.run(target, claude=claude, agent_file=new)), {"report", "expect", "met", "text"})
+        results = d / "results"
+        code = scenario.main([str(target), "--repeat", "2", "--agent-file", str(new), "--save"],
+                             now=datetime(2026, 1, 2, 3, 4, 5), results=results, claude=claude)
+        self.assertEqual(code, 0)
+        saved = results / "refute-me-20260102-030405.json"
+        self.assertEqual(json.loads(saved.read_text(encoding="utf-8"))["met"], 2)
 
 
 if __name__ == "__main__":

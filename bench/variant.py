@@ -10,6 +10,8 @@ Variants:
   implementer-no-standards   the implementer without the coding standards: no rules in its prompt
                              (constants.implementer_rules false), no "# Before writing" section, and a rule 4
                              that only asks for section 7 and the existing style.
+  advisor-opus               every fallback agent runs with Opus as its advisor (constants.advisor_model "opus",
+                             passed as --advisor) and no fix attempt escalates (constants.escalation_model null).
 """
 from __future__ import annotations
 
@@ -27,13 +29,21 @@ SECTION_RE = re.compile(r"^# Before writing\n.*?(?=^# )", re.M | re.S)
 CONVENTIONS_RE = re.compile(r"^\d+\. \*\*Conventions\.\*\*.*$", re.M)
 CONVENTIONS = "4. **Conventions.** Follow section 7 and the style of the existing code."
 USAGE = "Uso: variant.py NAME DST"
+ADVISOR = "opus"
+
+
+def read_spec(dst):
+    return json.loads((dst / SPEC).read_text(encoding="utf-8"))
+
+
+def write_spec(dst, spec):
+    (dst / SPEC).write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def implementer_no_standards(dst):
-    spec_path = dst / SPEC
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    spec = read_spec(dst)
     spec["constants"]["implementer_rules"] = False
-    spec_path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_spec(dst, spec)
     path = dst / IMPLEMENTER
     text = path.read_text(encoding="utf-8")
     if not SECTION_RE.search(text) or len(CONVENTIONS_RE.findall(text)) != 1:
@@ -42,7 +52,16 @@ def implementer_no_standards(dst):
     path.write_text(text, encoding="utf-8")
 
 
-VARIANTS = {"implementer-no-standards": implementer_no_standards}
+def advisor_opus(dst):
+    spec = read_spec(dst)
+    missing = [k for k in ("advisor_model", "escalation_model") if k not in spec["constants"]]
+    if missing:
+        raise ValueError(f"{SPEC} has no constant {', '.join(missing)}")
+    spec["constants"].update(advisor_model=ADVISOR, escalation_model=None)
+    write_spec(dst, spec)
+
+
+VARIANTS = {"implementer-no-standards": implementer_no_standards, "advisor-opus": advisor_opus}
 
 
 def listed_files(src):

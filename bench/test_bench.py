@@ -353,6 +353,11 @@ class AbSourceTests(TempCase):
             rec = bench._record(Path("f"), 1, "OK", result, 1.0, {"passed": 0, "total": 0})
             self.assertEqual((rec["review_callers"], rec["review_confirmed"], rec["review_refuted"]), expected)
 
+    def test_record_scoped_re_review_leaves_callers_unmeasured(self):
+        result = {"review": {"scoped": True, "callers": 0, "confirmed": [], "refuted": []}}
+        rec = bench._record(Path("f"), 1, "OK", result, 1.0, {"passed": 0, "total": 0})
+        self.assertEqual((rec["review_callers"], rec["review_confirmed"], rec["review_refuted"]), (None, 0, 0))
+
     def test_metric_review_fields_and_markdown_columns(self):
         run = {"result": "OK", "review_callers": 2, "review_confirmed": 1}
         self.assertEqual((bench._metric(run, "review_callers"), bench._metric(run, "review_confirmed")), (2, 1))
@@ -364,8 +369,17 @@ class AbSourceTests(TempCase):
         spec = {"spec": "s", "version": "v"}
         text = bench.ab_markdown({"a": spec, "b": spec, "repeat": 1, "seed": 0, "comparison": comparison})
         table = [line for line in text.splitlines() if line.startswith("|")]
-        self.assertTrue(table[0].endswith("| Callers | Confirmed |"))
-        self.assertEqual((table[1].count("|") - 1, table[2].count("|") - 1), (9, 9))
+        self.assertTrue(table[0].endswith("| Fix cycles | Agent calls | Callers | Confirmed |"))
+        self.assertEqual((table[1].count("|") - 1, table[2].count("|") - 1), (10, 10))
+
+    def test_agent_calls_are_recorded_and_compared(self):
+        rec = bench._record(Path("f"), 1, "OK", {"agent_calls": 12}, 1.0, {"passed": 0, "total": 0})
+        self.assertEqual(rec["agent_calls"], 12)
+        for garbage in ({}, {"agent_calls": "12"}, {"agent_calls": True}):
+            self.assertIsNone(bench._record(Path("f"), 1, "OK", garbage, 1.0, {"passed": 0, "total": 0})["agent_calls"])
+        runs = [{"fixture": "fx", "arm": arm, "result": "OK", "agent_calls": n} for arm, n in (("a", 10), ("b", 14))]
+        self.assertEqual(bench.compare(runs, seed=0)["fixtures"]["fx"]["agent_calls"], 4)
+        self.assertIsNone(bench._metric({"result": "timeout", "agent_calls": 3}, "agent_calls"))
 
 
 if __name__ == "__main__":

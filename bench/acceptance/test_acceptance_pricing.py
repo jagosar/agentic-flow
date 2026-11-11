@@ -152,10 +152,10 @@ class CompareTests(unittest.TestCase):
         lines = bench.ab_markdown(self.doc(self.runs())).splitlines()
         header = next(i for i, line in enumerate(lines) if line.startswith("| Fixture |"))
         self.assertTrue(lines[header].endswith("| Callers | Confirmed |"), lines[header])
-        self.assertEqual(lines[header + 1].strip("|").count("|") + 1, 9)
+        self.assertEqual(lines[header + 1].strip("|").count("|") + 1, 10)  # agent_calls joined in 2.14.0
         row = lines[header + 2]
         self.assertTrue(row.startswith("| fx |"))
-        self.assertEqual(row.strip().strip("|").count("|") + 1, 9)
+        self.assertEqual(row.strip().strip("|").count("|") + 1, 10)
 
     def test_ac_005_other_results_are_not_measurements(self):
         runs = [ab_run("a", 0, 0, result="timeout"), ab_run("b", 2, 1, result="timeout")]

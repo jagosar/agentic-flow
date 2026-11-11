@@ -41,13 +41,14 @@ class Case(unittest.TestCase):
         self.dir = Path(tempfile.mkdtemp(prefix="variant-test-"))
         self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
 
-    def source(self, implementer=IMPLEMENTER):
+    def source(self, implementer=IMPLEMENTER, constants=None):
         src = self.dir / "src"
         (src / ".claude/agents").mkdir(parents=True)
         (src / ".claude/workflows").mkdir(parents=True)
         (src / ".claude/agents/implementer.md").write_text(implementer, encoding="utf-8")
         (src / ".claude/workflows/pipeline-spec.json").write_text(
-            json.dumps({"constants": {"implementer_rules": True}}), encoding="utf-8")
+            json.dumps({"constants": constants or {"implementer_rules": True, "escalation_model": "opus",
+                                                   "advisor_model": None}}), encoding="utf-8")
         (src / ".gitignore").write_text(".claude/state/\n", encoding="utf-8")
         (src / ".claude/state").mkdir()
         (src / ".claude/state/ledger.json").write_text("{}", encoding="utf-8")
@@ -75,6 +76,26 @@ class BuildTests(Case):
         src = self.source(IMPLEMENTER.replace("# Before writing", "# Something else"))
         with self.assertRaises(ValueError):
             variant.build("implementer-no-standards", self.dir / "v", src=src)
+
+    def test_the_advisor_variant_sets_the_advisor_and_turns_escalation_off(self):
+        src = self.source()
+        out = variant.build("advisor-opus", self.dir / "v", src=src)
+        constants = json.loads((out / ".claude/workflows/pipeline-spec.json").read_text(encoding="utf-8"))["constants"]
+        self.assertEqual(constants, {"implementer_rules": True, "escalation_model": None, "advisor_model": "opus"})
+        self.assertEqual((out / ".claude/agents/implementer.md").read_text(encoding="utf-8"), IMPLEMENTER)
+        mine = json.loads((src / ".claude/workflows/pipeline-spec.json").read_text(encoding="utf-8"))["constants"]
+        self.assertIsNone(mine["advisor_model"], "the source is untouched")
+
+    def test_a_spec_without_the_model_constants_is_refused(self):
+        src = self.source(constants={"implementer_rules": True})
+        with self.assertRaises(ValueError):
+            variant.build("advisor-opus", self.dir / "v", src=src)
+
+    def test_this_checkout_builds_both_variants(self):
+        for name in sorted(variant.VARIANTS):
+            with self.subTest(name=name):
+                out = variant.build(name, self.dir / name)
+                self.assertTrue((out / ".claude/bin/agentic.py").is_file())
 
     def test_an_existing_folder_or_an_unknown_name_is_refused(self):
         src = self.source()

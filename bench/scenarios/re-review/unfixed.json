@@ -1,0 +1,20 @@
+{
+  "_comment": "A re-review of a fix that only reshapes the code: the comparison is still >, so the verdict must be NOT_ADDRESSED.",
+  "agent": "reviewer",
+  "prompt": "re_review",
+  "schema_name": "re-review",
+  "values": {
+    "axis": "Spec",
+    "findings": "[{\"tier\":\"floor\",\"severity\":\"high\",\"provenance\":\"read\",\"wp\":\"WP-01\",\"file\":\"src/pricing.py\",\"line\":6,\"problem\":\"discount applies the 15% only above 25000 cents: a basket of exactly 25000 gets no discount, but section 6 says 25000 or more\",\"evidence\":\"src/pricing.py:6 `if total_cents > DISCOUNT_FROM_CENTS:`; discount(25000) returns 25000, the contract asks for 21250\",\"fix\":\"compare with >=\",\"if_skipped\":\"baskets of exactly 25000 cents are overcharged\",\"axis\":\"spec\",\"fingerprint\":\"F8a961c1e\"}]",
+    "diffs": "unfixed/WP-01.fix-1.diff"
+  },
+  "rules": [
+    "common",
+    "python"
+  ],
+  "suffix": " There is no git here: the code after the fix is under unfixed/src/.",
+  "expect": {
+    "status": "FAIL",
+    "all_verdicts": "NOT_ADDRESSED"
+  }
+}

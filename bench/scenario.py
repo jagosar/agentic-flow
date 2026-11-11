@@ -1,12 +1,13 @@
 """Saved scenarios for one agent: its inputs, real `claude -p` runs of that agent on them, and whether each report met
 what the scenario expects. A prompt or agent change is tested like code: the old definition against the new one.
 
-A scenario folder holds one or more scenario files (scenario.json, or any other top-level .json) and the files the
-agent reads. A scenario file names the agent, the prompt (a key of pipeline-spec.json's prompts, or a literal
-prompt_text), the values that fill it and the expectation. run() copies the folder (without its scenario files) and
-this checkout's .claude/agents and .claude/workflows into a temporary project, optionally with another definition of
-the agent (--agent-file), and runs the agent read-only with the bench's isolation, so a person's settings do not leak
-in. Each run spends a real agent session; the tests of this module use a fake `claude`.
+A scenario folder holds one or more scenario files (scenario.json, or any other top-level .json) and the files the agent
+reads. A scenario file names the agent, the prompt (a key of pipeline-spec.json's prompts, or a literal prompt_text),
+the values that fill it, the schema when it is not the agent's (schema_name) and the expectation. run() copies the
+folder (without its scenario files) and this checkout's .claude/agents and .claude/workflows into a temporary project,
+optionally with another definition of the agent (--agent-file), and runs the agent read-only with the bench's isolation,
+so a person's settings do not leak in. Each run spends a real agent session; the tests of this module use a fake
+`claude`.
 
     python3 bench/scenario.py TARGET [--agent-file PATH] [--repeat N] [--against PATH] [--save]
 
@@ -82,8 +83,17 @@ def mentions_found(report, expect, blocking):
     return None
 
 
+def verdicts_all(report, verdict):
+    """The report has at least one verdict and every one of them is `verdict` (a re-review)."""
+    verdicts = report.get("verdicts")
+    return isinstance(verdicts, list) and bool(verdicts) and all(
+        isinstance(v, dict) and v.get("verdict") == verdict for v in verdicts)
+
+
 def report_holds(report, expect, blocking):
     if "status" in expect and report.get("status") != expect["status"]:
+        return False
+    if "all_verdicts" in expect and not verdicts_all(report, expect["all_verdicts"]):
         return False
     if expect.get("no_blocking") and blocking_findings(report, blocking):
         return False
@@ -149,12 +159,18 @@ def prompt_of(meta, spec):
     return render(template, values) + meta.get("suffix", "")
 
 
+def schema_of(meta, spec):
+    """The schema the report must follow: schema_name's (a re-review), else the agent's; None in text mode."""
+    return spec["schemas"][meta.get("schema_name", meta["agent"])] if meta.get("schema", True) else None
+
+
 def command(meta, spec, claude):
     base = claude or compat.resolve(shlex.split(os.environ.get("AGENTIC_CLAUDE", "claude")))
     cmd = [*base, *ISOLATION_FLAGS, "-p", "--agent", meta["agent"], "--model", meta.get("model", MODEL),
            "--output-format", "json"]
-    if meta.get("schema", True):
-        cmd += ["--json-schema", json.dumps(spec["schemas"][meta["agent"]], separators=(",", ":"))]
+    schema = schema_of(meta, spec)
+    if schema is not None:
+        cmd += ["--json-schema", json.dumps(schema, separators=(",", ":"))]
     return cmd + ["--strict-mcp-config", "--allowedTools", *READ_ONLY_TOOLS]
 
 
@@ -163,7 +179,7 @@ def run(target, claude=None, agent_file=None):
     scenario_dir, scenario_file = locate(target)
     meta = json.loads(scenario_file.read_text(encoding="utf-8"))
     spec = json.loads(SPEC.read_text(encoding="utf-8"))
-    schema = spec["schemas"][meta["agent"]] if meta.get("schema", True) else None
+    schema = schema_of(meta, spec)
     tmp = Path(tempfile.mkdtemp(prefix="scenario-"))
     try:
         work = tmp / "project"
